@@ -1,1 +1,6 @@
+*.pyc
+
 .venv*
+/src/manifest/build
+
+/manifest
