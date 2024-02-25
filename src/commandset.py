@@ -63,16 +63,14 @@ class CommandSet:
                     name=name, command=command
             ):
                 if self._cmds[name] == None:
-                    log_fn = self._log if logger is None else logger.log
-
                     try:
-                        log_fn(
+                        self._log(
                             f"Instantiating command '{name}'",
                             level=4
                         )
                         self._cmds[name] = command(self, self._env, self._args)
                     except RecursionError:
-                        log_fn(
+                        self._log(
                             f"Recursion error: Probable infinite recursion in command '{name}'",
                             error=True
                         )
@@ -122,21 +120,16 @@ class CommandSet:
 
     def _log(self, *args, error=False, level=0):
         """
-        Try logging the given message using the registered logger command.
+        Use a basic logger to log the given message.
 
-        If no logger command has been registered yet, then use a basic logger.
+        This is required during the command registration phase, before
+        command line arguments are available to the log command so it
+        can configure itself.
         """
 
         if not hasattr(self, '_fallback_log_command'):
             self._fallback_log_command = Log(self, self._env, None)
-
-        # Avoid infinite recursion
-        if self.is_registered('log'):
-            logger = self.log(logger=self._fallback_log_command)
-        else:
-            logger = self._fallback_log_command
-
-        logger.log(*args, error=error, level=level)
+        self._fallback_log_command.log(*args, error=error, level=level)
 
     # Derived from: https://stackoverflow.com/a/1176023/16967315
     def _camel_to_kebab(self, name):

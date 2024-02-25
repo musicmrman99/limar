@@ -56,3 +56,18 @@ class Log:
             except IndexError:
                 level_text = Log.LEVELS[-1]
             print(level_text+':', *objs, file=file)
+
+    def error(self, *objs):
+        self.log(*objs, error=True, level=0)
+
+    def warn(self, *objs):
+        self.log(*objs, error=True, level=1)
+
+    def info(self, *objs):
+        self.log(*objs, level=2)
+
+    def debug(self, *objs):
+        self.log(*objs, level=3)
+
+    def trace(self, *objs):
+        self.log(*objs, level=4)
