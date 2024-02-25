@@ -1,4 +1,3 @@
-import sys
 import re
 import argparse
 
@@ -11,21 +10,37 @@ class CommandSet:
     Manage argument declaration and parsing, and instantiation of
     command classes.
 
-    Acts like a dynamic collection of command singletons and CLI manager.
+    Acts like a dynamic collection of command singletons and a command
+    line manager.
 
-    Allow all command classes to register their argument declarations,
-    but only create instances of command classes at the point they
-    are requested and cache those instances once created. When
-    registering a command, pass the instance of this class doing the
-    registering to the command, so it can use other commands without
-    importing them.
+    Allow registration of command classes. Registration adds them to the
+    command pool and also allows those classes to register their argument
+    declarations on a passed subparser. The root parser is also passedin
+    the keyword argument 'root_parser' so that command classes can register
+    global options that affect their behaviour when called indirectly by
+    other commands.
+
+    When a command in the pool is requested, if it doesn't yet have an
+    instance it is __init__()-ialised, with this command set object and
+    the global configuration passed as the first two arguments so that it
+    can access any method on any other registered command object. Be
+    careful when constructing command classes to avoid infinite recursion
+    when calling command methods.
+
+    When a command is called from the CLI (by using run_cmd_line()), then
+    it is __call__()-ed with the parsed command line arguments (as an
+    argparse Namespace object) given as the first argument.
     """
 
-    def __init__(self, config):
+    def __init__(self, env):
         self._cmds = {}
-        self._config = config
+        self._env = env
+        self._args = None
         self._arg_parser = argparse.ArgumentParser()
         self._arg_subparsers = self._arg_parser.add_subparsers(dest="command")
+
+    # Registration
+    # --------------------
 
     def register(self, *commands):
         for command in commands:
@@ -37,12 +52,16 @@ class CommandSet:
 
             self._cmds[name] = None
             command_arg_parser = self._arg_subparsers.add_parser(name)
-            command.setup_args(command_arg_parser)
+            command.setup_args(command_arg_parser, root_parser=self._arg_parser)
 
             # Dynamically add a method to this object that can instantiate
             # and retreive the command instance.
-            # Set kwargs to force it to early-bind those values
-            def command_getter(name=name, command=command, logger=None):
+            def command_getter(
+                    logger=None,
+
+                    # Use kwargs to force it to early-bind
+                    name=name, command=command
+            ):
                 if self._cmds[name] == None:
                     log_fn = self._log if logger is None else logger.log
 
@@ -51,7 +70,7 @@ class CommandSet:
                             f"Instantiating command '{name}'",
                             level=4
                         )
-                        self._cmds[name] = command(self, self._config)
+                        self._cmds[name] = command(self, self._env, self._args)
                     except RecursionError:
                         log_fn(
                             f"Recursion error: Probable infinite recursion in command '{name}'",
@@ -62,27 +81,44 @@ class CommandSet:
 
             self.__dict__[name] = command_getter
 
+    # Post-Registration
+    # --------------------
+
     def is_registered(self, name):
         return name in self._cmds
 
     def get_command(self, name):
         """Return the instance of the command with the given name."""
 
-        try:
-            return self.__dict__[name]()
-        except TypeError as e: # NoneType object is not callable
-            raise VCSException(f"Sub-command not registered: '{name}'") from e
+        if not self.is_registered(name):
+            raise VCSException(f"Sub-command not registered: '{name}'")
+
+        return self.__dict__[name]()
 
     def run_command(self, name, args):
         """Run the command with the given name with the given arguments."""
 
         self.get_command(name)(args)
 
-    def run_cli(self):
-        """Parse CLI arguments and run the command they specify."""
+    # Actioning the Command Line
+    # --------------------
 
-        args = self._arg_parser.parse_args()
-        self.run_command(args.command, args)
+    def run_cmd_line(self, *args):
+        """
+        Parse the command line and run the command it specifies.
+
+        If args are given, then run those as a command line instead.
+        """
+
+        if len(args) > 0:
+            self._args = self._arg_parser.parse_args(args)
+        else:
+            self._args = self._arg_parser.parse_args()
+
+        self.run_command(self._args.command, self._args)
+
+    # Utils
+    # --------------------
 
     def _log(self, *args, error=False, level=0):
         """
@@ -92,7 +128,7 @@ class CommandSet:
         """
 
         if not hasattr(self, '_fallback_log_command'):
-            self._fallback_log_command = Log(self, self._config)
+            self._fallback_log_command = Log(self, self._env, None)
 
         # Avoid infinite recursion
         if self.is_registered('log'):
