@@ -168,3 +168,109 @@ class TestManifest(TestCase):
                 'tags': dict.fromkeys(['tagA', 'tagC'])
             }
         })
+
+    @patch("builtins.open", new_callable=mock_open, read_data=b'\n'.join([
+        b'/home/username/test/projectA (tagA, tagB)',
+        b'/home/username/test/projectB (tagA, tagC)',
+        b'/home/username/test/projectC (tagD)',
+        b'setA {tagA & tagB | tagD}'
+    ])+b'\n')
+    def test_resolve_explicit_project_set_grouping_default(self, _):
+        manifest = Manifest(self.mock_cmd, self.mock_env)
+
+        self.assertEqual(manifest.get_project_set('setA'), {
+            '/home/username/test/projectA': {
+                'ref': '/home/username/test/projectA',
+                'path': '/home/username/test/projectA',
+                'tags': dict.fromkeys(['tagA', 'tagB'])
+            },
+            '/home/username/test/projectC': {
+                'ref': '/home/username/test/projectC',
+                'path': '/home/username/test/projectC',
+                'tags': dict.fromkeys(['tagD'])
+            }
+        })
+
+    @patch("builtins.open", new_callable=mock_open, read_data=b'\n'.join([
+        b'/home/username/test/projectA (tagA, tagB)',
+        b'/home/username/test/projectB (tagA, tagC)',
+        b'/home/username/test/projectC (tagD)',
+        b'setA {(tagA & tagB) | tagD}',
+        b'setB {tagA & (tagB | tagD)}'
+    ])+b'\n')
+    def test_resolve_explicit_project_set_grouping_explicit(self, _):
+        manifest = Manifest(self.mock_cmd, self.mock_env)
+
+        self.assertEqual(manifest.get_project_set('setA'), {
+            '/home/username/test/projectA': {
+                'ref': '/home/username/test/projectA',
+                'path': '/home/username/test/projectA',
+                'tags': dict.fromkeys(['tagA', 'tagB'])
+            },
+            '/home/username/test/projectC': {
+                'ref': '/home/username/test/projectC',
+                'path': '/home/username/test/projectC',
+                'tags': dict.fromkeys(['tagD'])
+            }
+        })
+
+        self.assertEqual(manifest.get_project_set('setB'), {
+            '/home/username/test/projectA': {
+                'ref': '/home/username/test/projectA',
+                'path': '/home/username/test/projectA',
+                'tags': dict.fromkeys(['tagA', 'tagB'])
+            }
+        })
+
+    @patch("builtins.open", new_callable=mock_open, read_data=b'\n'.join([
+        b'/home/username/test/projectA (tagA, tagB)',
+        b'/home/username/test/projectB (tagA, tagC)',
+        b'/home/username/test/projectC (tagD)',
+        b'/home/username/test/projectD (tagD, tagE)',
+        b'/home/username/test/projectE (tagD, tagB, tagF)',
+        b'setA { (tagA & tagB) | (tagD & tagE) }'
+    ])+b'\n')
+    def test_resolve_explicit_project_set_grouping_of_groups(self, _):
+        manifest = Manifest(self.mock_cmd, self.mock_env)
+
+        self.assertEqual(manifest.get_project_set('setA'), {
+            '/home/username/test/projectA': {
+                'ref': '/home/username/test/projectA',
+                'path': '/home/username/test/projectA',
+                'tags': dict.fromkeys(['tagA', 'tagB'])
+            },
+            '/home/username/test/projectD': {
+                'ref': '/home/username/test/projectD',
+                'path': '/home/username/test/projectD',
+                'tags': dict.fromkeys(['tagD', 'tagE'])
+            }
+        })
+
+    @patch("builtins.open", new_callable=mock_open, read_data=b'\n'.join([
+        b'/home/username/test/projectA (tagA, tagB)',
+        b'/home/username/test/projectB (tagA, tagC)',
+        b'/home/username/test/projectC (tagD)',
+        b'/home/username/test/projectD (tagD, tagE)',
+        b'/home/username/test/projectE (tagD, tagB, tagF)',
+        b'setA { (tagA & tagB) | (tagD & (tagE | tagF)) }'
+    ])+b'\n')
+    def test_resolve_explicit_project_set_grouping_nesting(self, _):
+        manifest = Manifest(self.mock_cmd, self.mock_env)
+
+        self.assertEqual(manifest.get_project_set('setA'), {
+            '/home/username/test/projectA': {
+                'ref': '/home/username/test/projectA',
+                'path': '/home/username/test/projectA',
+                'tags': dict.fromkeys(['tagA', 'tagB'])
+            },
+            '/home/username/test/projectD': {
+                'ref': '/home/username/test/projectD',
+                'path': '/home/username/test/projectD',
+                'tags': dict.fromkeys(['tagD', 'tagE'])
+            },
+            '/home/username/test/projectE': {
+                'ref': '/home/username/test/projectE',
+                'path': '/home/username/test/projectE',
+                'tags': dict.fromkeys(['tagD', 'tagB', 'tagF'])
+            }
+        })
