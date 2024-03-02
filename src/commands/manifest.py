@@ -8,8 +8,6 @@ from manifest.build.ManifestListener import ManifestListener
 
 from exceptions import VCSException
 
-from pprint import pprint
-
 # Types
 from commandset import CommandSet
 from environment import Environment
@@ -110,10 +108,10 @@ class Manifest():
         manifest_subparsers = parser.add_subparsers(dest="manifest_command")
 
         # Resolve Subcommand
-        resolve_parser = manifest_subparsers.add_parser('resolve')
+        resolve_parser = manifest_subparsers.add_parser('project')
 
         resolve_parser.add_argument('pattern', metavar='PATTERN',
-            help='The regex pattern to resolve to a project reference')
+            help='A regex pattern to resolve to a project reference')
 
         # Options
         resolve_parser.add_argument('-l', '--location',
@@ -137,6 +135,12 @@ class Manifest():
             help="""
             A pattern that matches the project set to use to resolve the project
             """)
+
+        # Resolve Subcommand
+        resolve_parser = manifest_subparsers.add_parser('project-set')
+
+        resolve_parser.add_argument('pattern', metavar='PATTERN',
+            help='A regex pattern to resolve to a project set')
 
     def __init__(self,
             cmd: CommandSet = None,
@@ -165,7 +169,7 @@ class Manifest():
     def __call__(self, args):
         output = ''
 
-        if args.manifest_command == 'resolve':
+        if args.manifest_command == 'project':
             output = self.get_project(
                 args.pattern,
                 project_set_pattern=args.project_set,
@@ -174,10 +178,18 @@ class Manifest():
             )
             self._cmd.log().info('resolved project to:', output)
 
+        if args.manifest_command == 'project-set':
+            output = self.get_project_set(args.pattern)
+            self._cmd.log().info('resolved project set to:', output)
+
         return output
 
     def get_project_set(self, pattern: str = None):
-        self._cmd.log().trace(f"manifest.get_project_set('{pattern}')")
+        self._cmd.log().trace(
+            "manifest.get_project_set("
+                +(f"{pattern}" if pattern is None else f"'{pattern}'")+
+            ")"
+        )
 
         if pattern is None:
             if self._default_project_set is None:
@@ -213,7 +225,7 @@ class Manifest():
 
         self._cmd.log().trace(
             "manifest.get_project("
-                f"'{pattern}',"
+                +(pattern if pattern is None else f"'{pattern}'")+","
                 f" project_set_pattern={project_set_pattern},"
                 f" location={location},"
                 f" relative_to={relative_to}"
