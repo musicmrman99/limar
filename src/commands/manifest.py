@@ -154,7 +154,7 @@ class Manifest():
         output = ''
 
         if args.manifest_command == 'resolve':
-            output = self.resolve(
+            output = self.resolve_project(
                 args.pattern,
                 project_set_pattern=args.project_set,
                 location=args.location,
@@ -164,7 +164,7 @@ class Manifest():
 
         return output
 
-    def resolve(self,
+    def resolve_project(self,
             pattern,
             *_,
             project_set_pattern=None,
@@ -177,7 +177,7 @@ class Manifest():
             relative_to = 'root'
 
         self._cmd.log().trace(
-            "manifest.resolve("
+            "manifest.resolve_project("
                 f"'{pattern}',"
                 f" project_set_pattern={project_set_pattern},"
                 f" location={location},"
@@ -205,12 +205,12 @@ class Manifest():
 
         project_regex = re.compile(pattern)
         try:
-            project = next(
+            project_name = next(
                 project
                 for project in project_set
                 if project_regex.search(project)
             )
-            self._cmd.log().trace('found:', project)
+            self._cmd.log().trace('found:', project_name)
         except StopIteration:
             raise VCSException(
                 f"Project not found from pattern '{pattern}'"
@@ -224,4 +224,4 @@ class Manifest():
         # - Verify (-v, --verify) makes resolve verify that the specified path exists (mutex with -c)
         # - Candidate (-c, --candidate) makes resolve come up with a proposed path where the project/list could be stored in future (mutex with -v)
 
-        return project
+        return self.projects[project_name]

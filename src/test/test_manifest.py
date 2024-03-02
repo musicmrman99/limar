@@ -1,5 +1,5 @@
 from unittest import TestCase
-from unittest.mock import Mock, mock_open, patch
+from unittest.mock import MagicMock, Mock, mock_open, patch
 
 # Under Test
 from commands.manifest import Manifest
@@ -18,13 +18,40 @@ class TestManifest(TestCase):
             if value == 'manifest.default_project_set':
                 return None
             if value == 'manifest.root':
-                return 'whatever'
+                return '/manifest/root'
             return None
         self.mock_env.get.side_effect = envGet
 
     @patch("builtins.open", new_callable=mock_open, read_data=b'\n'.join([
-        b'/home/username/test/project'
+        b'/home/username/test/projectA'
     ])+b'\n')
-    def test_resolve_basic(self, mock_manifest):
+    def test_resolve_basic(self, mock_manifest: MagicMock):
         manifest = Manifest(self.mock_cmd, self.mock_env)
-        assert manifest.resolve('test') == '/home/username/test/project'
+        mock_manifest.assert_called_with('/manifest/root/manifest.txt', 'rb')
+        self.assertEqual(manifest.resolve_project('projectA'), {
+            'ref': '/home/username/test/projectA',
+            'path': '/home/username/test/projectA',
+            'tags': set()
+        })
+
+    @patch("builtins.open", new_callable=mock_open, read_data=b'\n'.join([
+        b'/home/username/test/projectA (tagA)'
+    ])+b'\n')
+    def test_resolve_tag_is_parsed(self, _):
+        manifest = Manifest(self.mock_cmd, self.mock_env)
+        self.assertEqual(manifest.resolve_project('projectA'), {
+            'ref': '/home/username/test/projectA',
+            'path': '/home/username/test/projectA',
+            'tags': {'tagA'}
+        })
+
+    @patch("builtins.open", new_callable=mock_open, read_data=b'\n'.join([
+        b'/home/username/test/projectA (tagA)'
+    ])+b'\n')
+    def test_resolve_tag_is_parsed(self, _):
+        manifest = Manifest(self.mock_cmd, self.mock_env)
+        self.assertEqual(manifest.resolve_project('projectA'), {
+            'ref': '/home/username/test/projectA',
+            'path': '/home/username/test/projectA',
+            'tags': {'tagA'}
+        })

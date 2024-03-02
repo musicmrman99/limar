@@ -125,8 +125,16 @@ vcs init
 
 ## Building from Source
 
-To build the ANTLR4 language (after installing the packages in requiremetns)
+To build the ANTLR4 language (after installing the packages in requiremetns):
 
 ```sh
-antlr4 -Dlanguage=Python3 -o "$VCS_REPO/src/manifest/build" "$VCS_REPO/src/manifest/Manifest.g4"
+antlr4 -Dlanguage=Python3 -o src/manifest/build src/manifest/Manifest.g4
+```
+
+## Running Tests
+
+To run unit tests:
+
+```sh
+python -m unittest discover -s src
 ```
