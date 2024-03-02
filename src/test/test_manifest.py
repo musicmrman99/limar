@@ -110,3 +110,61 @@ class TestManifest(TestCase):
                 'tags': dict.fromkeys(['tagA', 'tagC'])
             }
         })
+
+    @patch("builtins.open", new_callable=mock_open, read_data=b'\n'.join([
+        b'/home/username/test/projectA (tagA, tagB)',
+        b'/home/username/test/projectB (tagA, tagC)',
+        b'setA {tagA}'
+    ])+b'\n')
+    def test_resolve_explicit_project_set_one_tag(self, _):
+        manifest = Manifest(self.mock_cmd, self.mock_env)
+
+        self.assertEqual(manifest.get_project_set('setA'), {
+            '/home/username/test/projectA': {
+                'ref': '/home/username/test/projectA',
+                'path': '/home/username/test/projectA',
+                'tags': dict.fromkeys(['tagA', 'tagB'])
+            },
+            '/home/username/test/projectB': {
+                'ref': '/home/username/test/projectB',
+                'path': '/home/username/test/projectB',
+                'tags': dict.fromkeys(['tagA', 'tagC'])
+            }
+        })
+
+    @patch("builtins.open", new_callable=mock_open, read_data=b'\n'.join([
+        b'/home/username/test/projectA (tagA, tagB)',
+        b'/home/username/test/projectB (tagA, tagC)',
+        b'setA {tagA & tagB}'
+    ])+b'\n')
+    def test_resolve_explicit_project_set_two_tags_and(self, _):
+        manifest = Manifest(self.mock_cmd, self.mock_env)
+
+        self.assertEqual(manifest.get_project_set('setA'), {
+            '/home/username/test/projectA': {
+                'ref': '/home/username/test/projectA',
+                'path': '/home/username/test/projectA',
+                'tags': dict.fromkeys(['tagA', 'tagB'])
+            }
+        })
+
+    @patch("builtins.open", new_callable=mock_open, read_data=b'\n'.join([
+        b'/home/username/test/projectA (tagA, tagB)',
+        b'/home/username/test/projectB (tagA, tagC)',
+        b'setA {tagB | tagC}'
+    ])+b'\n')
+    def test_resolve_explicit_project_set_two_tags_or(self, _):
+        manifest = Manifest(self.mock_cmd, self.mock_env)
+
+        self.assertEqual(manifest.get_project_set('setA'), {
+            '/home/username/test/projectA': {
+                'ref': '/home/username/test/projectA',
+                'path': '/home/username/test/projectA',
+                'tags': dict.fromkeys(['tagA', 'tagB'])
+            },
+            '/home/username/test/projectB': {
+                'ref': '/home/username/test/projectB',
+                'path': '/home/username/test/projectB',
+                'tags': dict.fromkeys(['tagA', 'tagC'])
+            }
+        })

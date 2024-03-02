@@ -92,7 +92,11 @@ class ManifestListenerImpl(ManifestListener):
             }
         elif ctx.op.text == '|':
             result = {
-                proj_set_name: left_proj_set[proj_set_name]
+                proj_set_name: (
+                    left_proj_set[proj_set_name]
+                    if proj_set_name in left_proj_set
+                    else right_proj_set[proj_set_name]
+                )
                 for proj_set_name in left_proj_set.keys() | right_proj_set.keys()
             }
         self._tag_operand_stack.append(result)
