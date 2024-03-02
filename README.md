@@ -4,13 +4,22 @@ Git Source Manager (though the command is called `vcs`) is a system primarily de
 
 To get it installed, see [Installation](#installation).
 
+## TODO
+
+- Execute management commands against multiple projects, eg. `vcs for ...`
+
+- Extract data about code elements (try to reuse existing libs where possible), eg:
+  - Terraform resource files, types, names, properties, etc.
+
+- Rearrange into LIMAR (Local Information Management, Architecture, and Representation system)
+
 ## Usage
 
 `vcs` has a veriety of sub-commands for different purposes:
 
 | Command        | Summary                                                            |
 |----------------|--------------------------------------------------------------------|
-| `vcs manifest` | Manage the vcs manifest file                                       |
+| `vcs manifest` | Manage the vcs manifest file and project references                |
 | `vcs clone`    | Manage your local clones of repos                                  |
 | `vcs update`   | Fetch upstream changes and sync your local refs                    |
 | `vcs many`     | Execute a supported sub-command against many repos at once         |
@@ -20,10 +29,14 @@ To get it installed, see [Installation](#installation).
 | `vcs git`      | Execute a raw git command against a repo                           |
 | `vcs sh`       | Execute a raw shell command against a repo                         |
 
-### `vcs manifest`
+### `manifest`
 
-```sh
-vcs manifest [-show] [-build]
+```
+... manifest resolve \
+  [--project-set PROJ_SET_PATTERN] \
+  [-l {local,remote}] \
+  [-r {root,manifest,current}] \
+  PATTERN
 ```
 
 ## Installation
