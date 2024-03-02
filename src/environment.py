@@ -17,7 +17,7 @@ class Environment:
         'resolve.repo': {
             'var': 'VCS_REPO'
         },
-        'resolve.manifest': {
+        'manifest.root': {
             'var': 'VCS_MANIFEST'
         },
         'resolve.default.project_list': {

@@ -129,8 +129,8 @@ class Resolve():
             relative_to = 'root'
         self._cmd.log().trace(f'resolve.project_list({pattern}, relative_to={relative_to})')
 
-        self._cmd.log().trace('searching for project list in:', self._env.get('resolve.manifest'))
-        manifest_root = self._env.get('resolve.manifest')
+        self._cmd.log().trace('searching for project list in:', self._env.get('manifest.root'))
+        manifest_root = self._env.get('manifest.root')
         project_list_regex = re.compile(f'^{pattern}-projects.txt')
 
         try:
