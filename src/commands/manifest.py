@@ -57,36 +57,44 @@ class ManifestListenerImpl(ManifestListener):
                     " local path"
                 )
 
+        # Add to main project set
         self.projects[proj_path] = {
             'ref': proj_ref,
             'path': proj_path,
-            'tags': set()
+            'tags': {}
         }
         if ctx.tagList() is not None:
-            self.projects[proj_path]['tags'] = set(
-                tag.getText()
+            self.projects[proj_path]['tags'] = {
+                tag.getText(): None
                 for tag in ctx.tagList().tag()
-            )
+            }
 
+        # Add to all relevant project sets
         for tag in self.projects[proj_path]['tags']:
             if tag not in self.project_sets.keys():
-                self.project_sets[tag] = set()
-            self.project_sets[tag].add(proj_path)
+                self.project_sets[tag] = {}
+            self.project_sets[tag][proj_path] = self.projects[proj_path]
 
     def enterTagBase(self, ctx: ManifestParser.TagBaseContext):
         project_set_name = ctx.tag().getText()
-        tag_set = set()
+        project_set = {} # In case the project set isn't defined
         if project_set_name in self.project_sets:
-            tag_set = self.project_sets[project_set_name]
-        self._tag_operand_stack.append(tag_set)
+            project_set = self.project_sets[project_set_name]
+        self._tag_operand_stack.append(project_set)
 
     def exitTagOp(self, ctx: ManifestParser.TagOpContext):
-        right_operand = self._tag_operand_stack.pop()
-        left_operand = self._tag_operand_stack.pop()
+        right_proj_set = self._tag_operand_stack.pop()
+        left_proj_set = self._tag_operand_stack.pop()
         if ctx.op.text == '&':
-            result = left_operand.intersection(right_operand)
+            result = {
+                proj_set_name: left_proj_set[proj_set_name]
+                for proj_set_name in left_proj_set.keys() & right_proj_set.keys()
+            }
         elif ctx.op.text == '|':
-            result = left_operand.union(right_operand)
+            result = {
+                proj_set_name: left_proj_set[proj_set_name]
+                for proj_set_name in left_proj_set.keys() | right_proj_set.keys()
+            }
         self._tag_operand_stack.append(result)
 
     def exitProjectSet(self, ctx: ManifestParser.ProjectSetContext):
@@ -147,14 +155,14 @@ class Manifest():
         walker = ParseTreeWalker()
         walker.walk(listener, tree)
 
-        self.projects = listener.projects
-        self.project_sets = listener.project_sets
+        self._projects = listener.projects
+        self._project_sets = listener.project_sets
 
     def __call__(self, args):
         output = ''
 
         if args.manifest_command == 'resolve':
-            output = self.resolve_project(
+            output = self.get_project(
                 args.pattern,
                 project_set_pattern=args.project_set,
                 location=args.location,
@@ -164,8 +172,31 @@ class Manifest():
 
         return output
 
-    def resolve_project(self,
-            pattern,
+    def get_project_set(self, pattern: str = None):
+        self._cmd.log().trace(f"manifest.get_project_set('{pattern}')")
+
+        if pattern is None:
+            if self._default_project_set is None:
+                project_set = self._projects
+            else:
+                project_set = self._project_sets[self._default_project_set]
+        else:
+            project_set_regex = re.compile(pattern)
+            try:
+                project_set = next(
+                    self._project_sets[project_set_name]
+                    for project_set_name in self._project_sets.keys()
+                    if project_set_regex.search(project_set_name)
+                )
+            except (KeyError, StopIteration):
+                raise VCSException(
+                    f"Project set not found from pattern '{pattern}'"
+                )
+
+        return project_set
+
+    def get_project(self,
+            pattern: str,
             *_,
             project_set_pattern=None,
             location=None,
@@ -177,7 +208,7 @@ class Manifest():
             relative_to = 'root'
 
         self._cmd.log().trace(
-            "manifest.resolve_project("
+            "manifest.get_project("
                 f"'{pattern}',"
                 f" project_set_pattern={project_set_pattern},"
                 f" location={location},"
@@ -185,32 +216,16 @@ class Manifest():
             ")"
         )
 
-        if project_set_pattern is None:
-            if self._default_project_set is None:
-                project_set = set(self.projects.keys())
-            else:
-                project_set = self.project_sets[self._default_project_set]
-        else:
-            project_set_regex = re.compile(project_set_pattern)
-            try:
-                project_set = next(
-                    self.project_sets[project_set_name]
-                    for project_set_name in self.project_sets.keys()
-                    if project_set_regex.search(project_set_name)
-                )
-            except (KeyError, StopIteration):
-                raise VCSException(
-                    f"Project set not found from pattern '{project_set_pattern}'"
-                )
+        project_set = self.get_project_set(project_set_pattern)
 
         project_regex = re.compile(pattern)
         try:
-            project_name = next(
+            project = next(
                 project
-                for project in project_set
-                if project_regex.search(project)
+                for project in project_set.values()
+                if project_regex.search(project['ref'])
             )
-            self._cmd.log().trace('found:', project_name)
+            self._cmd.log().trace('found:', project)
         except StopIteration:
             raise VCSException(
                 f"Project not found from pattern '{pattern}'"
@@ -224,4 +239,4 @@ class Manifest():
         # - Verify (-v, --verify) makes resolve verify that the specified path exists (mutex with -c)
         # - Candidate (-c, --candidate) makes resolve come up with a proposed path where the project/list could be stored in future (mutex with -v)
 
-        return self.projects[project_name]
+        return project

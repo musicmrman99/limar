@@ -28,30 +28,85 @@ class TestManifest(TestCase):
     def test_resolve_basic(self, mock_manifest: MagicMock):
         manifest = Manifest(self.mock_cmd, self.mock_env)
         mock_manifest.assert_called_with('/manifest/root/manifest.txt', 'rb')
-        self.assertEqual(manifest.resolve_project('projectA'), {
+        self.assertEqual(manifest.get_project('projectA'), {
             'ref': '/home/username/test/projectA',
             'path': '/home/username/test/projectA',
-            'tags': set()
+            'tags': {}
         })
 
     @patch("builtins.open", new_callable=mock_open, read_data=b'\n'.join([
         b'/home/username/test/projectA (tagA)'
     ])+b'\n')
-    def test_resolve_tag_is_parsed(self, _):
+    def test_resolve_single_tag_manifest(self, _):
         manifest = Manifest(self.mock_cmd, self.mock_env)
-        self.assertEqual(manifest.resolve_project('projectA'), {
+        self.assertEqual(manifest.get_project('projectA'), {
             'ref': '/home/username/test/projectA',
             'path': '/home/username/test/projectA',
-            'tags': {'tagA'}
+            'tags': dict.fromkeys(['tagA'])
         })
 
     @patch("builtins.open", new_callable=mock_open, read_data=b'\n'.join([
-        b'/home/username/test/projectA (tagA)'
+        b'/home/username/test/projectA (tagA, tagB)'
     ])+b'\n')
-    def test_resolve_tag_is_parsed(self, _):
+    def test_resolve_multi_tag_manifest(self, _):
         manifest = Manifest(self.mock_cmd, self.mock_env)
-        self.assertEqual(manifest.resolve_project('projectA'), {
+        self.assertEqual(manifest.get_project('projectA'), {
             'ref': '/home/username/test/projectA',
             'path': '/home/username/test/projectA',
-            'tags': {'tagA'}
+            'tags': dict.fromkeys(['tagA', 'tagB'])
+        })
+
+    @patch("builtins.open", new_callable=mock_open, read_data=b'\n'.join([
+        b'/home/username/test/projectA (tagA, tagB)',
+        b'/home/username/test/projectB (tagA, tagC)'
+    ])+b'\n')
+    def test_resolve_multi_projects_manifest(self, _):
+        manifest = Manifest(self.mock_cmd, self.mock_env)
+
+        self.assertEqual(manifest.get_project('projectA'), {
+            'ref': '/home/username/test/projectA',
+            'path': '/home/username/test/projectA',
+            'tags': dict.fromkeys(['tagA', 'tagB'])
+        })
+
+        self.assertEqual(manifest.get_project('projectB'), {
+            'ref': '/home/username/test/projectB',
+            'path': '/home/username/test/projectB',
+            'tags': dict.fromkeys(['tagA', 'tagC'])
+        })
+
+    @patch("builtins.open", new_callable=mock_open, read_data=b'\n'.join([
+        b'/home/username/test/projectA (tagA, tagB)',
+        b'/home/username/test/projectB (tagA, tagC)',
+    ])+b'\n')
+    def test_resolve_tag_project_set(self, _):
+        manifest = Manifest(self.mock_cmd, self.mock_env)
+
+        self.assertEqual(manifest.get_project_set('tagA'), {
+            '/home/username/test/projectA': {
+                'ref': '/home/username/test/projectA',
+                'path': '/home/username/test/projectA',
+                'tags': dict.fromkeys(['tagA', 'tagB'])
+            },
+            '/home/username/test/projectB': {
+                'ref': '/home/username/test/projectB',
+                'path': '/home/username/test/projectB',
+                'tags': dict.fromkeys(['tagA', 'tagC'])
+            }
+        })
+
+        self.assertEqual(manifest.get_project_set('tagB'), {
+            '/home/username/test/projectA': {
+                'ref': '/home/username/test/projectA',
+                'path': '/home/username/test/projectA',
+                'tags': dict.fromkeys(['tagA', 'tagB'])
+            }
+        })
+
+        self.assertEqual(manifest.get_project_set('tagC'), {
+            '/home/username/test/projectB': {
+                'ref': '/home/username/test/projectB',
+                'path': '/home/username/test/projectB',
+                'tags': dict.fromkeys(['tagA', 'tagC'])
+            }
         })
