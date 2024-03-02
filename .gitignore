@@ -1,6 +1,12 @@
-*.pyc
+# IDE files
+.vscode
 
+# Build environment files
 .venv*
+
+# Build files
+*.pyc
 /src/manifest/build
 
+# Special directories (for now)
 /manifest
