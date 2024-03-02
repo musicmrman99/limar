@@ -36,7 +36,7 @@ class CommandSet:
         self._cmds = {}
         self._env = env
         self._args = None
-        self._arg_parser = argparse.ArgumentParser()
+        self._arg_parser = argparse.ArgumentParser(prog='vcs')
         self._arg_subparsers = self._arg_parser.add_subparsers(dest="command")
 
     # Registration
