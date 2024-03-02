@@ -14,15 +14,15 @@ class Environment:
             'default': 0
         },
 
-        'resolve.repo': {
+        'repo': {
             'var': 'VCS_REPO'
         },
         'manifest.root': {
             'var': 'VCS_MANIFEST'
         },
-        'resolve.default.project_list': {
-            'var': 'VCS_DEFAULT_PROJECT_LIST',
-            'default': 'all'
+        'manifest.default_project_set': {
+            'var': 'VCS_DEFAULT_PROJECT_SET',
+            'default': None
         }
     }
 
