@@ -1,7 +1,8 @@
 import sys
-from argparse import ArgumentParser, Namespace
 
+# Types
 from environment import Environment
+from argparse import ArgumentParser, Namespace
 
 class Log:
     LEVELS = [

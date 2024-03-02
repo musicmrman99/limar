@@ -1,10 +1,12 @@
 import os
-from argparse import ArgumentParser, Namespace
 import re
 
+from exceptions import VCSException
+
+# Types
 from commandset import CommandSet
 from environment import Environment
-from exceptions import VCSException
+from argparse import ArgumentParser, Namespace
 
 # TODO:
 # - Verify (-v, --verify) makes resolve verify that the specified path exists (mutex with -c)
