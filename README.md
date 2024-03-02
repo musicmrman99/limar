@@ -22,7 +22,7 @@ To get it installed, see [Installation](#installation).
 | `vcs manifest` | Manage the vcs manifest file and project references                |
 | `vcs clone`    | Manage your local clones of repos                                  |
 | `vcs update`   | Fetch upstream changes and sync your local refs                    |
-| `vcs many`     | Execute a supported sub-command against many repos at once         |
+| `vcs for`      | Execute a supported sub-command against many repos at once         |
 | `vcs cd`       | `cd` directly to a repo based on pattern matching of your manifest |
 | `vcs info`     | Show various information about a repo's state                      |
 | `vcs mr`       | Manage PR/MR-ing branches into the upstream and cleaning up after  |
@@ -37,6 +37,57 @@ To get it installed, see [Installation](#installation).
   [-l {local,remote}] \
   [-r {root,manifest,current}] \
   PATTERN
+```
+
+### `for`
+
+#### Synopsys
+
+```
+... for [-only] [-q QUANTIFIER] [-o ORDER] SET COMMAND ARGS...
+```
+
+#### Description
+
+`-only` determines whether to short-circuit and yield the result as soon as the
+QUANTIFIER's condition has been met.
+
+`-q QUANTIFIER` determines how many projects with the TAG for which the given
+COMMAND must yield true for the overall `for` command to yield true. The default
+is `all`. It can be one of:
+
+| Quantifier                | As Expr | Result is true if COMMAND yields true for ...                     |
+|---------------------------|---------|-------------------------------------------------------------------|
+| `no`                      | ` = 0`  | No project that yields a result                                   |
+| `one`                     | ` = 1`  | Exactly one project that yields a result                          |
+| `any`                     | `>= 1`  | At least one project that yields a result                         |
+| `all`                     | ` = N`  | All projects that yield a result                                  |
+| `exactly (NUM \| NUM%)`   | ` = X`  | Exactly NUM projects or NUM% of projects that yield a result      |
+| `at-least (NUM \| NUM%)`  | `>= X`  | NUM projects or NUM% of projects or more that yield a result      |
+| `at-most (NUM \| NUM%)`   | `<= X`  | No more than NUM projects or NUM% of projects that yield a result |
+| `more-than (NUM \| NUM%)` | `>  X`  | More than NUM projects or NUM% of projects that yield a result    |
+| `less-than (NUM \| NUM%)` | `<  X`  | Less than NUM projects or NUM% of projects that yield a result    |
+
+`-o ORDER` determines which projects in the SET the COMMAND should be executed
+against. The default ORDER is `first`. It can be one of:
+
+| Order    | Execute the given COMMAND against each project ...             |
+|----------|----------------------------------------------------------------|
+| `first`  | In the order that projects are defined in the manifest         |
+| `last`   | In the reverse order that projects are defined in the manifest |
+| `random` | In a random order                                              |
+
+`SET` is the set of projects to run the COMMAND against. It can be any tag or
+tag set, whether static or dynamic.
+
+`COMMAND` is the command to run against the projects. It can be any registered
+command.
+
+`ARGS...` are the arguments (one or more) to pass to the command.
+
+Example:
+```sh
+vcs for -only -order last -at-least 5 iac git status
 ```
 
 ## Installation
