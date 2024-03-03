@@ -128,7 +128,9 @@ vcs init
 To build the ANTLR4 language (after installing the packages in requiremetns):
 
 ```sh
-antlr4 -Dlanguage=Python3 -o src/manifest/build src/manifest/Manifest.g4
+cd src/manifest && \
+  antlr4 -Dlanguage=Python3 -o ./build ./Manifest.g4 && \
+  cd ../..
 ```
 
 ## Running Tests
