@@ -257,7 +257,7 @@ class TestManifest(TestCase):
         })
 
     @patch("builtins.open", new_callable=mock_open, read_data=b'\n'.join([
-        b'@map-uris (',
+        b'@uris (',
         b'  local = /home/username/test',
         b') {',
         b'  projectA (tagA, tagB)',
@@ -266,7 +266,7 @@ class TestManifest(TestCase):
     ])+b'\n')
     def test_resolve_context_map_uris(self, _):
         manifest = Manifest(cmd=self.mock_cmd, env=self.mock_env)
-        manifest.register_context_hooks('map-uris',
+        manifest.register_context_hooks('uris',
             on_declare_project=self.set_project_local_path_hook,
             on_exit_context=self.verify_project_local_paths_hook
         )
@@ -286,7 +286,7 @@ class TestManifest(TestCase):
         })
 
     @patch("builtins.open", new_callable=mock_open, read_data=b'\n'.join([
-        b'@map-uris (',
+        b'@uris (',
         b'  remote = https://github.com/username',
         b'  local = /home/username/test',
         b') {',
@@ -296,11 +296,11 @@ class TestManifest(TestCase):
     ])+b'\n')
     def test_resolve_context_map_uris_multi_hooks(self, _):
         manifest = Manifest(cmd=self.mock_cmd, env=self.mock_env)
-        manifest.register_context_hooks('map-uris',
+        manifest.register_context_hooks('uris',
             on_declare_project=self.set_project_local_path_hook,
             on_exit_context=self.verify_project_local_paths_hook
         )
-        manifest.register_context_hooks('map-uris',
+        manifest.register_context_hooks('uris',
             on_declare_project=self.set_project_remote_path_hook,
             on_exit_context=self.verify_project_remote_paths_hook
         )
@@ -313,7 +313,7 @@ class TestManifest(TestCase):
         })
 
     @patch("builtins.open", new_callable=mock_open, read_data=b'\n'.join([
-        b'@map-uris (',
+        b'@uris (',
         b'  local = /home/username/test',
         b') {',
         b'  projectA (tagA, tagB)',
@@ -323,7 +323,7 @@ class TestManifest(TestCase):
     ])+b'\n')
     def test_resolve_mix_in_and_out_of_context(self, _):
         manifest = Manifest(cmd=self.mock_cmd, env=self.mock_env)
-        manifest.register_context_hooks('map-uris',
+        manifest.register_context_hooks('uris',
             on_declare_project=self.set_project_local_path_hook,
             on_exit_context=self.verify_project_local_paths_hook
         )
@@ -364,12 +364,12 @@ class TestManifest(TestCase):
             except KeyError:
                 raise VCSException(
                     f"Path of project '{project['ref']}' not defined"
-                    " (required by @map-uris context)"
+                    " (required by @uris context)"
                 )
             except ValueError:
                 raise VCSException(
                     f"Path of project '{project['ref']}' not absolute"
-                    " (required by @map-uris context)"
+                    " (required by @uris context)"
                 )
 
     def set_project_remote_path_hook(self, context, project):
@@ -394,10 +394,10 @@ class TestManifest(TestCase):
             except KeyError:
                 raise VCSException(
                     f"Remote of project '{project['ref']}' not defined"
-                    " (required by @map-uris context)"
+                    " (required by @uris context)"
                 )
             except ValueError:
                 raise VCSException(
                     f"Remote of project '{project['ref']}' not a valid HTTP(S)"
-                    " URL (required by @map-uris context)"
+                    " URL (required by @uris context)"
                 )

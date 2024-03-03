@@ -212,7 +212,7 @@ class Manifest():
             to, or one of:
                 'root' (resolve to an aboslute URI),
                 'manifest' (resolve to a URI relative to the relevant URI in the
-                    @map-uris context that is closest to the resolved project in
+                    @uris context that is closest to the resolved project in
                     the manifest that includes this URI type),
                 or 'current' (relative to the current directory)
             """)
