@@ -1,6 +1,11 @@
 from unittest import TestCase
 from unittest.mock import MagicMock, Mock, mock_open, patch
 
+# Util
+import os.path
+import re
+from src.exceptions import VCSException
+
 # Under Test
 from commands.manifest import Manifest
 
@@ -29,7 +34,6 @@ class TestManifest(TestCase):
         manifest = Manifest(cmd=self.mock_cmd, env=self.mock_env)
         self.assertEqual(manifest.get_project('projectA'), {
             'ref': '/home/username/test/projectA',
-            'path': '/home/username/test/projectA',
             'tags': {}
         })
         mock_manifest.assert_called_with('/manifest/root/manifest.txt', 'rb')
@@ -41,7 +45,6 @@ class TestManifest(TestCase):
         manifest = Manifest(cmd=self.mock_cmd, env=self.mock_env)
         self.assertEqual(manifest.get_project('projectA'), {
             'ref': '/home/username/test/projectA',
-            'path': '/home/username/test/projectA',
             'tags': dict.fromkeys(['tagA'])
         })
 
@@ -52,7 +55,6 @@ class TestManifest(TestCase):
         manifest = Manifest(cmd=self.mock_cmd, env=self.mock_env)
         self.assertEqual(manifest.get_project('projectA'), {
             'ref': '/home/username/test/projectA',
-            'path': '/home/username/test/projectA',
             'tags': dict.fromkeys(['tagA', 'tagB'])
         })
 
@@ -65,13 +67,11 @@ class TestManifest(TestCase):
 
         self.assertEqual(manifest.get_project('projectA'), {
             'ref': '/home/username/test/projectA',
-            'path': '/home/username/test/projectA',
             'tags': dict.fromkeys(['tagA', 'tagB'])
         })
 
         self.assertEqual(manifest.get_project('projectB'), {
             'ref': '/home/username/test/projectB',
-            'path': '/home/username/test/projectB',
             'tags': dict.fromkeys(['tagA', 'tagC'])
         })
 
@@ -85,12 +85,10 @@ class TestManifest(TestCase):
         self.assertEqual(manifest.get_project_set('tagA'), {
             '/home/username/test/projectA': {
                 'ref': '/home/username/test/projectA',
-                'path': '/home/username/test/projectA',
                 'tags': dict.fromkeys(['tagA', 'tagB'])
             },
             '/home/username/test/projectB': {
                 'ref': '/home/username/test/projectB',
-                'path': '/home/username/test/projectB',
                 'tags': dict.fromkeys(['tagA', 'tagC'])
             }
         })
@@ -98,7 +96,6 @@ class TestManifest(TestCase):
         self.assertEqual(manifest.get_project_set('tagB'), {
             '/home/username/test/projectA': {
                 'ref': '/home/username/test/projectA',
-                'path': '/home/username/test/projectA',
                 'tags': dict.fromkeys(['tagA', 'tagB'])
             }
         })
@@ -106,7 +103,6 @@ class TestManifest(TestCase):
         self.assertEqual(manifest.get_project_set('tagC'), {
             '/home/username/test/projectB': {
                 'ref': '/home/username/test/projectB',
-                'path': '/home/username/test/projectB',
                 'tags': dict.fromkeys(['tagA', 'tagC'])
             }
         })
@@ -122,12 +118,10 @@ class TestManifest(TestCase):
         self.assertEqual(manifest.get_project_set('setA'), {
             '/home/username/test/projectA': {
                 'ref': '/home/username/test/projectA',
-                'path': '/home/username/test/projectA',
                 'tags': dict.fromkeys(['tagA', 'tagB'])
             },
             '/home/username/test/projectB': {
                 'ref': '/home/username/test/projectB',
-                'path': '/home/username/test/projectB',
                 'tags': dict.fromkeys(['tagA', 'tagC'])
             }
         })
@@ -143,7 +137,6 @@ class TestManifest(TestCase):
         self.assertEqual(manifest.get_project_set('setA'), {
             '/home/username/test/projectA': {
                 'ref': '/home/username/test/projectA',
-                'path': '/home/username/test/projectA',
                 'tags': dict.fromkeys(['tagA', 'tagB'])
             }
         })
@@ -159,12 +152,10 @@ class TestManifest(TestCase):
         self.assertEqual(manifest.get_project_set('setA'), {
             '/home/username/test/projectA': {
                 'ref': '/home/username/test/projectA',
-                'path': '/home/username/test/projectA',
                 'tags': dict.fromkeys(['tagA', 'tagB'])
             },
             '/home/username/test/projectB': {
                 'ref': '/home/username/test/projectB',
-                'path': '/home/username/test/projectB',
                 'tags': dict.fromkeys(['tagA', 'tagC'])
             }
         })
@@ -181,12 +172,10 @@ class TestManifest(TestCase):
         self.assertEqual(manifest.get_project_set('setA'), {
             '/home/username/test/projectA': {
                 'ref': '/home/username/test/projectA',
-                'path': '/home/username/test/projectA',
                 'tags': dict.fromkeys(['tagA', 'tagB'])
             },
             '/home/username/test/projectC': {
                 'ref': '/home/username/test/projectC',
-                'path': '/home/username/test/projectC',
                 'tags': dict.fromkeys(['tagD'])
             }
         })
@@ -204,12 +193,10 @@ class TestManifest(TestCase):
         self.assertEqual(manifest.get_project_set('setA'), {
             '/home/username/test/projectA': {
                 'ref': '/home/username/test/projectA',
-                'path': '/home/username/test/projectA',
                 'tags': dict.fromkeys(['tagA', 'tagB'])
             },
             '/home/username/test/projectC': {
                 'ref': '/home/username/test/projectC',
-                'path': '/home/username/test/projectC',
                 'tags': dict.fromkeys(['tagD'])
             }
         })
@@ -217,7 +204,6 @@ class TestManifest(TestCase):
         self.assertEqual(manifest.get_project_set('setB'), {
             '/home/username/test/projectA': {
                 'ref': '/home/username/test/projectA',
-                'path': '/home/username/test/projectA',
                 'tags': dict.fromkeys(['tagA', 'tagB'])
             }
         })
@@ -236,12 +222,10 @@ class TestManifest(TestCase):
         self.assertEqual(manifest.get_project_set('setA'), {
             '/home/username/test/projectA': {
                 'ref': '/home/username/test/projectA',
-                'path': '/home/username/test/projectA',
                 'tags': dict.fromkeys(['tagA', 'tagB'])
             },
             '/home/username/test/projectD': {
                 'ref': '/home/username/test/projectD',
-                'path': '/home/username/test/projectD',
                 'tags': dict.fromkeys(['tagD', 'tagE'])
             }
         })
@@ -260,18 +244,44 @@ class TestManifest(TestCase):
         self.assertEqual(manifest.get_project_set('setA'), {
             '/home/username/test/projectA': {
                 'ref': '/home/username/test/projectA',
-                'path': '/home/username/test/projectA',
                 'tags': dict.fromkeys(['tagA', 'tagB'])
             },
             '/home/username/test/projectD': {
                 'ref': '/home/username/test/projectD',
-                'path': '/home/username/test/projectD',
                 'tags': dict.fromkeys(['tagD', 'tagE'])
             },
             '/home/username/test/projectE': {
                 'ref': '/home/username/test/projectE',
-                'path': '/home/username/test/projectE',
                 'tags': dict.fromkeys(['tagD', 'tagB', 'tagF'])
+            }
+        })
+
+    @patch("builtins.open", new_callable=mock_open, read_data=b'\n'.join([
+        b'@map-uris (',
+        b'  local = /home/username/test',
+        b') {',
+        b'  projectA (tagA, tagB)',
+        b'  setA {tagA}',
+        b'}',
+    ])+b'\n')
+    def test_resolve_context_map_uris(self, _):
+        manifest = Manifest(cmd=self.mock_cmd, env=self.mock_env)
+        manifest.register_context_hooks('map-uris',
+            on_declare_project=self.set_project_local_path_hook,
+            on_exit_context=self.verify_project_local_paths_hook
+        )
+
+        self.assertEqual(manifest.get_project('projectA'), {
+            'ref': 'projectA',
+            'path': '/home/username/test/projectA',
+            'tags': dict.fromkeys(['tagA', 'tagB'])
+        })
+
+        self.assertEqual(manifest.get_project_set('setA'), {
+            'projectA': {
+                'ref': 'projectA',
+                'path': '/home/username/test/projectA',
+                'tags': dict.fromkeys(['tagA', 'tagB'])
             }
         })
 
@@ -281,16 +291,113 @@ class TestManifest(TestCase):
         b'  local = /home/username/test',
         b') {',
         b'  projectA (tagA, tagB)',
-        b'  setA {tagA}'
+        b'  setA {tagA}',
         b'}',
     ])+b'\n')
-    def test_resolve_context_map_uris(self, _):
+    def test_resolve_context_map_uris_multi_hooks(self, _):
         manifest = Manifest(cmd=self.mock_cmd, env=self.mock_env)
+        manifest.register_context_hooks('map-uris',
+            on_declare_project=self.set_project_local_path_hook,
+            on_exit_context=self.verify_project_local_paths_hook
+        )
+        manifest.register_context_hooks('map-uris',
+            on_declare_project=self.set_project_remote_path_hook,
+            on_exit_context=self.verify_project_remote_paths_hook
+        )
 
-        self.assertEqual(manifest.get_project_set('setA'), {
-            '/home/username/test/projectA': {
-                'ref': 'projectA',
-                'path': '/home/username/test/projectA',
-                'tags': dict.fromkeys(['tagA', 'tagB'])
-            }
+        self.assertEqual(manifest.get_project('projectA'), {
+            'ref': 'projectA',
+            'path': '/home/username/test/projectA',
+            'remote': 'https://github.com/username/projectA',
+            'tags': dict.fromkeys(['tagA', 'tagB'])
         })
+
+    @patch("builtins.open", new_callable=mock_open, read_data=b'\n'.join([
+        b'@map-uris (',
+        b'  local = /home/username/test',
+        b') {',
+        b'  projectA (tagA, tagB)',
+        b'  setA {tagA}',
+        b'}',
+        b'projectB (tagA, tagB)',
+    ])+b'\n')
+    def test_resolve_mix_in_and_out_of_context(self, _):
+        manifest = Manifest(cmd=self.mock_cmd, env=self.mock_env)
+        manifest.register_context_hooks('map-uris',
+            on_declare_project=self.set_project_local_path_hook,
+            on_exit_context=self.verify_project_local_paths_hook
+        )
+
+        self.assertEqual(manifest.get_project('projectA'), {
+            'ref': 'projectA',
+            'path': '/home/username/test/projectA',
+            'tags': dict.fromkeys(['tagA', 'tagB'])
+        })
+
+        self.assertEqual(manifest.get_project('projectB'), {
+            'ref': 'projectB',
+            'tags': dict.fromkeys(['tagA', 'tagB'])
+        })
+
+    # Utils
+    # --------------------------------------------------
+
+    def set_project_local_path_hook(self, context, project):
+        proj_path = project['ref']
+        try:
+            context_local_path = context['opts']['local']
+            if not context_local_path.startswith('/'):
+                raise ValueError('local mapped URI not absolute')
+
+            proj_path = os.path.join(context_local_path, proj_path)
+
+        except (KeyError, ValueError):
+            pass # For now, until all nested contexts have been tried
+
+        project['path'] = proj_path
+
+    def verify_project_local_paths_hook(self, context, projects, project_sets):
+        for project in projects.values():
+            try:
+                if not project['path'].startswith('/'):
+                    raise ValueError('project path is not absolute')
+            except KeyError:
+                raise VCSException(
+                    f"Path of project '{project['ref']}' not defined"
+                    " (required by @map-uris context)"
+                )
+            except ValueError:
+                raise VCSException(
+                    f"Path of project '{project['ref']}' not absolute"
+                    " (required by @map-uris context)"
+                )
+
+    def set_project_remote_path_hook(self, context, project):
+        proj_url = project['ref']
+        try:
+            context_remote_url = context['opts']['remote']
+            if not re.match('^https?://', context_remote_url):
+                raise ValueError('remote mapped URI is not a HTTP(S) URL')
+
+            proj_url = os.path.join(context_remote_url, proj_url)
+
+        except (KeyError, ValueError):
+            pass # For now, until all nested contexts have been tried
+
+        project['remote'] = proj_url
+
+    def verify_project_remote_paths_hook(self, context, projects, project_sets):
+        for project in projects.values():
+            try:
+                if not re.match('^https?://', project['remote']):
+                    raise ValueError('project path is not a HTTP(S) URL')
+            except KeyError:
+                raise VCSException(
+                    f"Remote of project '{project['ref']}' not defined"
+                    " (required by @map-uris context)"
+                )
+            except ValueError:
+                raise VCSException(
+                    f"Remote of project '{project['ref']}' not a valid HTTP(S)"
+                    " URL (required by @map-uris context)"
+                )

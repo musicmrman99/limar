@@ -15,68 +15,134 @@ from argparse import ArgumentParser, Namespace
 from src.commands.log import Log
 
 class ManifestListenerImpl(ManifestListener):
-    def __init__(self, supported_contexts = None):
+    def __init__(self,
+            logger: Log,
+            context_hooks: 'dict[str, dict[str, list[function]]]' = None
+    ):
+        """
+        Initialises the manifest listener.
+
+        context_hooks must be a dictionary of the following format:
+
+            {'context-type-name': {'hook_name': [hook(), ...]}, ...}
+
+        The following hook_names must be defined for every context type given:
+
+        - on_enter_manifest
+          - Hook Spec: hook()
+
+        - on_enter_context
+          - Hook Spec: hook(context)
+
+        - on_declare_project
+          - Hook Spec: hook(context, project)
+
+        - on_declare_project_set
+          - Hook Spec: hook(context, project_set)
+
+        - on_exit_context
+          - Hook Spec: hook(context, projects, project_sets)
+          - Note that projects and project_sets only contain those that were
+            declared in this context.
+
+        - on_exit_manifest
+          - Hook Spec: hook(projects, project_sets)
+        """
+
         # Outputs
         self.projects = {}
         self.project_sets = {}
 
         # Internal operations
-        self._supported_contexts = supported_contexts
-        if self._supported_contexts is None:
-            self._supported_contexts = {}
+        self._logger = logger
+
+        self._context_hooks = context_hooks
+        if self._context_hooks is None:
+            self._context_hooks = {}
 
         self._contexts = []
         self._tag_operand_stack = []
 
+    def enterManifest(self, ctx: ManifestParser.ManifestContext):
+        # Call all registered 'on_enter_manifest' hooks
+        for context_hooks in self._context_hooks.values():
+            for hook in context_hooks['on_enter_manifest']:
+                hook()
+
+    def exitManifest(self, ctx: ManifestParser.ManifestContext):
+        # Call all registered 'on_enter_manifest' hooks
+        for context_hooks in self._context_hooks.values():
+            for hook in context_hooks['on_exit_manifest']:
+                hook(self.projects, self.project_sets)
+
     def enterContext(self, ctx: ManifestParser.ContextContext):
-        self._contexts.append({'type': ctx.typeName.text, 'opts': {}})
+        context_type = ctx.typeName.text
+        if context_type not in self._context_hooks.keys():
+            self._logger.warn(
+                f"Unsupported context type '{context['type']}' found."
+                " Ignoring context."
+            )
+            return
+
+        context = {
+            'type': context_type,
+            'opts': {},
+            'projects': {},
+            'project_sets': {}
+        }
+
+        # TODO: handle optional contextOpts
         for opt in ctx.contextOpts().contextOpt():
-            self._contexts[-1]['opts'][opt.optName.text] = opt.optValue.getText()
+            context['opts'][opt.optName.text] = opt.optValue.getText()
+
+        self._contexts.append(context)
+
+        # Call all 'on_enter_context' hooks registered for the context
+        context_hooks = self._context_hooks[context['type']]
+        for hook in context_hooks['on_enter_context']:
+            hook(context)
 
     def exitContext(self, ctx: ManifestParser.ContextContext):
-        self._contexts.pop()
+        old_context = self._contexts.pop()
+
+        # Call all 'on_exit_context' hooks registered for the context
+        context_hooks = self._context_hooks[old_context['type']]
+        for hook in context_hooks['on_exit_context']:
+            hook(
+                old_context,
+                old_context['projects'],
+                old_context['project_sets']
+            )
 
     def enterProject(self, ctx: ManifestParser.ProjectContext):
-        proj_ref = ctx.path().getText()
-        proj_path = proj_ref
-        try:
-            context_local_path = next(
-                context
-                for context in reversed(self._contexts)
-                if (
-                    context['type'] == 'map-uris' and     # Has context
-                    'local' in context['opts'].keys() and # Local is defined
-                    context['opts']['local'][0] == '/'    # Local is absolute
-                )
-            )['opts']['local']
-
-            proj_path = os.path.join(context_local_path, proj_path)
-
-        except (KeyError, StopIteration):
-            if proj_path[0] != '/':
-                raise VCSException(
-                    f"Project '{proj_path}' is not an absolute path and is"
-                    " not contained in an @map-uris context with an absolute"
-                    " local path"
-                )
+        proj_ref = ctx.ref().getText()
 
         # Add to main project set
-        self.projects[proj_path] = {
+        self.projects[proj_ref] = {
             'ref': proj_ref,
-            'path': proj_path,
             'tags': {}
         }
         if ctx.tagList() is not None:
-            self.projects[proj_path]['tags'] = {
+            self.projects[proj_ref]['tags'] = {
                 tag.getText(): None
                 for tag in ctx.tagList().tag()
             }
 
         # Add to all relevant project sets
-        for tag in self.projects[proj_path]['tags']:
+        for tag in self.projects[proj_ref]['tags']:
             if tag not in self.project_sets.keys():
                 self.project_sets[tag] = {}
-            self.project_sets[tag][proj_path] = self.projects[proj_path]
+            self.project_sets[tag][proj_ref] = self.projects[proj_ref]
+
+        # Add to all current contexts
+        for context in self._contexts:
+            context['projects'][proj_ref] = self.projects[proj_ref]
+
+        # Call all registered 'on_declare_project' hooks for all active contexts
+        for context in self._contexts:
+            context_hooks = self._context_hooks[context['type']]
+            for hook in context_hooks['on_declare_project']:
+                hook(context, self.projects[proj_ref])
 
     def enterTagBase(self, ctx: ManifestParser.TagBaseContext):
         project_set_name = ctx.tag().getText()
@@ -105,7 +171,23 @@ class ManifestListenerImpl(ManifestListener):
         self._tag_operand_stack.append(result)
 
     def exitProjectSet(self, ctx: ManifestParser.ProjectSetContext):
-        self.project_sets[ctx.path().getText()] = self._tag_operand_stack.pop()
+        proj_set_ref = ctx.ref().getText()
+
+        # Add to main project sets
+        self.project_sets[proj_set_ref] = self._tag_operand_stack.pop()
+
+        # Add to all current contexts
+        for context in self._contexts:
+            context['project_sets'][proj_set_ref] = (
+                self.project_sets[proj_set_ref]
+            )
+
+        # Call all registered 'on_declare_project_set' hooks for all active
+        # contexts
+        for context in self._contexts:
+            context_hooks = self._context_hooks[context['type']]
+            for hook in context_hooks['on_declare_project_set']:
+                hook(context, self.project_sets[proj_set_ref])
 
 class Manifest():
     @staticmethod
@@ -156,37 +238,46 @@ class Manifest():
         self._manifest_root = env.get('manifest.root')
         self._default_project_set = env.get('manifest.default_project_set')
 
-        self._supported_contexts = {}
-        self._projects = None
-        self._project_sets = None
+        self._supported_contexts: dict[str, dict[str, list[function]]] = {}
+        self._projects: dict[str, dict[str, object]] = None
+        self._project_sets: dict[str, dict[str, dict[str, object]]] = None
 
-    def register_context_option(self, typeName, optName, config):
-        # It is only useful to register context options *before* the config is
-        # parsed, so if it's already been parsed, then this will have no effect.
-        # As such, fail loudly to tell command developers that they've done
-        # something wrong.
+    def register_context_hooks(
+            self,
+            typeName: str,
+            **hooks
+    ):
+        # It is only useful to register context hooks *before* the manifest is
+        # parsed. If it's already been parsed, then registration will have no
+        # effect. As such, fail loudly to tell command developers that they've
+        # done something wrong.
         if self._projects is not None:
             raise VCSException(
-                f"Attempted registration of option '{optName}' for context type"
-                f" '{typeName}' after manifest has been parsed. This was"
-                " probably caused by inappropriate use of"
+                f"Attempted registration of context type '{typeName}' after"
+                " manifest has been parsed. This was probably caused by"
+                " inappropriate use of"
                 " commands.Manifest.register_context_option() by the last"
                 " command to be invoked (possibly internally)."
             )
 
-        if typeName not in self._supported_contexts:
-            self._supported_contexts[typeName] = {}
+        sup_ctx = self._supported_contexts
+        if typeName not in sup_ctx:
+            sup_ctx[typeName] = {
+                'on_enter_manifest': [],
+                'on_enter_context': [],
+                'on_declare_project': [],
+                'on_declare_project_set': [],
+                'on_exit_context': [],
+                'on_exit_manifest': []
+            }
 
-        if optName not in self._supported_contexts[typeName]:
-            self._supported_contexts[typeName][optName] = config
-        else:
-            # It would probably just confuse command developers for this to
-            # either overwrite the config, ignore the request, or try to merge
-            # the config, so just fail.
-            raise VCSException(
-                'Attempted registration of already-registered option'
-                f" '{optName}' for context type '{typeName}'"
-            )
+        sup_ctx[typeName] = {
+            key: [
+                *sup_ctx[typeName][key],
+                *([hooks[key]] if key in hooks.keys() else [])
+            ]
+            for key in sup_ctx[typeName].keys()
+        }
 
     def _load_manifest(self):
         self._logger.trace(f"manifest._load_manifest()")
@@ -199,7 +290,7 @@ class Manifest():
         parser = ManifestParser(tokens)
         tree = parser.manifest()
 
-        listener = ManifestListenerImpl(self._supported_contexts)
+        listener = ManifestListenerImpl(self._logger, self._supported_contexts)
         walker = ParseTreeWalker()
         walker.walk(listener, tree)
 
@@ -300,7 +391,7 @@ class Manifest():
         # - Map to relative if relative_to is 'manifest' or 'relative'
         #
         # Ideas:
-        # - Verify (-v, --verify) makes resolve verify that the specified path exists (mutex with -c)
-        # - Candidate (-c, --candidate) makes resolve come up with a proposed path where the project/list could be stored in future (mutex with -v)
+        # - Verify (-v, --verify) makes resolve verify that the specified project exists (mutex with -c)
+        # - Candidate (-c, --candidate) makes resolve come up with a proposed project path where the project/list could be stored in future (mutex with -v)
 
         return project

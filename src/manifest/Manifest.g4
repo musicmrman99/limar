@@ -17,9 +17,9 @@ contextOpts : GROUP_OPEN (
               ) SPACE? GROUP_CLOSE ;
 contextOpt : optName=NAME SPACE? NAME_VALUE_SEPARATOR SPACE? optValue=toEndOfGroupItem ;
 
-project : path (SPACE GROUP_OPEN SPACE? tagList SPACE? GROUP_CLOSE)? ;
-projectSet : path SPACE BLOCK_OPEN SPACE? tagSet SPACE? BLOCK_CLOSE ;
-path : PATH | NAME ;
+project : ref (SPACE GROUP_OPEN SPACE? tagList SPACE? GROUP_CLOSE)? ;
+projectSet : ref SPACE BLOCK_OPEN SPACE? tagSet SPACE? BLOCK_CLOSE ;
+ref : PATH | NAME ;
 
 tagList : tag ((SPACE? GROUP_ITEM_SEPARATOR SPACE? tag)+)? ;
 tagSet : tag                                              #tagBase
