@@ -27,6 +27,10 @@ class TestManifest(TestCase):
             return None
         self.mock_env.get.side_effect = envGet
 
+        # Used in some context hooks tests
+        self._uris_local_projects = set()
+        self._uris_remote_projects = set()
+
     @patch("builtins.open", new_callable=mock_open, read_data=b'\n'.join([
         b'/home/username/test/projectA'
     ])+b'\n')
@@ -420,7 +424,8 @@ class TestManifest(TestCase):
         manifest = Manifest(cmd=self.mock_cmd, env=self.mock_env)
         manifest.register_context_hooks('uris',
             on_declare_project=self.set_project_local_path_hook,
-            on_exit_context=self.verify_project_local_paths_hook
+            on_exit_context=self.add_verify_project_local_paths_hook,
+            on_exit_manifest=self.verify_project_local_paths_hook
         )
 
         self.assertEqual(manifest.get_project('projectA'), {
@@ -439,6 +444,24 @@ class TestManifest(TestCase):
 
     @patch("builtins.open", new_callable=mock_open, read_data=b'\n'.join([
         b'@uris (',
+        b'  local = home/username/test',
+        b') {',
+        b'  projectA (tagA, tagB)',
+        b'  setA {tagA}',
+        b'}',
+    ])+b'\n')
+    def test_resolve_context_fails_if_hook_fails(self, _):
+        manifest = Manifest(cmd=self.mock_cmd, env=self.mock_env)
+        manifest.register_context_hooks('uris',
+            on_declare_project=self.set_project_local_path_hook,
+            on_exit_context=self.add_verify_project_local_paths_hook,
+            on_exit_manifest=self.verify_project_local_paths_hook
+        )
+
+        self.assertRaises(VCSException, manifest.get_project, 'projectA')
+
+    @patch("builtins.open", new_callable=mock_open, read_data=b'\n'.join([
+        b'@uris (',
         b'  remote = https://github.com/username',
         b'  local = /home/username/test',
         b') {',
@@ -446,15 +469,17 @@ class TestManifest(TestCase):
         b'  setA {tagA}',
         b'}',
     ])+b'\n')
-    def test_resolve_context_complex_multi_hooks(self, _):
+    def test_resolve_context_multi_hooks(self, _):
         manifest = Manifest(cmd=self.mock_cmd, env=self.mock_env)
         manifest.register_context_hooks('uris',
             on_declare_project=self.set_project_local_path_hook,
-            on_exit_context=self.verify_project_local_paths_hook
+            on_exit_context=self.add_verify_project_local_paths_hook,
+            on_exit_manifest=self.verify_project_local_paths_hook
         )
         manifest.register_context_hooks('uris',
             on_declare_project=self.set_project_remote_path_hook,
-            on_exit_context=self.verify_project_remote_paths_hook
+            on_exit_context=self.add_verify_project_remote_paths_hook,
+            on_exit_manifest=self.verify_project_remote_paths_hook
         )
 
         self.assertEqual(manifest.get_project('projectA'), {
@@ -473,25 +498,69 @@ class TestManifest(TestCase):
             }
         })
 
+    @patch("builtins.open", new_callable=mock_open, read_data=b'\n'.join([
+        b'@uris (',
+        b'  local = /home/username/test',
+        b') {',
+        b'  projectA (tagA)',
+        b'  @uris (local = /home/username/elsewhere) {',
+        b'    projectB (tagA)',
+        b'  }',
+        b'  setA {tagA}',
+        b'}',
+    ])+b'\n')
+    def test_resolve_context_nested(self, _):
+        manifest = Manifest(cmd=self.mock_cmd, env=self.mock_env)
+        manifest.register_context_hooks('uris',
+            on_declare_project=self.set_project_local_path_hook,
+            on_exit_context=self.add_verify_project_local_paths_hook,
+            on_exit_manifest=self.verify_project_local_paths_hook
+        )
+
+        self.assertEqual(manifest.get_project_set('setA'), {
+            'projectA': {
+                'ref': 'projectA',
+                'path': '/home/username/test/projectA',
+                'tags': dict.fromkeys(['tagA'])
+            },
+            'projectB': {
+                'ref': 'projectB',
+                'path': '/home/username/elsewhere/projectB',
+                'tags': dict.fromkeys(['tagA'])
+            }
+        })
+
     # Utils
     # --------------------------------------------------
 
     def set_project_local_path_hook(self, context, project):
-        proj_path = project['ref']
+        proj_ref = project['ref']
+        if 'path' not in project:
+            project['path'] = proj_ref
+
         try:
             context_local_path = context['opts']['local']
             if not context_local_path.startswith('/'):
                 raise ValueError('local mapped URI not absolute')
 
-            proj_path = os.path.join(context_local_path, proj_path)
+            project['path'] = os.path.join(context_local_path, proj_ref)
 
         except (KeyError, ValueError):
             pass # For now, until all nested contexts have been tried
 
-        project['path'] = proj_path
+    def add_verify_project_local_paths_hook(self, context, projects, project_sets):
+        self._uris_local_projects = (
+            self._uris_local_projects | projects.keys()
+        )
 
-    def verify_project_local_paths_hook(self, context, projects, project_sets):
-        for project in projects.values():
+    def verify_project_local_paths_hook(self, projects, project_sets):
+        local_projects = (
+            project
+            for project in projects.values()
+            if project['ref'] in self._uris_local_projects
+        )
+
+        for project in local_projects:
             try:
                 if not project['path'].startswith('/'):
                     raise ValueError('project path is not absolute')
@@ -507,21 +576,33 @@ class TestManifest(TestCase):
                 )
 
     def set_project_remote_path_hook(self, context, project):
-        proj_url = project['ref']
+        proj_ref = project['ref']
+        if 'remote' not in project:
+            project['remote'] = proj_ref
+
         try:
             context_remote_url = context['opts']['remote']
             if not re.match('^https?://', context_remote_url):
                 raise ValueError('remote mapped URI is not a HTTP(S) URL')
 
-            proj_url = os.path.join(context_remote_url, proj_url)
+            project['remote'] = os.path.join(context_remote_url, proj_ref)
 
         except (KeyError, ValueError):
             pass # For now, until all nested contexts have been tried
 
-        project['remote'] = proj_url
+    def add_verify_project_remote_paths_hook(self, context, projects, project_sets):
+        self._uris_remote_projects = (
+            self._uris_remote_projects | projects.keys()
+        )
 
-    def verify_project_remote_paths_hook(self, context, projects, project_sets):
-        for project in projects.values():
+    def verify_project_remote_paths_hook(self, projects, project_sets):
+        remote_projects = (
+            project
+            for project in projects.values()
+            if project['ref'] in self._uris_remote_projects
+        )
+
+        for project in remote_projects:
             try:
                 if not re.match('^https?://', project['remote']):
                     raise ValueError('project path is not a HTTP(S) URL')
