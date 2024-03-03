@@ -26,19 +26,19 @@ class TestManifest(TestCase):
         b'/home/username/test/projectA'
     ])+b'\n')
     def test_resolve_basic(self, mock_manifest: MagicMock):
-        manifest = Manifest(self.mock_cmd, self.mock_env)
-        mock_manifest.assert_called_with('/manifest/root/manifest.txt', 'rb')
+        manifest = Manifest(cmd=self.mock_cmd, env=self.mock_env)
         self.assertEqual(manifest.get_project('projectA'), {
             'ref': '/home/username/test/projectA',
             'path': '/home/username/test/projectA',
             'tags': {}
         })
+        mock_manifest.assert_called_with('/manifest/root/manifest.txt', 'rb')
 
     @patch("builtins.open", new_callable=mock_open, read_data=b'\n'.join([
         b'/home/username/test/projectA (tagA)'
     ])+b'\n')
     def test_resolve_single_tag_manifest(self, _):
-        manifest = Manifest(self.mock_cmd, self.mock_env)
+        manifest = Manifest(cmd=self.mock_cmd, env=self.mock_env)
         self.assertEqual(manifest.get_project('projectA'), {
             'ref': '/home/username/test/projectA',
             'path': '/home/username/test/projectA',
@@ -49,7 +49,7 @@ class TestManifest(TestCase):
         b'/home/username/test/projectA (tagA, tagB)'
     ])+b'\n')
     def test_resolve_multi_tag_manifest(self, _):
-        manifest = Manifest(self.mock_cmd, self.mock_env)
+        manifest = Manifest(cmd=self.mock_cmd, env=self.mock_env)
         self.assertEqual(manifest.get_project('projectA'), {
             'ref': '/home/username/test/projectA',
             'path': '/home/username/test/projectA',
@@ -61,7 +61,7 @@ class TestManifest(TestCase):
         b'/home/username/test/projectB (tagA, tagC)'
     ])+b'\n')
     def test_resolve_multi_projects_manifest(self, _):
-        manifest = Manifest(self.mock_cmd, self.mock_env)
+        manifest = Manifest(cmd=self.mock_cmd, env=self.mock_env)
 
         self.assertEqual(manifest.get_project('projectA'), {
             'ref': '/home/username/test/projectA',
@@ -80,7 +80,7 @@ class TestManifest(TestCase):
         b'/home/username/test/projectB (tagA, tagC)',
     ])+b'\n')
     def test_resolve_tag_project_set(self, _):
-        manifest = Manifest(self.mock_cmd, self.mock_env)
+        manifest = Manifest(cmd=self.mock_cmd, env=self.mock_env)
 
         self.assertEqual(manifest.get_project_set('tagA'), {
             '/home/username/test/projectA': {
@@ -117,7 +117,7 @@ class TestManifest(TestCase):
         b'setA {tagA}'
     ])+b'\n')
     def test_resolve_explicit_project_set_one_tag(self, _):
-        manifest = Manifest(self.mock_cmd, self.mock_env)
+        manifest = Manifest(cmd=self.mock_cmd, env=self.mock_env)
 
         self.assertEqual(manifest.get_project_set('setA'), {
             '/home/username/test/projectA': {
@@ -138,7 +138,7 @@ class TestManifest(TestCase):
         b'setA {tagA & tagB}'
     ])+b'\n')
     def test_resolve_explicit_project_set_two_tags_and(self, _):
-        manifest = Manifest(self.mock_cmd, self.mock_env)
+        manifest = Manifest(cmd=self.mock_cmd, env=self.mock_env)
 
         self.assertEqual(manifest.get_project_set('setA'), {
             '/home/username/test/projectA': {
@@ -154,7 +154,7 @@ class TestManifest(TestCase):
         b'setA {tagB | tagC}'
     ])+b'\n')
     def test_resolve_explicit_project_set_two_tags_or(self, _):
-        manifest = Manifest(self.mock_cmd, self.mock_env)
+        manifest = Manifest(cmd=self.mock_cmd, env=self.mock_env)
 
         self.assertEqual(manifest.get_project_set('setA'), {
             '/home/username/test/projectA': {
@@ -176,7 +176,7 @@ class TestManifest(TestCase):
         b'setA {tagA & tagB | tagD}'
     ])+b'\n')
     def test_resolve_explicit_project_set_grouping_default(self, _):
-        manifest = Manifest(self.mock_cmd, self.mock_env)
+        manifest = Manifest(cmd=self.mock_cmd, env=self.mock_env)
 
         self.assertEqual(manifest.get_project_set('setA'), {
             '/home/username/test/projectA': {
@@ -199,7 +199,7 @@ class TestManifest(TestCase):
         b'setB {tagA & (tagB | tagD)}'
     ])+b'\n')
     def test_resolve_explicit_project_set_grouping_explicit(self, _):
-        manifest = Manifest(self.mock_cmd, self.mock_env)
+        manifest = Manifest(cmd=self.mock_cmd, env=self.mock_env)
 
         self.assertEqual(manifest.get_project_set('setA'), {
             '/home/username/test/projectA': {
@@ -231,7 +231,7 @@ class TestManifest(TestCase):
         b'setA { (tagA & tagB) | (tagD & tagE) }'
     ])+b'\n')
     def test_resolve_explicit_project_set_grouping_of_groups(self, _):
-        manifest = Manifest(self.mock_cmd, self.mock_env)
+        manifest = Manifest(cmd=self.mock_cmd, env=self.mock_env)
 
         self.assertEqual(manifest.get_project_set('setA'), {
             '/home/username/test/projectA': {
@@ -255,7 +255,7 @@ class TestManifest(TestCase):
         b'setA { (tagA & tagB) | (tagD & (tagE | tagF)) }'
     ])+b'\n')
     def test_resolve_explicit_project_set_grouping_nesting(self, _):
-        manifest = Manifest(self.mock_cmd, self.mock_env)
+        manifest = Manifest(cmd=self.mock_cmd, env=self.mock_env)
 
         self.assertEqual(manifest.get_project_set('setA'), {
             '/home/username/test/projectA': {
@@ -272,5 +272,25 @@ class TestManifest(TestCase):
                 'ref': '/home/username/test/projectE',
                 'path': '/home/username/test/projectE',
                 'tags': dict.fromkeys(['tagD', 'tagB', 'tagF'])
+            }
+        })
+
+    @patch("builtins.open", new_callable=mock_open, read_data=b'\n'.join([
+        b'@map-uris (',
+        b'  remote = https://github.com/username',
+        b'  local = /home/username/test',
+        b') {',
+        b'  projectA (tagA, tagB)',
+        b'  setA {tagA}'
+        b'}',
+    ])+b'\n')
+    def test_resolve_context_map_uris(self, _):
+        manifest = Manifest(cmd=self.mock_cmd, env=self.mock_env)
+
+        self.assertEqual(manifest.get_project_set('setA'), {
+            '/home/username/test/projectA': {
+                'ref': 'projectA',
+                'path': '/home/username/test/projectA',
+                'tags': dict.fromkeys(['tagA', 'tagB'])
             }
         })

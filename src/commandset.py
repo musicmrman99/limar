@@ -68,7 +68,11 @@ class CommandSet:
                             f"Instantiating command '{name}'",
                             level=4
                         )
-                        self._cmds[name] = command(self, self._env, self._args)
+                        self._cmds[name] = command(
+                            cmd=self,
+                            env=self._env,
+                            args=self._args
+                        )
                     except RecursionError:
                         self._log(
                             f"Recursion error: Probable infinite recursion in command '{name}'",

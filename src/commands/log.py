@@ -32,7 +32,7 @@ class Log:
             or above the given level
             """)
 
-    def __init__(self,
+    def __init__(self, *,
             cmd = None, # CommandSet, but not given to avoid circular import
             env: Environment = None,
             args: Namespace = None

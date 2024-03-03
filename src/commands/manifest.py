@@ -12,14 +12,19 @@ from exceptions import VCSException
 from commandset import CommandSet
 from environment import Environment
 from argparse import ArgumentParser, Namespace
+from src.commands.log import Log
 
 class ManifestListenerImpl(ManifestListener):
-    def __init__(self):
+    def __init__(self, supported_contexts = None):
         # Outputs
         self.projects = {}
         self.project_sets = {}
 
         # Internal operations
+        self._supported_contexts = supported_contexts
+        if self._supported_contexts is None:
+            self._supported_contexts = {}
+
         self._contexts = []
         self._tag_operand_stack = []
 
@@ -142,24 +147,59 @@ class Manifest():
         resolve_parser.add_argument('pattern', metavar='PATTERN',
             help='A regex pattern to resolve to a project set')
 
-    def __init__(self,
-            cmd: CommandSet = None,
-            env: Environment = None,
+    def __init__(self, *,
+            cmd: CommandSet,
+            env: Environment,
             args: Namespace = None
     ):
-        self._cmd = cmd
+        self._logger: Log = cmd.log()
+        self._manifest_root = env.get('manifest.root')
         self._default_project_set = env.get('manifest.default_project_set')
 
-        # Load the manifest
+        self._supported_contexts = {}
+        self._projects = None
+        self._project_sets = None
+
+    def register_context_option(self, typeName, optName, config):
+        # It is only useful to register context options *before* the config is
+        # parsed, so if it's already been parsed, then this will have no effect.
+        # As such, fail loudly to tell command developers that they've done
+        # something wrong.
+        if self._projects is not None:
+            raise VCSException(
+                f"Attempted registration of option '{optName}' for context type"
+                f" '{typeName}' after manifest has been parsed. This was"
+                " probably caused by inappropriate use of"
+                " commands.Manifest.register_context_option() by the last"
+                " command to be invoked (possibly internally)."
+            )
+
+        if typeName not in self._supported_contexts:
+            self._supported_contexts[typeName] = {}
+
+        if optName not in self._supported_contexts[typeName]:
+            self._supported_contexts[typeName][optName] = config
+        else:
+            # It would probably just confuse command developers for this to
+            # either overwrite the config, ignore the request, or try to merge
+            # the config, so just fail.
+            raise VCSException(
+                'Attempted registration of already-registered option'
+                f" '{optName}' for context type '{typeName}'"
+            )
+
+    def _load_manifest(self):
+        self._logger.trace(f"manifest._load_manifest()")
+
         input_stream = FileStream(
-            os.path.join(env.get('manifest.root'), 'manifest.txt')
+            os.path.join(self._manifest_root, 'manifest.txt')
         )
         lexer = ManifestLexer(input_stream)
         tokens = CommonTokenStream(lexer)
         parser = ManifestParser(tokens)
         tree = parser.manifest()
 
-        listener = ManifestListenerImpl()
+        listener = ManifestListenerImpl(self._supported_contexts)
         walker = ParseTreeWalker()
         walker.walk(listener, tree)
 
@@ -167,6 +207,8 @@ class Manifest():
         self._project_sets = listener.project_sets
 
     def __call__(self, args):
+        self._logger.trace(f"manifest(args={args})")
+
         output = ''
 
         if args.manifest_command == 'project':
@@ -176,20 +218,23 @@ class Manifest():
                 location=args.location,
                 relative_to=args.relative_to
             )
-            self._cmd.log().info('resolved project to:', output)
+            self._logger.info('resolved project to:', output)
 
         if args.manifest_command == 'project-set':
             output = self.get_project_set(args.pattern)
-            self._cmd.log().info('resolved project set to:', output)
+            self._logger.info('resolved project set to:', output)
 
         return output
 
     def get_project_set(self, pattern: str = None):
-        self._cmd.log().trace(
+        self._logger.trace(
             "manifest.get_project_set("
                 +(f"{pattern}" if pattern is None else f"'{pattern}'")+
             ")"
         )
+
+        if self._projects is None:
+            self._load_manifest()
 
         if pattern is None:
             if self._default_project_set is None:
@@ -223,7 +268,7 @@ class Manifest():
         if relative_to is None:
             relative_to = 'root'
 
-        self._cmd.log().trace(
+        self._logger.trace(
             "manifest.get_project("
                 +(pattern if pattern is None else f"'{pattern}'")+","
                 f" project_set_pattern={project_set_pattern},"
@@ -231,6 +276,9 @@ class Manifest():
                 f" relative_to={relative_to}"
             ")"
         )
+
+        if self._projects is None:
+            self._load_manifest()
 
         project_set = self.get_project_set(project_set_pattern)
 
@@ -241,7 +289,7 @@ class Manifest():
                 for project in project_set.values()
                 if project_regex.search(project['ref'])
             )
-            self._cmd.log().trace('found:', project)
+            self._logger.trace('found:', project)
         except StopIteration:
             raise VCSException(
                 f"Project not found from pattern '{pattern}'"
