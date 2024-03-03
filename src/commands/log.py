@@ -43,7 +43,7 @@ class Log:
         if args is not None and 'log_verbose' in args:
             self._verbosity = args.log_verbose
 
-    def __call__(self, args):
+    def __call__(self, args: Namespace):
         self.log(args.message, error=args.error, level=args.level)
 
     def log(self, *objs, error=False, level=0):

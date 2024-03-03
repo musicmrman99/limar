@@ -227,7 +227,7 @@ class Manifest():
             help="""
             Specify the location that the output reference should be relative
             to, or one of:
-                'root' (resolve to an aboslute URI),
+                'root' (resolve to an absolute URI),
                 'manifest' (resolve to a URI relative to the relevant URI in the
                     @uris context that is closest to the resolved project in
                     the manifest that includes this URI type),
@@ -314,7 +314,7 @@ class Manifest():
         self._projects = listener.projects
         self._project_sets = listener.project_sets
 
-    def __call__(self, args):
+    def __call__(self, args: Namespace):
         self._logger.trace(f"manifest(args={args})")
 
         output = ''
@@ -326,13 +326,31 @@ class Manifest():
                 location=args.location,
                 relative_to=args.relative_to
             )
-            self._logger.info('resolved project to:', output)
+            print(self._format_project(output))
 
         if args.manifest_command == 'project-set':
             output = self.get_project_set(args.pattern)
-            self._logger.info('resolved project set to:', output)
+            print(self._format_project_set(output))
 
         return output
+
+    def _format_project(self, project: 'dict[str, object]'):
+        extra_attrs = '\n'.join(
+            f'{key}: {value}'
+            for key, value in project.items()
+            if key not in ['ref', 'tags']
+        )
+        return '\n'.join([
+            f"ref: {project['ref']}",
+            f"tags: {', '.join(project['tags'].keys())}",
+            *([extra_attrs] if extra_attrs != '' else [])
+        ])
+
+    def _format_project_set(self, project_set: 'dict[str, dict[str, object]]'):
+        return '\n\n'.join(
+            self._format_project(project)
+            for project in project_set.values()
+        )
 
     def get_project_set(self, pattern: str = None):
         self._logger.trace(
