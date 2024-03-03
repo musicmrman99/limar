@@ -132,7 +132,7 @@ class CommandSet:
         """
 
         if not hasattr(self, '_fallback_log_command'):
-            self._fallback_log_command = Log(self, self._env, None)
+            self._fallback_log_command = Log(cmd=self, env=self._env)
         self._fallback_log_command.log(*args, error=error, level=level)
 
     # Derived from: https://stackoverflow.com/a/1176023/16967315

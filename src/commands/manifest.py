@@ -12,7 +12,7 @@ from exceptions import VCSException
 from commandset import CommandSet
 from environment import Environment
 from argparse import ArgumentParser, Namespace
-from src.commands.log import Log
+from commands.log import Log
 
 class ManifestListenerImpl(ManifestListener):
     def __init__(self,
@@ -79,9 +79,12 @@ class ManifestListenerImpl(ManifestListener):
         context_type = ctx.typeName.text
         if context_type not in self._context_hooks.keys():
             self._logger.warn(
-                f"Unsupported context type '{context['type']}' found."
+                f"Unsupported context type '{context_type}' found."
                 " Ignoring context."
             )
+            # Symbolises an unrecognised context (not an error for forwards
+            # compatibility and to support dynamic modules)
+            self._contexts.append(NotImplementedError)
             return
 
         context = {
@@ -104,6 +107,8 @@ class ManifestListenerImpl(ManifestListener):
 
     def exitContext(self, ctx: ManifestParser.ContextContext):
         old_context = self._contexts.pop()
+        if old_context is NotImplementedError:
+            return # Ignore unrecognised contexts
 
         # Call all 'on_exit_context' hooks registered for the context
         context_hooks = self._context_hooks[old_context['type']]
@@ -134,12 +139,18 @@ class ManifestListenerImpl(ManifestListener):
                 self.project_sets[tag] = {}
             self.project_sets[tag][proj_ref] = self.projects[proj_ref]
 
-        # Add to all current contexts
+        # Add to all active contexts
         for context in self._contexts:
+            if context is NotImplementedError:
+                continue # Skip unrecognised contexts
+
             context['projects'][proj_ref] = self.projects[proj_ref]
 
         # Call all registered 'on_declare_project' hooks for all active contexts
         for context in self._contexts:
+            if context is NotImplementedError:
+                continue # Skip unrecognised contexts
+
             context_hooks = self._context_hooks[context['type']]
             for hook in context_hooks['on_declare_project']:
                 hook(context, self.projects[proj_ref])
@@ -176,8 +187,11 @@ class ManifestListenerImpl(ManifestListener):
         # Add to main project sets
         self.project_sets[proj_set_ref] = self._tag_operand_stack.pop()
 
-        # Add to all current contexts
+        # Add to all active contexts
         for context in self._contexts:
+            if context is NotImplementedError:
+                continue # Skip unrecognised contexts
+
             context['project_sets'][proj_set_ref] = (
                 self.project_sets[proj_set_ref]
             )
@@ -185,6 +199,9 @@ class ManifestListenerImpl(ManifestListener):
         # Call all registered 'on_declare_project_set' hooks for all active
         # contexts
         for context in self._contexts:
+            if context is NotImplementedError:
+                continue # Skip unrecognised contexts
+
             context_hooks = self._context_hooks[context['type']]
             for hook in context_hooks['on_declare_project_set']:
                 hook(context, self.project_sets[proj_set_ref])
