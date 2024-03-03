@@ -257,6 +257,158 @@ class TestManifest(TestCase):
         })
 
     @patch("builtins.open", new_callable=mock_open, read_data=b'\n'.join([
+        b'@some-context {',
+        b'  projectA',
+        b'}',
+    ])+b'\n')
+    def test_resolve_context_basic(self, _):
+        manifest = Manifest(cmd=self.mock_cmd, env=self.mock_env)
+
+        on_enter_context = Mock()
+        manifest.register_context_hooks('some-context',
+            on_enter_context=on_enter_context
+        )
+
+        manifest.get_project('projectA')
+        on_enter_context.assert_called_once_with({
+            'type': 'some-context',
+            'opts': {},
+            'projects': {
+                'projectA': {
+                    'ref': 'projectA',
+                    'tags': {}
+                }
+            },
+            'project_sets': {}
+        })
+
+    @patch("builtins.open", new_callable=mock_open, read_data=b'\n'.join([
+        b'projectA',
+        b'setA {tagA}',
+        b'@some-context {',
+        b'  projectB',
+        b'  setB {tagB}',
+        b'}',
+    ])+b'\n')
+    def test_resolve_context_inside_and_outside(self, _):
+        manifest = Manifest(cmd=self.mock_cmd, env=self.mock_env)
+
+        # Note: Can't used self.assert_called_once_with() because arguments are
+        #       mutated as the parse progresses.
+
+        def verify_enter_manifest():
+            pass # Called with correct arguments, or would throw TypeError
+
+        def verify_enter_context(context):
+            self.assertEqual(context, {
+                'type': 'some-context',
+                'opts': {},
+                # Chronological order, so doesn't have the project or project
+                # set yet
+                'projects': {},
+                'project_sets': {}
+            })
+
+        def verify_declare_project(context, project):
+            self.assertEqual(context, {
+                'type': 'some-context',
+                'opts': {},
+                'projects': {
+                    'projectB': {
+                        'ref': 'projectB',
+                        'tags': {}
+                    }
+                },
+                # Chronological order, so doesn't have the project set yet
+                'project_sets': {}
+            })
+            self.assertEqual(project, {
+                'ref': 'projectB',
+                'tags': {}
+            })
+
+        def verify_declare_project_set(context, project_set):
+            self.assertEqual(context, {
+                'type': 'some-context',
+                'opts': {},
+                'projects': {
+                    'projectB': {
+                        'ref': 'projectB',
+                        'tags': {}
+                    }
+                },
+                'project_sets': {
+                    'setB': {}
+                }
+            })
+            self.assertEqual(project_set, {})
+
+        def verify_exit_context(context, projects, project_sets):
+            self.assertEqual(context, {
+                'type': 'some-context',
+                'opts': {},
+                # Only includes the project and project set in the context
+                'projects': {
+                    'projectB': {
+                        'ref': 'projectB',
+                        'tags': {}
+                    }
+                },
+                'project_sets': {
+                    'setB': {}
+                }
+            })
+            self.assertEqual(projects, {
+                'projectB': {
+                    'ref': 'projectB',
+                    'tags': {}
+                }
+            })
+            self.assertEqual(project_sets, {
+                'setB': {}
+            })
+
+        def verify_exit_manifest(projects, project_sets):
+            self.assertEqual(projects, {
+                'projectA': {
+                    'ref': 'projectA',
+                    'tags': {}
+                },
+                'projectB': {
+                    'ref': 'projectB',
+                    'tags': {}
+                }
+            })
+            self.assertEqual(project_sets, {
+                'setA': {},
+                'setB': {}
+            })
+
+        on_enter_manifest = Mock(side_effect=verify_enter_manifest)
+        on_enter_context = Mock(side_effect=verify_enter_context)
+        on_declare_project = Mock(side_effect=verify_declare_project)
+        on_declare_project_set = Mock(side_effect=verify_declare_project_set)
+        on_exit_context = Mock(side_effect=verify_exit_context)
+        on_exit_manifest = Mock(side_effect=verify_exit_manifest)
+
+        manifest.register_context_hooks('some-context',
+            on_enter_manifest=on_enter_manifest,
+            on_enter_context=on_enter_context,
+            on_declare_project=on_declare_project,
+            on_declare_project_set=on_declare_project_set,
+            on_exit_context=on_exit_context,
+            on_exit_manifest=on_exit_manifest
+        )
+        manifest.get_project('projectA')
+
+        on_enter_manifest.assert_called_once()
+        on_enter_context.assert_called_once()
+        on_declare_project.assert_called_once()
+        on_declare_project_set.assert_called_once()
+        on_exit_context.assert_called_once()
+        on_exit_manifest.assert_called_once()
+
+    @patch("builtins.open", new_callable=mock_open, read_data=b'\n'.join([
         b'@uris (',
         b'  local = /home/username/test',
         b') {',
@@ -264,7 +416,7 @@ class TestManifest(TestCase):
         b'  setA {tagA}',
         b'}',
     ])+b'\n')
-    def test_resolve_context_map_uris(self, _):
+    def test_resolve_context_complex(self, _):
         manifest = Manifest(cmd=self.mock_cmd, env=self.mock_env)
         manifest.register_context_hooks('uris',
             on_declare_project=self.set_project_local_path_hook,
@@ -294,7 +446,7 @@ class TestManifest(TestCase):
         b'  setA {tagA}',
         b'}',
     ])+b'\n')
-    def test_resolve_context_map_uris_multi_hooks(self, _):
+    def test_resolve_context_complex_multi_hooks(self, _):
         manifest = Manifest(cmd=self.mock_cmd, env=self.mock_env)
         manifest.register_context_hooks('uris',
             on_declare_project=self.set_project_local_path_hook,
@@ -312,31 +464,13 @@ class TestManifest(TestCase):
             'tags': dict.fromkeys(['tagA', 'tagB'])
         })
 
-    @patch("builtins.open", new_callable=mock_open, read_data=b'\n'.join([
-        b'@uris (',
-        b'  local = /home/username/test',
-        b') {',
-        b'  projectA (tagA, tagB)',
-        b'  setA {tagA}',
-        b'}',
-        b'projectB (tagA, tagB)',
-    ])+b'\n')
-    def test_resolve_mix_in_and_out_of_context(self, _):
-        manifest = Manifest(cmd=self.mock_cmd, env=self.mock_env)
-        manifest.register_context_hooks('uris',
-            on_declare_project=self.set_project_local_path_hook,
-            on_exit_context=self.verify_project_local_paths_hook
-        )
-
-        self.assertEqual(manifest.get_project('projectA'), {
-            'ref': 'projectA',
-            'path': '/home/username/test/projectA',
-            'tags': dict.fromkeys(['tagA', 'tagB'])
-        })
-
-        self.assertEqual(manifest.get_project('projectB'), {
-            'ref': 'projectB',
-            'tags': dict.fromkeys(['tagA', 'tagB'])
+        self.assertEqual(manifest.get_project_set('setA'), {
+            'projectA': {
+                'ref': 'projectA',
+                'path': '/home/username/test/projectA',
+                'remote': 'https://github.com/username/projectA',
+                'tags': dict.fromkeys(['tagA', 'tagB'])
+            }
         })
 
     # Utils

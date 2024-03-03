@@ -91,9 +91,9 @@ class ManifestListenerImpl(ManifestListener):
             'project_sets': {}
         }
 
-        # TODO: handle optional contextOpts
-        for opt in ctx.contextOpts().contextOpt():
-            context['opts'][opt.optName.text] = opt.optValue.getText()
+        if ctx.contextOpts() is not None:
+            for opt in ctx.contextOpts().contextOpt():
+                context['opts'][opt.optName.text] = opt.optValue.getText()
 
         self._contexts.append(context)
 
