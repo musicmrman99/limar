@@ -125,7 +125,7 @@ vcs init
 
 ## Building from Source
 
-To build the ANTLR4 language (after installing the packages in requiremetns):
+To build the ANTLR4 language (after installing the packages in `requirements.txt` with `vcs init`):
 
 ```sh
 cd src/manifest && \
