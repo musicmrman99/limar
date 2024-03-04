@@ -1,5 +1,5 @@
 import re
-import argparse
+from argparse import ArgumentParser, Namespace
 
 from core.modules.log import Log
 
@@ -35,8 +35,15 @@ class ModuleManager:
         self._mods = {}
         self._env = env
         self._args = None
-        self._arg_parser = argparse.ArgumentParser(prog='vcs')
+        self._arg_parser = ArgumentParser(prog='vcs')
         self._arg_subparsers = self._arg_parser.add_subparsers(dest="module")
+
+        self._logger = Log(
+            mod=self,
+            env=self._env,
+            # Only needed if you have to debug the ModuleManager itself
+            args=Namespace(log_verbose=0)
+        )
 
     # Registration
     # --------------------
@@ -44,7 +51,7 @@ class ModuleManager:
     def register(self, *modules):
         for module in modules:
             name = self._camel_to_kebab(module.__name__)
-            self._log(
+            self._logger.log(
                 f"Registering module '{name}' ({module}) with {self}",
                 level=3
             )
@@ -66,7 +73,7 @@ class ModuleManager:
             ):
                 if self._mods[name] == None:
                     try:
-                        self._log(
+                        self._logger.log(
                             f"Instantiating module '{name}'",
                             level=4
                         )
@@ -76,7 +83,7 @@ class ModuleManager:
                             args=self._args
                         )
                     except RecursionError:
-                        self._log(
+                        self._logger.log(
                             f"Recursion error: Probable infinite recursion in module '{name}'",
                             error=True
                         )
@@ -123,19 +130,6 @@ class ModuleManager:
 
     # Utils
     # --------------------
-
-    def _log(self, *args, error=False, level=0):
-        """
-        Use a basic logger to log the given message.
-
-        This is required during the module registration phase, before
-        command line arguments are available to the log module so it
-        can configure itself.
-        """
-
-        if not hasattr(self, '_fallback_log_module'):
-            self._fallback_log_module = Log(mod=self, env=self._env)
-        self._fallback_log_module.log(*args, error=error, level=level)
 
     # Derived from: https://stackoverflow.com/a/1176023/16967315
     def _camel_to_kebab(self, name):
