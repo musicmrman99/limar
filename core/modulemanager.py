@@ -51,7 +51,10 @@ class ModuleManager:
 
             self._mods[name] = None
             module_arg_parser = self._arg_subparsers.add_parser(name)
-            module.setup_args(module_arg_parser, root_parser=self._arg_parser)
+            module.setup_args(
+                parser=module_arg_parser,
+                root_parser=self._arg_parser
+            )
 
             # Dynamically add a method to this object that can instantiate
             # and retreive the module instance.

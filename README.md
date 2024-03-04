@@ -7,6 +7,7 @@ To get it installed, see [Installation](#installation).
 ## TODO
 
 - ./ rename CommandSet -> ModuleSet, cmd/_cmd -> mod/_mod
+- ./ change module.setup_args() signature to setup_args(*, parser, root_parser)
 
 - create multi-phase module system like:
   - __init__()               - called once for all modules during registration

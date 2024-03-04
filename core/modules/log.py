@@ -14,7 +14,7 @@ class Log:
     ]
 
     @staticmethod
-    def setup_args(parser: ArgumentParser, root_parser: ArgumentParser = None):
+    def setup_args(parser: ArgumentParser, root_parser: ArgumentParser):
         # Root parser
         root_parser.add_argument('-v', '--log-verbose',
             action='count', default=0,
