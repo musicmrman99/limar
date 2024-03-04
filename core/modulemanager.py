@@ -1,11 +1,11 @@
 import re
 import argparse
 
-from commands.log import Log
+from core.modules.log import Log
 
-from exceptions import VCSException
+from core.exceptions import VCSException
 
-class CommandSet:
+class ModuleManager:
     """
     Manage argument declaration and parsing, and instantiation of
     command classes.

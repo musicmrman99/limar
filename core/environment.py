@@ -1,6 +1,6 @@
 import os
 
-from exceptions import VCSException
+from core.exceptions import VCSException
 
 class Environment:
     VARS = {

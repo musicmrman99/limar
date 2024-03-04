@@ -1,7 +1,7 @@
 import sys
 
 # Types
-from environment import Environment
+from core.environment import Environment
 from argparse import ArgumentParser, Namespace
 
 class Log:

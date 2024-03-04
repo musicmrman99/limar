@@ -4,10 +4,10 @@ from unittest.mock import MagicMock, Mock, mock_open, patch
 # Util
 import os.path
 import re
-from src.exceptions import VCSException
+from core.exceptions import VCSException
 
 # Under Test
-from commands.manifest import Manifest
+from modules.manifest import Manifest
 
 class TestManifest(TestCase):
 

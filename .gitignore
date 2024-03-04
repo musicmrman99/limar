@@ -6,7 +6,7 @@
 
 # Build files
 *.pyc
-/src/manifest/build
+/modules/manifest_lang/build
 
 # Special directories (for now)
 /manifest

@@ -2,17 +2,17 @@ import os
 import re
 
 from antlr4 import FileStream, CommonTokenStream, ParseTreeWalker
-from manifest.build.ManifestLexer import ManifestLexer
-from manifest.build.ManifestParser import ManifestParser
-from manifest.build.ManifestListener import ManifestListener
+from modules.manifest_lang.build.ManifestLexer import ManifestLexer
+from modules.manifest_lang.build.ManifestParser import ManifestParser
+from modules.manifest_lang.build.ManifestListener import ManifestListener
 
-from exceptions import VCSException
+from core.exceptions import VCSException
 
 # Types
-from commandset import CommandSet
-from environment import Environment
+from core.modulemanager import ModuleManager
+from core.environment import Environment
 from argparse import ArgumentParser, Namespace
-from commands.log import Log
+from core.modules.log import Log
 
 class ManifestListenerImpl(ManifestListener):
     def __init__(self,
@@ -247,7 +247,7 @@ class Manifest():
             help='A regex pattern to resolve to a project set')
 
     def __init__(self, *,
-            cmd: CommandSet,
+            cmd: ModuleManager,
             env: Environment,
             args: Namespace = None
     ):

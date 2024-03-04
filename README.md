@@ -6,6 +6,23 @@ To get it installed, see [Installation](#installation).
 
 ## TODO
 
+- rename CommandSet -> ModuleSet, cmd/_cmd -> mod/_mod
+
+- create multi-phase module system like:
+  - __init__()               - called once for all modules during registration
+  - register_args(parser, root_parser)
+                             - called once for all modules during registration
+
+  - register(mod, env, args) - called once for all modules after all modules have done basic initialisation
+                               - other register_*() methods (except the special ones mentioned above) of other
+                                 modules may be called here *without* invoking the module.
+  - init(mod, env, args)     - called once the first time the module is invoked (if it is invoked)
+  - invoke(mod, env, args)   - called each time the module is invoked, regardless of whether or how it is used
+
+- use Test.register(mod, **) to call Manifest.register_context_hooks()
+- use Manifest.init() instead of Manifest._load_manifest()
+  - and remove Manifest._load_manifest() from module methods
+
 - Execute management commands against multiple projects, eg. `vcs for ...`
 
 - Extract data about code elements (try to reuse existing libs where possible), eg:
