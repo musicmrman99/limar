@@ -1,8 +1,8 @@
 import re
 from argparse import ArgumentParser, Namespace
+import importlib
 
 from core.modules.log import Log
-
 from core.exceptions import VCSException
 
 class ModuleManager:
@@ -38,6 +38,9 @@ class ModuleManager:
         self._arg_parser = ArgumentParser(prog='vcs')
         self._arg_subparsers = self._arg_parser.add_subparsers(dest="module")
 
+        # Create a separate logger to avoid infinite recursion.
+        # FIXME: There may be a better way of doing this, while still having the
+        #        logger able to use parsed verbosity arguments.
         self._logger = Log(
             mod=self,
             env=self._env,
@@ -48,12 +51,44 @@ class ModuleManager:
     # Registration
     # --------------------
 
+    def register_package(self, *packages):
+        for package in packages:
+            self._logger.debug(
+                f"Registering all modules in package '{package.__package__}'"
+                f" ({package}) with {self}"
+            )
+
+            mm_modules = []
+            for py_module_name in package.__all__:
+                mm_module_name = self._module_to_class(py_module_name)
+
+                try:
+                    py_module = importlib.import_module(
+                        f'{package.__package__}.{py_module_name}'
+                    )
+                except ImportError as e:
+                    raise VCSException(
+                        f"Python module '{py_module_name}' in __all__ not found"
+                    ) from e
+
+                try:
+                    mm_module = getattr(py_module, mm_module_name)
+                except AttributeError as e:
+                    raise VCSException(
+                        f"Python module '{py_module_name}' in __all__ does not"
+                        " contain a ModuleManager module: class"
+                        f" '{mm_module_name}' notfound"
+                    ) from e
+
+                mm_modules.append(mm_module)
+
+            self.register(*mm_modules)
+
     def register(self, *modules):
         for module in modules:
             name = self._camel_to_kebab(module.__name__)
-            self._logger.log(
-                f"Registering module '{name}' ({module}) with {self}",
-                level=3
+            self._logger.debug(
+                f"Registering module '{name}' ({module}) with {self}"
             )
 
             self._mods[name] = None
@@ -73,19 +108,16 @@ class ModuleManager:
             ):
                 if self._mods[name] == None:
                     try:
-                        self._logger.log(
-                            f"Instantiating module '{name}'",
-                            level=4
-                        )
+                        self._logger.debug(f"Instantiating module '{name}'")
                         self._mods[name] = module(
                             mod=self,
                             env=self._env,
                             args=self._args
                         )
                     except RecursionError:
-                        self._logger.log(
-                            f"Recursion error: Probable infinite recursion in module '{name}'",
-                            error=True
+                        self._logger.error(
+                            f"Recursion error: Probable infinite recursion in"
+                            " module '{name}'"
                         )
                         exit()
                 return self._mods[name]
@@ -135,3 +167,6 @@ class ModuleManager:
     def _camel_to_kebab(self, name):
         name = re.sub('(.)([A-Z][a-z]+)', r'\1-\2', name)
         return re.sub('([a-z0-9])([A-Z])', r'\1-\2', name).lower()
+
+    def _module_to_class(self, name: str):
+        return name.title().replace('_', '')
