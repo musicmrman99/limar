@@ -247,11 +247,11 @@ class Manifest():
             help='A regex pattern to resolve to a project set')
 
     def __init__(self, *,
-            cmd: ModuleManager,
+            mod: ModuleManager,
             env: Environment,
             args: Namespace = None
     ):
-        self._logger: Log = cmd.log()
+        self._logger: Log = mod.log()
         self._manifest_root = env.get('manifest.root')
         self._default_project_set = env.get('manifest.default_project_set')
 
@@ -266,15 +266,15 @@ class Manifest():
     ):
         # It is only useful to register context hooks *before* the manifest is
         # parsed. If it's already been parsed, then registration will have no
-        # effect. As such, fail loudly to tell command developers that they've
+        # effect. As such, fail loudly to tell module developers that they've
         # done something wrong.
         if self._projects is not None:
             raise VCSException(
                 f"Attempted registration of context type '{typeName}' after"
                 " manifest has been parsed. This was probably caused by"
                 " inappropriate use of"
-                " commands.Manifest.register_context_option() by the last"
-                " command to be invoked (possibly internally)."
+                " modules.Manifest.register_context_option() by the last"
+                " module to be invoked (possibly internally)."
             )
 
         sup_ctx = self._supported_contexts

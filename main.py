@@ -10,12 +10,12 @@ from modules.manifest import Manifest
 
 def main():
     env = Environment()
-    commands = ModuleManager(env)
-    commands.register(
+    modules = ModuleManager(env)
+    modules.register(
         Log,
         Manifest
     )
-    commands.run_cmd_line()
+    modules.run_command_line()
 
 if __name__ == '__main__':
     main()

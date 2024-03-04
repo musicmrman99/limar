@@ -6,7 +6,7 @@ To get it installed, see [Installation](#installation).
 
 ## TODO
 
-- rename CommandSet -> ModuleSet, cmd/_cmd -> mod/_mod
+- ./ rename CommandSet -> ModuleSet, cmd/_cmd -> mod/_mod
 
 - create multi-phase module system like:
   - __init__()               - called once for all modules during registration

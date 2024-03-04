@@ -33,7 +33,7 @@ class Log:
             """)
 
     def __init__(self, *,
-            cmd = None, # CommandSet, but not given to avoid circular import
+            mod = None, # ModuleManager, but not given to avoid circular import
             env: Environment = None,
             args: Namespace = None
     ):

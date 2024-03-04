@@ -15,8 +15,8 @@ class TestManifest(TestCase):
         logger = Mock()
         logger.log.side_effect = lambda self, *objs, error=False, level=0: print(*objs)
 
-        self.mock_cmd = Mock()
-        self.mock_cmd.log.return_value=logger
+        self.mock_mod = Mock()
+        self.mock_mod.log.return_value=logger
 
         self.mock_env = Mock()
         def envGet(value):
@@ -35,7 +35,7 @@ class TestManifest(TestCase):
         b'/home/username/test/projectA'
     ])+b'\n')
     def test_resolve_basic(self, mock_manifest: MagicMock):
-        manifest = Manifest(cmd=self.mock_cmd, env=self.mock_env)
+        manifest = Manifest(mod=self.mock_mod, env=self.mock_env)
         self.assertEqual(manifest.get_project('projectA'), {
             'ref': '/home/username/test/projectA',
             'tags': {}
@@ -46,7 +46,7 @@ class TestManifest(TestCase):
         b'/home/username/test/projectA (tagA)'
     ])+b'\n')
     def test_resolve_single_tag_manifest(self, _):
-        manifest = Manifest(cmd=self.mock_cmd, env=self.mock_env)
+        manifest = Manifest(mod=self.mock_mod, env=self.mock_env)
         self.assertEqual(manifest.get_project('projectA'), {
             'ref': '/home/username/test/projectA',
             'tags': dict.fromkeys(['tagA'])
@@ -56,7 +56,7 @@ class TestManifest(TestCase):
         b'/home/username/test/projectA (tagA, tagB)'
     ])+b'\n')
     def test_resolve_multi_tag_manifest(self, _):
-        manifest = Manifest(cmd=self.mock_cmd, env=self.mock_env)
+        manifest = Manifest(mod=self.mock_mod, env=self.mock_env)
         self.assertEqual(manifest.get_project('projectA'), {
             'ref': '/home/username/test/projectA',
             'tags': dict.fromkeys(['tagA', 'tagB'])
@@ -67,7 +67,7 @@ class TestManifest(TestCase):
         b'/home/username/test/projectB (tagA, tagC)'
     ])+b'\n')
     def test_resolve_multi_projects_manifest(self, _):
-        manifest = Manifest(cmd=self.mock_cmd, env=self.mock_env)
+        manifest = Manifest(mod=self.mock_mod, env=self.mock_env)
 
         self.assertEqual(manifest.get_project('projectA'), {
             'ref': '/home/username/test/projectA',
@@ -84,7 +84,7 @@ class TestManifest(TestCase):
         b'/home/username/test/projectB (tagA, tagC)',
     ])+b'\n')
     def test_resolve_tag_project_set(self, _):
-        manifest = Manifest(cmd=self.mock_cmd, env=self.mock_env)
+        manifest = Manifest(mod=self.mock_mod, env=self.mock_env)
 
         self.assertEqual(manifest.get_project_set('tagA'), {
             '/home/username/test/projectA': {
@@ -117,7 +117,7 @@ class TestManifest(TestCase):
         b'setA {tagA}'
     ])+b'\n')
     def test_resolve_explicit_project_set_one_tag(self, _):
-        manifest = Manifest(cmd=self.mock_cmd, env=self.mock_env)
+        manifest = Manifest(mod=self.mock_mod, env=self.mock_env)
 
         self.assertEqual(manifest.get_project_set('setA'), {
             '/home/username/test/projectA': {
@@ -136,7 +136,7 @@ class TestManifest(TestCase):
         b'setA {tagA & tagB}'
     ])+b'\n')
     def test_resolve_explicit_project_set_two_tags_and(self, _):
-        manifest = Manifest(cmd=self.mock_cmd, env=self.mock_env)
+        manifest = Manifest(mod=self.mock_mod, env=self.mock_env)
 
         self.assertEqual(manifest.get_project_set('setA'), {
             '/home/username/test/projectA': {
@@ -151,7 +151,7 @@ class TestManifest(TestCase):
         b'setA {tagB | tagC}'
     ])+b'\n')
     def test_resolve_explicit_project_set_two_tags_or(self, _):
-        manifest = Manifest(cmd=self.mock_cmd, env=self.mock_env)
+        manifest = Manifest(mod=self.mock_mod, env=self.mock_env)
 
         self.assertEqual(manifest.get_project_set('setA'), {
             '/home/username/test/projectA': {
@@ -171,7 +171,7 @@ class TestManifest(TestCase):
         b'setA {tagA & tagB | tagD}'
     ])+b'\n')
     def test_resolve_explicit_project_set_grouping_default(self, _):
-        manifest = Manifest(cmd=self.mock_cmd, env=self.mock_env)
+        manifest = Manifest(mod=self.mock_mod, env=self.mock_env)
 
         self.assertEqual(manifest.get_project_set('setA'), {
             '/home/username/test/projectA': {
@@ -192,7 +192,7 @@ class TestManifest(TestCase):
         b'setB {tagA & (tagB | tagD)}'
     ])+b'\n')
     def test_resolve_explicit_project_set_grouping_explicit(self, _):
-        manifest = Manifest(cmd=self.mock_cmd, env=self.mock_env)
+        manifest = Manifest(mod=self.mock_mod, env=self.mock_env)
 
         self.assertEqual(manifest.get_project_set('setA'), {
             '/home/username/test/projectA': {
@@ -221,7 +221,7 @@ class TestManifest(TestCase):
         b'setA { (tagA & tagB) | (tagD & tagE) }'
     ])+b'\n')
     def test_resolve_explicit_project_set_grouping_of_groups(self, _):
-        manifest = Manifest(cmd=self.mock_cmd, env=self.mock_env)
+        manifest = Manifest(mod=self.mock_mod, env=self.mock_env)
 
         self.assertEqual(manifest.get_project_set('setA'), {
             '/home/username/test/projectA': {
@@ -243,7 +243,7 @@ class TestManifest(TestCase):
         b'setA { (tagA & tagB) | (tagD & (tagE | tagF)) }'
     ])+b'\n')
     def test_resolve_explicit_project_set_grouping_nesting(self, _):
-        manifest = Manifest(cmd=self.mock_cmd, env=self.mock_env)
+        manifest = Manifest(mod=self.mock_mod, env=self.mock_env)
 
         self.assertEqual(manifest.get_project_set('setA'), {
             '/home/username/test/projectA': {
@@ -266,7 +266,7 @@ class TestManifest(TestCase):
         b'}',
     ])+b'\n')
     def test_resolve_context_basic(self, _):
-        manifest = Manifest(cmd=self.mock_cmd, env=self.mock_env)
+        manifest = Manifest(mod=self.mock_mod, env=self.mock_env)
 
         on_enter_context = Mock()
         manifest.register_context_hooks('some-context',
@@ -295,7 +295,7 @@ class TestManifest(TestCase):
         b'}',
     ])+b'\n')
     def test_resolve_context_inside_and_outside(self, _):
-        manifest = Manifest(cmd=self.mock_cmd, env=self.mock_env)
+        manifest = Manifest(mod=self.mock_mod, env=self.mock_env)
 
         # Note: Can't used self.assert_called_once_with() because arguments are
         #       mutated as the parse progresses.
@@ -421,7 +421,7 @@ class TestManifest(TestCase):
         b'}',
     ])+b'\n')
     def test_resolve_context_complex(self, _):
-        manifest = Manifest(cmd=self.mock_cmd, env=self.mock_env)
+        manifest = Manifest(mod=self.mock_mod, env=self.mock_env)
         manifest.register_context_hooks('uris',
             on_declare_project=self.set_project_local_path_hook,
             on_exit_context=self.add_verify_project_local_paths_hook,
@@ -451,7 +451,7 @@ class TestManifest(TestCase):
         b'}',
     ])+b'\n')
     def test_resolve_context_fails_if_hook_fails(self, _):
-        manifest = Manifest(cmd=self.mock_cmd, env=self.mock_env)
+        manifest = Manifest(mod=self.mock_mod, env=self.mock_env)
         manifest.register_context_hooks('uris',
             on_declare_project=self.set_project_local_path_hook,
             on_exit_context=self.add_verify_project_local_paths_hook,
@@ -470,7 +470,7 @@ class TestManifest(TestCase):
         b'}',
     ])+b'\n')
     def test_resolve_context_multi_hooks(self, _):
-        manifest = Manifest(cmd=self.mock_cmd, env=self.mock_env)
+        manifest = Manifest(mod=self.mock_mod, env=self.mock_env)
         manifest.register_context_hooks('uris',
             on_declare_project=self.set_project_local_path_hook,
             on_exit_context=self.add_verify_project_local_paths_hook,
@@ -510,7 +510,7 @@ class TestManifest(TestCase):
         b'}',
     ])+b'\n')
     def test_resolve_context_nested(self, _):
-        manifest = Manifest(cmd=self.mock_cmd, env=self.mock_env)
+        manifest = Manifest(mod=self.mock_mod, env=self.mock_env)
         manifest.register_context_hooks('uris',
             on_declare_project=self.set_project_local_path_hook,
             on_exit_context=self.add_verify_project_local_paths_hook,
