@@ -141,7 +141,9 @@ EOF
 vcs init
 ```
 
-## Building from Source
+## Development
+
+### Building from Source
 
 To build the ANTLR4 language (after installing the packages in `requirements.txt` with `vcs init`):
 
@@ -151,7 +153,7 @@ cd src/manifest && \
   cd ../..
 ```
 
-## Running Tests
+### Running Tests
 
 To run unit tests:
 
