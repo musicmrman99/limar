@@ -100,29 +100,31 @@ class ModuleManager:
 
             # Dynamically add a method to this object that can instantiate
             # and retreive the module instance.
-            def module_getter(
-                    logger=None,
+            self.__dict__[name] = lambda name=name, module=module: (
+                self._get_module(name, module)
+            )
 
-                    # Use kwargs to force it to early-bind
-                    name=name, module=module
-            ):
-                if self._mods[name] == None:
-                    try:
-                        self._logger.debug(f"Instantiating module '{name}'")
-                        self._mods[name] = module(
-                            mod=self,
-                            env=self._env,
-                            args=self._args
-                        )
-                    except RecursionError:
-                        self._logger.error(
-                            f"Recursion error: Probable infinite recursion in"
-                            " module '{name}'"
-                        )
-                        exit()
-                return self._mods[name]
+    def _get_module(self, name, module):
+        """
+        Return the instance of the module with the given name, instanciating it
+        if needed.
+        """
 
-            self.__dict__[name] = module_getter
+        if self._mods[name] == None:
+            try:
+                self._logger.debug(f"Instantiating module '{name}'")
+                self._mods[name] = module(
+                    mod=self,
+                    env=self._env,
+                    args=self._args
+                )
+            except RecursionError:
+                self._logger.error(
+                    f"Recursion error: Probable infinite recursion in"
+                    " module '{name}'"
+                )
+                exit()
+        return self._mods[name]
 
     # Post-Registration
     # --------------------
