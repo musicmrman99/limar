@@ -64,13 +64,13 @@ class ManifestListenerImpl(ManifestListener):
         self._tag_operand_stack = []
 
     def enterManifest(self, ctx: ManifestParser.ManifestContext):
-        # Call all registered 'on_enter_manifest' hooks
+        # Call all configured 'on_enter_manifest' hooks
         for context_hooks in self._context_hooks.values():
             for hook in context_hooks['on_enter_manifest']:
                 hook()
 
     def exitManifest(self, ctx: ManifestParser.ManifestContext):
-        # Call all registered 'on_enter_manifest' hooks
+        # Call all configured 'on_enter_manifest' hooks
         for context_hooks in self._context_hooks.values():
             for hook in context_hooks['on_exit_manifest']:
                 hook(self.projects, self.project_sets)
@@ -100,7 +100,7 @@ class ManifestListenerImpl(ManifestListener):
 
         self._contexts.append(context)
 
-        # Call all 'on_enter_context' hooks registered for the context
+        # Call all 'on_enter_context' hooks configured for the context
         context_hooks = self._context_hooks[context['type']]
         for hook in context_hooks['on_enter_context']:
             hook(context)
@@ -110,7 +110,7 @@ class ManifestListenerImpl(ManifestListener):
         if old_context is NotImplementedError:
             return # Ignore unrecognised contexts
 
-        # Call all 'on_exit_context' hooks registered for the context
+        # Call all 'on_exit_context' hooks configured for the context
         context_hooks = self._context_hooks[old_context['type']]
         for hook in context_hooks['on_exit_context']:
             hook(
@@ -146,7 +146,7 @@ class ManifestListenerImpl(ManifestListener):
 
             context['projects'][proj_ref] = self.projects[proj_ref]
 
-        # Call all registered 'on_declare_project' hooks for all active contexts
+        # Call all configured 'on_declare_project' hooks for all active contexts
         for context in self._contexts:
             if context is NotImplementedError:
                 continue # Skip unrecognised contexts
@@ -196,7 +196,7 @@ class ManifestListenerImpl(ManifestListener):
                 self.project_sets[proj_set_ref]
             )
 
-        # Call all registered 'on_declare_project_set' hooks for all active
+        # Call all configured 'on_declare_project_set' hooks for all active
         # contexts
         for context in self._contexts:
             if context is NotImplementedError:
@@ -207,8 +207,19 @@ class ManifestListenerImpl(ManifestListener):
                 hook(context, self.project_sets[proj_set_ref])
 
 class Manifest():
-    @staticmethod
-    def setup_args(parser: ArgumentParser, **_):
+
+    # Lifecycle
+    # --------------------
+
+    def __init__(self):
+        self._supported_contexts: dict[str, dict[str, list[function]]] = {}
+        self._projects: dict[str, dict[str, object]] = None
+        self._project_sets: dict[str, dict[str, dict[str, object]]] = None
+
+    def configure_args(self, *,
+            parser: ArgumentParser,
+            **_
+    ):
         manifest_subparsers = parser.add_subparsers(dest="manifest_command")
 
         # Resolve Subcommand
@@ -246,25 +257,73 @@ class Manifest():
         resolve_parser.add_argument('pattern', metavar='PATTERN',
             help='A regex pattern to resolve to a project set')
 
-    def __init__(self, *,
+    def configure(self, *,
             mod: ModuleManager,
             env: Environment,
-            args: Namespace = None
+            **_
     ):
-        self._logger: Log = mod.log()
+        # For methods that aren't directly given it
+        self._mod: ModuleManager = mod
+
         self._manifest_root = env.get('manifest.root')
         self._default_project_set = env.get('manifest.default_project_set')
 
-        self._supported_contexts: dict[str, dict[str, list[function]]] = {}
-        self._projects: dict[str, dict[str, object]] = None
-        self._project_sets: dict[str, dict[str, dict[str, object]]] = None
+    def start(self, *,
+            mod: ModuleManager,
+            **_
+    ):
+        input_stream = FileStream(
+            os.path.join(self._manifest_root, 'manifest.txt')
+        )
+        lexer = ManifestLexer(input_stream)
+        tokens = CommonTokenStream(lexer)
+        parser = ManifestParser(tokens)
+        tree = parser.manifest()
 
-    def register_context_hooks(
+        listener = ManifestListenerImpl(mod.log(), self._supported_contexts)
+        walker = ParseTreeWalker()
+        walker.walk(listener, tree)
+
+        self._projects = listener.projects
+        self._project_sets = listener.project_sets
+
+    def __call__(self, *,
+            mod: ModuleManager,
+            args: Namespace,
+            **_
+    ):
+        mod.log().trace(f"manifest(args={args})")
+
+        output = ''
+
+        if args.manifest_command == 'project':
+            output = self.get_project(
+                args.pattern,
+                project_set_pattern=args.project_set,
+                location=args.location,
+                relative_to=args.relative_to
+            )
+            print(self._format_project(output))
+
+        if args.manifest_command == 'project-set':
+            output = self.get_project_set(args.pattern)
+            print(self._format_project_set(output))
+
+        return output
+
+    # Module Configuration Methods
+    # --------------------
+
+    def configure_context_hooks(
             self,
             typeName: str,
             **hooks
     ):
-        # It is only useful to register context hooks *before* the manifest is
+        """
+        Allows other modules to extend the manifest format with new contexts.
+        """
+
+        # It is only useful to configure context hooks *before* the manifest is
         # parsed. If it's already been parsed, then registration will have no
         # effect. As such, fail loudly to tell module developers that they've
         # done something wrong.
@@ -272,9 +331,8 @@ class Manifest():
             raise VCSException(
                 f"Attempted registration of context type '{typeName}' after"
                 " manifest has been parsed. This was probably caused by"
-                " inappropriate use of"
-                " modules.Manifest.register_context_option() by the last"
-                " module to be invoked (possibly internally)."
+                " inappropriate use of mod.Manifest.configure_context_hooks()"
+                " by the last module to be invoked (possibly internally)."
             )
 
         sup_ctx = self._supported_contexts
@@ -296,71 +354,15 @@ class Manifest():
             for key in sup_ctx[typeName].keys()
         }
 
-    def _load_manifest(self):
-        self._logger.trace(f"manifest._load_manifest()")
-
-        input_stream = FileStream(
-            os.path.join(self._manifest_root, 'manifest.txt')
-        )
-        lexer = ManifestLexer(input_stream)
-        tokens = CommonTokenStream(lexer)
-        parser = ManifestParser(tokens)
-        tree = parser.manifest()
-
-        listener = ManifestListenerImpl(self._logger, self._supported_contexts)
-        walker = ParseTreeWalker()
-        walker.walk(listener, tree)
-
-        self._projects = listener.projects
-        self._project_sets = listener.project_sets
-
-    def __call__(self, args: Namespace):
-        self._logger.trace(f"manifest(args={args})")
-
-        output = ''
-
-        if args.manifest_command == 'project':
-            output = self.get_project(
-                args.pattern,
-                project_set_pattern=args.project_set,
-                location=args.location,
-                relative_to=args.relative_to
-            )
-            print(self._format_project(output))
-
-        if args.manifest_command == 'project-set':
-            output = self.get_project_set(args.pattern)
-            print(self._format_project_set(output))
-
-        return output
-
-    def _format_project(self, project: 'dict[str, object]'):
-        extra_attrs = '\n'.join(
-            f'{key}: {value}'
-            for key, value in project.items()
-            if key not in ['ref', 'tags']
-        )
-        return '\n'.join([
-            f"ref: {project['ref']}",
-            f"tags: {', '.join(project['tags'].keys())}",
-            *([extra_attrs] if extra_attrs != '' else [])
-        ])
-
-    def _format_project_set(self, project_set: 'dict[str, dict[str, object]]'):
-        return '\n\n'.join(
-            self._format_project(project)
-            for project in project_set.values()
-        )
+    # Module Invokation Methods
+    # --------------------
 
     def get_project_set(self, pattern: str = None):
-        self._logger.trace(
+        self._mod.log().trace(
             "manifest.get_project_set("
                 +(f"{pattern}" if pattern is None else f"'{pattern}'")+
             ")"
         )
-
-        if self._projects is None:
-            self._load_manifest()
 
         if pattern is None:
             if self._default_project_set is None:
@@ -394,7 +396,7 @@ class Manifest():
         if relative_to is None:
             relative_to = 'root'
 
-        self._logger.trace(
+        self._mod.log().trace(
             "manifest.get_project("
                 +(pattern if pattern is None else f"'{pattern}'")+","
                 f" project_set_pattern={project_set_pattern},"
@@ -402,9 +404,6 @@ class Manifest():
                 f" relative_to={relative_to}"
             ")"
         )
-
-        if self._projects is None:
-            self._load_manifest()
 
         project_set = self.get_project_set(project_set_pattern)
 
@@ -415,7 +414,7 @@ class Manifest():
                 for project in project_set.values()
                 if project_regex.search(project['ref'])
             )
-            self._logger.trace('found:', project)
+            self._mod.log().trace('found:', project)
         except StopIteration:
             raise VCSException(
                 f"Project not found from pattern '{pattern}'"
@@ -430,3 +429,24 @@ class Manifest():
         # - Candidate (-c, --candidate) makes resolve come up with a proposed project path where the project/list could be stored in future (mutex with -v)
 
         return project
+
+    # Utils
+    # --------------------
+
+    def _format_project(self, project: 'dict[str, object]'):
+        extra_attrs = '\n'.join(
+            f'{key}: {value}'
+            for key, value in project.items()
+            if key not in ['ref', 'tags']
+        )
+        return '\n'.join([
+            f"ref: {project['ref']}",
+            f"tags: {', '.join(project['tags'].keys())}",
+            *([extra_attrs] if extra_attrs != '' else [])
+        ])
+
+    def _format_project_set(self, project_set: 'dict[str, dict[str, object]]'):
+        return '\n\n'.join(
+            self._format_project(project)
+            for project in project_set.values()
+        )

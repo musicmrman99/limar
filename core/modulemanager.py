@@ -1,51 +1,168 @@
+from os.path import dirname, basename, isfile, join
+import glob
 import re
 from argparse import ArgumentParser, Namespace
 import importlib
 
+from core.environment import Environment
 from core.modules.log import Log
 from core.exceptions import VCSException
 
 class ModuleManager:
     """
-    Manage the module lifecycle, including argument declaration and parsing.
+    Manages the lifecycle of a set of modules of some application.
 
-    Acts like a dynamic collection of module singletons and a command
-    line manager.
+    ## Basic Usage
+    
+    Create a ModuleManager, register the modules you wish to use using
+    `register()` or `register_package()`, then `run()` the manager's lifecycle,
+    like so:
 
-    Allow registration of module classes. Registration adds them to the
-    module pool and also allows those classes to register their argument
-    declarations on a passed subparser. The root parser is also passed in
-    the keyword argument 'root_parser' so that module classes can register
-    global options that affect their behaviour when called indirectly by
-    other modules.
+    ```py
+    from core.environment import Environment
+    from core.modulemanager import ModuleManager
 
-    When a module in the pool is requested, if it doesn't yet have an
-    instance it is __init__()-ialised, with this module set object and
-    the global configuration passed as the first two arguments so that it
-    can access any method on any other registered module object. Be
-    careful when developing module classes to avoid infinite recursion
-    when calling module methods.
+    import modules
+    from commands import CustomCommand
 
-    When a module is called from the CLI (by using run_command_line()), then
-    it is __call__()-ed with the parsed command line arguments (as an
-    argparse Namespace object) given as the first argument.
+    env = Environment()
+    mod_manager = ModuleManager('my-app', env)
+    mod_manager.register_package(modules)
+    mod_manager.register(CustomCommand)
+    mod_manager.run()
+    ```
+
+    And use on the command line like:
+    ```sh
+    my-app custom-command --an-option optval argument
+    ```
+
+    ## Modules and the Module Lifecycle
+
+    A module is a factory function for an object that can be 'invoked'
+    (retrieved so that it can be called or used in some other way), either by
+    the ModuleManager itself, or by another module.
+
+    The lifecycle of a module consists of the following phases:
+
+    - Registration (no hook):
+      Adds the module to the list of modules this ModuleManager knows about.
+      Note: Any attempt to register a module after the registration phase will
+            raise a VCSException.
+
+    - Initialisation (`__init__()`):
+      Uses the module's factory callable (a class or a function) to create the
+      module object for that module. Initialisation here should be kept to a
+      minimum, with the majority of initialisation done in the Starting phase.
+
+    - Argument Configuration (`configure_args(env, parser, root_parser)`):
+      Passes the module a command-line parser just for it, as well as the root
+      parser, so that the module can configure the command-line arguments and
+      options it takes when called.
+
+    - Configuration (`configure(mod, env, args)`):
+      Allows a module to configure itself and any other modules it depends on.
+
+    - Starting (`start(mod, env, args)`):
+      Allows a module to fully initialise itself after configuration.
+
+    - Running (`__call__(mod, env, args)`):
+      The phase when the module indicated by the command-line, or whoever called
+      `ModuleManager.run()` if that is given explicit command-line arguments,
+      is run, cascading down to any modules it in turn invokes, until the
+      indicated module completes.
+
+    - Stopping (`stop(mod, env, args)`):
+      Allows a module to fully tear itself down after running.
+
+    In the above, all arguments are passed as keyword arguments. The following
+    values are passed for them:
+
+    - `mod` is a reference to the ModuleManager itself. This can be used to
+      invoke and retrieve references to other modules - see below.
+    - `env` is an Environment based on the actual environment, or whatever
+      Environment is passed to the `run()` method.
+    - `args` is an argparse Namespace containing the command-line arguments, or
+      whatever arguments were passed to the `run()` method.
+
+    In all lifecycle phases that `mod` is given, a module can invoke another
+    module by calling the method on `mod` with the name of the module to be
+    invoked. Invoking a module will call that module's special lifecycle method
+    `invoke(phase, mod, env, args)` and return a reference to the other module.
+    `phase` is the current phase of all modules (of the constants in the
+    `ModuleManager.PHASES` Namespace). If the module you want to invoke is named
+    the same as one of ModuleManager's own methods (though this should be rare)
+    then you can use `mod.invoke_module(name)` instead. Once you have a
+    reference to the module instance, you can call the module or run any methods
+    that module specifies are supported. ModuleManager does not support calling
+    module lifecycle methods via this reference, though they may happen to work
+    correctly.
+
+    ## Notes and Tips
+
+    Here are some notes about the system and some tips on module development:
+    
+    - If you come across an error condition while trying to execute some action,
+      always raise a VCSException instead of logging an error and exiting. This
+      exception is handled gracefully and any wrapping/contextual actions by
+      other modules are undone/finalised.
+
+    - Be careful when developing module classes to avoid infinite recursion when
+      modules call each other or each other's methods without a base case.
     """
 
-    def __init__(self, env):
-        self._mods = {}
+    PHASES = Namespace(
+        REGISTRATION = 'registration',
+        INITIALISATION = 'initialisation',
+        ARGUMENT_CONFIGURATION = 'argument-configuration',
+        CONFIGURATION = 'configuration',
+        STARTING = 'starting',
+        RUNNING = 'running',
+        STOPPING = 'stopping'
+    )
+
+    @staticmethod
+    def modules_adjacent_to(file):
+        """
+        Utility for getting a list of all python modules in the same directory
+        as the given python file path.
+
+        Can be used make a package support being registered with
+        `register_package()` by placing the following in the package's
+        `__init__.py`:
+        ```
+        from core.modulemanager import ModuleManager
+        __all__ = ModuleManager.modules_adjacent_to(__file__)
+        ```
+        """
+
+        # Based on: https://stackoverflow.com/a/1057534/16967315
+        modules = glob.glob(join(dirname(file), "*.py"))
+        return [
+            basename(module)[:-3]
+            for module in modules
+            if isfile(module) and not basename(module).startswith('__')
+        ]
+
+    def __init__(self, app_name, env):
+        self._phase = ModuleManager.PHASES.REGISTRATION
         self._env = env
         self._args = None
-        self._arg_parser = ArgumentParser(prog='vcs')
+
+        self._registered_mods = {}
+        self._mods = {}
+
+        self._arg_parser = ArgumentParser(prog=app_name)
         self._arg_subparsers = self._arg_parser.add_subparsers(dest="module")
 
         # Create a separate logger to avoid infinite recursion.
-        # FIXME: There may be a better way of doing this, while still having the
-        #        logger able to use parsed verbosity arguments.
-        self._logger = Log(
+        # TODO: There may be a way of supporting command-line verbosity
+        #       arguments, but getting verbosity from env will do for now.
+        self._logger = Log()
+        self._logger.configure(
             mod=self,
             env=self._env,
-            # Only needed if you have to debug the ModuleManager itself
-            args=Namespace(log_verbose=0)
+            args=Namespace()
         )
 
     # Registration
@@ -76,8 +193,8 @@ class ModuleManager:
                 except AttributeError as e:
                     raise VCSException(
                         f"Python module '{py_module_name}' in __all__ does not"
-                        " contain a ModuleManager module: class"
-                        f" '{mm_module_name}' notfound"
+                        f" contain a ModuleManager module: '{mm_module_name}'"
+                        " not found"
                     ) from e
 
                 mm_modules.append(mm_module)
@@ -85,82 +202,184 @@ class ModuleManager:
             self.register(*mm_modules)
 
     def register(self, *modules):
-        for module in modules:
-            name = self._camel_to_kebab(module.__name__)
+        for module_factory in modules:
+            name = self._camel_to_kebab(module_factory.__name__)
+            if self._phase != ModuleManager.PHASES.REGISTRATION:
+                raise VCSException(
+                    f"Attempt to register module '{name}' after module"
+                    " initialisation"
+                )
+
+            if self.is_registered(name):
+                self._logger.info(
+                    f"Skipping registering already-registered module '{name}'"
+                )
+                continue
+
             self._logger.debug(
-                f"Registering module '{name}' ({module}) with {self}"
+                f"Registering module '{name}' ({module_factory}) with {self}"
             )
+            self._registered_mods[name] = module_factory
 
-            self._mods[name] = None
-            module_arg_parser = self._arg_subparsers.add_parser(name)
-            module.setup_args(
-                parser=module_arg_parser,
-                root_parser=self._arg_parser
-            )
+    # Core Lifecycle
+    # --------------------
 
-            # Dynamically add a method to this object that can instantiate
-            # and retreive the module instance.
-            self.__dict__[name] = lambda name=name, module=module: (
-                self._get_module(name, module)
-            )
-
-    def _get_module(self, name, module):
+    def run(self,
+            env: Environment = None,
+            args: Namespace = None,
+            cli_args: 'list[str]' = None
+    ):
         """
-        Return the instance of the module with the given name, instanciating it
-        if needed.
+        Set off the module manager's lifecycle.
+
+        Includes:
+        - Initialise all registered modules.
+        - Configure supported arguments for all registered modules.
+        - Configure all registered modules.
+        - Start all registered modules.
+        - Invoke and call the module specified in one of the following (the
+          first found is used):
+          - In args (an argparse Namespace)
+          - In cli_args (a list of strings parsed as command line arguments)
+          - In the command line arguments (from sys.argv)
+        - Stop all registered modules.
+
+        Must be called after all modules have been registered. Attempts to
+        register new modules after this is called will raise an exception.
         """
 
-        if self._mods[name] == None:
+        if env is not None:
+            self._env = env
+
+        # Lifecycle: Initialise
+        self._phase = ModuleManager.PHASES.INITIALISATION
+        for name, module_factory in self._registered_mods.items():
+            self._logger.debug(f"Initialising module '{name}'")
+
+            if not callable(module_factory):
+                raise VCSException(
+                    f"Initialisation failed: '{name}' could not be initialised"
+                    " because it is not callable"
+                )
+
             try:
-                self._logger.debug(f"Instantiating module '{name}'")
-                self._mods[name] = module(
-                    mod=self,
-                    env=self._env,
-                    args=self._args
-                )
-            except RecursionError:
-                self._logger.error(
-                    f"Recursion error: Probable infinite recursion in"
-                    " module '{name}'"
-                )
-                exit()
-        return self._mods[name]
+                self._mods[name] = module_factory()
+            except RecursionError as e:
+                raise VCSException(
+                    f"Initialisation failed: '{name}' could not be initialised:"
+                    " probable infinite recursion in __init__() of module"
+                ) from e
 
-    # Post-Registration
+            # For the convenience of other modules, dynamically add a method to
+            # this object to invoke the module.
+            if name not in self.__dict__:
+                self.__dict__[name] = lambda name=name: self.invoke_module(name)
+
+        # Lifecycle: Configure Arguments
+        self._phase = ModuleManager.PHASES.ARGUMENT_CONFIGURATION
+        for name, module in self._mods.items():
+            if hasattr(module, 'configure_args'):
+                self._logger.debug(f"Configuring arguments for module '{name}'")
+                module_arg_parser = self._arg_subparsers.add_parser(name)
+                module.configure_args(
+                    env=self._env,
+                    parser=module_arg_parser,
+                    root_parser=self._arg_parser
+                )
+
+        # Parse Arguments
+        if args is not None:
+            self._logger.debug(f"Setting arguments")
+            self._args = args
+        elif cli_args is not None and len(cli_args) > 0:
+            self._logger.debug(f"Parsing given arguments")
+            self._args = self._arg_parser.parse_args(cli_args)
+        else:
+            self._logger.debug(f"Parsing command-line arguments")
+            self._args = self._arg_parser.parse_args()
+
+        # Lifecycle: Configure
+        self._phase = ModuleManager.PHASES.CONFIGURATION
+        for name, module in self._mods.items():
+            if hasattr(module, 'configure'):
+                self._logger.debug(f"Configuring module '{name}'")
+                module.configure(mod=self, env=self._env, args=self._args)
+
+        # Lifecycle: Start
+        self._phase = ModuleManager.PHASES.STARTING
+        for name, module in self._mods.items():
+            if hasattr(module, 'start'):
+                self._logger.debug(f"Starting module '{name}'")
+                module.start(mod=self, env=self._env, args=self._args)
+ 
+        # Lifecycle: Invoke and Call (Specified Module)
+        self._phase = ModuleManager.PHASES.RUNNING
+        self.call_module(self._args.module)
+
+        # Lifecycle: Stop
+        self._phase = ModuleManager.PHASES.STOPPING
+        for name, module in self._mods.items():
+            if hasattr(module, 'stop'):
+                self._logger.debug(f"Stopping module '{name}'")
+                module.stop(mod=self, env=self._env, args=self._args)
+
+    # Module Utils
     # --------------------
 
     def is_registered(self, name):
+        """
+        Return True if a module with the given name has been registered with
+        this ModuleManager; otherwise return False.
+        """
+
+        return name in self._registered_mods
+
+    def is_initialised(self, name):
+        """
+        Return True if a registered module with the given name has been
+        initialised; otherwise return False.
+        """
+
         return name in self._mods
 
-    def get_module(self, name):
-        """Return the instance of the module with the given name."""
-
-        if not self.is_registered(name):
-            raise VCSException(f"Module not registered: '{name}'")
-
-        return self.__dict__[name]()
-
-    def run_module(self, name, args):
-        """Run the module with the given name with the given arguments."""
-
-        self.get_module(name)(args)
-
-    # Actioning the Command Line
-    # --------------------
-
-    def run_command_line(self, *args):
+    def invoke_module(self, name):
         """
-        Parse the command line and run the module it specifies.
+        Invoke and return the instance of the module with the given name.
 
-        If args are given, then run those as a command line instead.
+        If no module with the given name has been registered, raise a
+        VCSException.
         """
 
-        if len(args) > 0:
-            self._args = self._arg_parser.parse_args(args)
+        if not self.is_initialised(name):
+            raise VCSException(f"Module not initialised: '{name}'")
+
+        # Lifecycle: Invoke
+        if hasattr(self._mods[name], 'invoke'):
+            self._mods[name].invoke(
+                phase=self._phase,
+                mod=self,
+                env=self._env,
+                args=self._args
+            )
+
+        return self._mods[name]
+
+    def call_module(self, name, args=None):
+        """
+        Run the module with the given name with the given arguments.
+
+        If no module with the given name has been registered, raise a
+        VCSException.
+        """
+
+        if args is None:
+            args = self._args
+
+        module = self.invoke_module(name)
+        if callable(module):
+            module(phase=self._phase, mod=self, args=args)
         else:
-            self._args = self._arg_parser.parse_args()
-
-        self.run_module(self._args.module, self._args)
+            raise VCSException(f"Module not found: '{name}'")
 
     # Utils
     # --------------------

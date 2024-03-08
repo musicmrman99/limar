@@ -13,8 +13,14 @@ class Log:
         'TRACE'
     ]
 
-    @staticmethod
-    def setup_args(parser: ArgumentParser, root_parser: ArgumentParser):
+    # Lifecycle
+    # --------------------
+
+    def configure_args(self, *,
+            parser: ArgumentParser,
+            root_parser: ArgumentParser,
+            **_
+    ):
         # Root parser
         root_parser.add_argument('-v', '--log-verbose',
             action='count', default=0,
@@ -32,19 +38,22 @@ class Log:
             or above the given level
             """)
 
-    def __init__(self, *,
-            mod = None, # ModuleManager, but not given to avoid circular import
+    def configure(self, *,
             env: Environment = None,
-            args: Namespace = None
+            args: Namespace = None,
+            **_
     ):
         self._verbosity = 0
         if env is not None:
             self._verbosity = int(env.get('log.verbosity'))
         if args is not None and 'log_verbose' in args:
-            self._verbosity = args.log_verbose
+            self._verbosity = int(args.log_verbose)
 
     def __call__(self, args: Namespace):
         self.log(args.message, error=args.error, level=args.level)
+
+    # Actions
+    # --------------------
 
     def log(self, *objs, error=False, level=0):
         file = sys.stdout

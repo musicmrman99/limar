@@ -9,20 +9,43 @@ To get it installed, see [Installation](#installation).
 - ./ rename CommandSet -> ModuleSet, cmd/_cmd -> mod/_mod
 - ./ change module.setup_args() signature to setup_args(*, parser, root_parser)
 
-- create multi-phase module system like:
-  - __init__()               - called once for all modules during registration
-  - register_args(parser, root_parser)
-                             - called once for all modules during registration
+- ./ create multi-phase module system like:
+  - ./ __init__()
+    - called once for all modules during registration
 
-  - register(mod, env, args) - called once for all modules after all modules have done basic initialisation
-                               - other register_*() methods (except the special ones mentioned above) of other
-                                 modules may be called here *without* invoking the module.
-  - init(mod, env, args)     - called once the first time the module is invoked (if it is invoked)
-  - invoke(mod, env, args)   - called each time the module is invoked, regardless of whether or how it is used
+  - ./ configure_args(env, parser, root_parser)
+    - called once for all modules during registration
 
-- use Test.register(mod, **) to call Manifest.register_context_hooks()
-- use Manifest.init() instead of Manifest._load_manifest()
-  - and remove Manifest._load_manifest() from module methods
+  - ./ configure(mod, env, args)
+    - called once for all modules after all modules have done basic initialisation
+    - X other configure_*() methods (except the special ones mentioned above) of
+      other modules may be called here *without* invoking the module.
+      - handled differently, but task is done.
+
+  - ./ start(mod, env, args)
+    - called once the first time the module is invoked (if it is invoked)
+
+  - ./ invoke(phase, mod, env, args)
+    - called each time the module is invoked, regardless of whether or how it is used
+
+  - ./ stop(mod, env, args)
+    - called once the first time the module is invoked (if it is invoked)
+
+- ./ don't re-register a module if it's already been registered
+- ./ set module phases
+
+- ./ improve state handling in modulemanager
+  - ./ env vs. self._env is a mess
+  - ./ same with args vs. self._args
+  - ./ same with self._phase
+
+- use Test.configure(mod, **) to call Manifest.configure_context_hooks()
+- ./ use Manifest.start() instead of Manifest._load_manifest()
+  - ./ and remove Manifest._load_manifest() from module methods
+
+- add logging to module invokation and all other relevant points
+
+---
 
 - Execute management commands against multiple projects, eg. `vcs for ...`
 

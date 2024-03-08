@@ -269,7 +269,7 @@ class TestManifest(TestCase):
         manifest = Manifest(mod=self.mock_mod, env=self.mock_env)
 
         on_enter_context = Mock()
-        manifest.register_context_hooks('some-context',
+        manifest.configure_context_hooks('some-context',
             on_enter_context=on_enter_context
         )
 
@@ -395,7 +395,7 @@ class TestManifest(TestCase):
         on_exit_context = Mock(side_effect=verify_exit_context)
         on_exit_manifest = Mock(side_effect=verify_exit_manifest)
 
-        manifest.register_context_hooks('some-context',
+        manifest.configure_context_hooks('some-context',
             on_enter_manifest=on_enter_manifest,
             on_enter_context=on_enter_context,
             on_declare_project=on_declare_project,
@@ -422,7 +422,7 @@ class TestManifest(TestCase):
     ])+b'\n')
     def test_resolve_context_complex(self, _):
         manifest = Manifest(mod=self.mock_mod, env=self.mock_env)
-        manifest.register_context_hooks('uris',
+        manifest.configure_context_hooks('uris',
             on_declare_project=self.set_project_local_path_hook,
             on_exit_context=self.add_verify_project_local_paths_hook,
             on_exit_manifest=self.verify_project_local_paths_hook
@@ -452,7 +452,7 @@ class TestManifest(TestCase):
     ])+b'\n')
     def test_resolve_context_fails_if_hook_fails(self, _):
         manifest = Manifest(mod=self.mock_mod, env=self.mock_env)
-        manifest.register_context_hooks('uris',
+        manifest.configure_context_hooks('uris',
             on_declare_project=self.set_project_local_path_hook,
             on_exit_context=self.add_verify_project_local_paths_hook,
             on_exit_manifest=self.verify_project_local_paths_hook
@@ -471,12 +471,12 @@ class TestManifest(TestCase):
     ])+b'\n')
     def test_resolve_context_multi_hooks(self, _):
         manifest = Manifest(mod=self.mock_mod, env=self.mock_env)
-        manifest.register_context_hooks('uris',
+        manifest.configure_context_hooks('uris',
             on_declare_project=self.set_project_local_path_hook,
             on_exit_context=self.add_verify_project_local_paths_hook,
             on_exit_manifest=self.verify_project_local_paths_hook
         )
-        manifest.register_context_hooks('uris',
+        manifest.configure_context_hooks('uris',
             on_declare_project=self.set_project_remote_path_hook,
             on_exit_context=self.add_verify_project_remote_paths_hook,
             on_exit_manifest=self.verify_project_remote_paths_hook
@@ -511,7 +511,7 @@ class TestManifest(TestCase):
     ])+b'\n')
     def test_resolve_context_nested(self, _):
         manifest = Manifest(mod=self.mock_mod, env=self.mock_env)
-        manifest.register_context_hooks('uris',
+        manifest.configure_context_hooks('uris',
             on_declare_project=self.set_project_local_path_hook,
             on_exit_context=self.add_verify_project_local_paths_hook,
             on_exit_manifest=self.verify_project_local_paths_hook
