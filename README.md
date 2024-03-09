@@ -39,11 +39,26 @@ To get it installed, see [Installation](#installation).
   - ./ same with args vs. self._args
   - ./ same with self._phase
 
-- use Test.configure(mod, **) to call Manifest.configure_context_hooks()
+- ./ use Test.configure(mod, **) to call Manifest.configure_context_hooks()
 - ./ use Manifest.start() instead of Manifest._load_manifest()
   - ./ and remove Manifest._load_manifest() from module methods
 
-- add logging to module invokation and all other relevant points
+---
+
+- transition to use argparse.Namespace for env parsing, rather than a custom Evironment
+  - convert Environment into envparse
+  - fix modules
+
+- envparse:
+  - root_parser = envparse.EnvironmentParser()
+  - subparsers = root_parser.subparsers()
+
+  - parser = subparsers.add_parser(...)
+  - provide the parser and a root_parser (a subparser has automatic var name prefixing)
+
+  - env = root_parser.parse_env(cli_env)
+      OR
+  - env = root_parser.parse_env()
 
 ---
 
@@ -80,6 +95,8 @@ To get it installed, see [Installation](#installation).
     > enter your key's password
 
 ---
+
+- add logging to module invokation and all other relevant points
 
 - Execute management commands against multiple projects, eg. `vcs for ...`
 

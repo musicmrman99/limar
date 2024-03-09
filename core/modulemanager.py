@@ -1,8 +1,9 @@
+from contextlib import contextmanager
+import importlib
 from os.path import dirname, basename, isfile, join
 import glob
 import re
 from argparse import ArgumentParser, Namespace
-import importlib
 
 from core.environment import Environment
 from core.modules.log import Log
@@ -25,8 +26,7 @@ class ModuleManager:
     import modules
     from commands import CustomCommand
 
-    env = Environment()
-    mod_manager = ModuleManager('my-app', env)
+    mod_manager = ModuleManager('my-app')
     mod_manager.register_package(modules)
     mod_manager.register(CustomCommand)
     mod_manager.run()
@@ -127,8 +127,8 @@ class ModuleManager:
             args: Namespace = None
     ):
         self._phase = ModuleManager.PHASES.REGISTRATION
-        self._env = env if env is not None else Environment()
-        self._args = args if args is not None else Namespace()
+        self._env = [env] if env is not None else []
+        self._args = [args] if args is not None else []
 
         self._registered_mods = {}
         self._mods = {}
@@ -143,8 +143,8 @@ class ModuleManager:
         self._logger = Log()
         self._logger.configure(
             mod=self,
-            env=self._env,
-            args=self._args
+            env=self._env[-1] if len(self._env) > 0 else Environment(),
+            args=self._args[-1] if len(self._args) > 0 else Namespace()
         )
 
     # Registration
@@ -232,6 +232,7 @@ class ModuleManager:
     def run(self,
             env: Environment = None,
             args: Namespace = None,
+            cli_env: 'dict[str, str]' = None,
             cli_args: 'list[str]' = None
     ):
         """
@@ -253,11 +254,13 @@ class ModuleManager:
         register new modules after this is called will raise an exception.
         """
 
-        if env is not None:
-            self._env = env
-        if args is not None:
-            self._args = args
+        with self._env_args_of(env, args):
+            self._run(cli_env, cli_args)
 
+    def _run(self,
+            cli_env: 'dict[str, str]' = None,
+            cli_args: 'list[str]' = None
+    ):
         # Lifecycle: Initialise
         self._phase = ModuleManager.PHASES.INITIALISATION
         for name, module_factory in self._registered_mods.items():
@@ -282,6 +285,20 @@ class ModuleManager:
             if name not in self.__dict__:
                 self.__dict__[name] = lambda name=name: self.invoke_module(name)
 
+        # TODO: Lifecycle: Configure Environment
+        # Note: Configuring environment before args means that configuring args
+        #       can depend on the environment, which allows for things like
+        #       environment-based feature toggles.
+
+        # Finalise Environment (at the run level)
+        if len(self._env) == 0:
+            if cli_env is not None:
+                self._env.append(Environment(cli_env))
+            else:
+                self._env.append(Environment())
+
+        env, args = self._env_args()
+
         # Lifecycle: Configure Arguments
         self._phase = ModuleManager.PHASES.ARGUMENT_CONFIGURATION
         for name, module in self._mods.items():
@@ -289,46 +306,46 @@ class ModuleManager:
                 self._logger.debug(f"Configuring arguments for module '{name}'")
                 module_arg_parser = self._arg_subparsers.add_parser(name)
                 module.configure_args(
-                    env=self._env,
+                    env=env,
                     parser=module_arg_parser,
                     root_parser=self._arg_parser
                 )
 
-        # Parse Arguments
-        if args is not None:
-            self._logger.debug(f"Setting arguments")
-            self._args = args
-        elif cli_args is not None and len(cli_args) > 0:
-            self._logger.debug(f"Parsing given arguments")
-            self._args = self._arg_parser.parse_args(cli_args)
-        else:
-            self._logger.debug(f"Parsing command-line arguments")
-            self._args = self._arg_parser.parse_args()
+        # Finalise Arguments, parsing if needed (at the run level)
+        if len(self._args) == 0:
+            if cli_args is not None:
+                self._logger.debug(f"Parsing given command-line arguments")
+                self._args.append(self._arg_parser.parse_args(cli_args))
+            else:
+                self._logger.debug(f"Parsing command-line arguments")
+                self._args.append(self._arg_parser.parse_args())
+
+        env, args = self._env_args()
 
         # Lifecycle: Configure
         self._phase = ModuleManager.PHASES.CONFIGURATION
         for name, module in self._mods.items():
             if hasattr(module, 'configure'):
                 self._logger.debug(f"Configuring module '{name}'")
-                module.configure(mod=self, env=self._env, args=self._args)
+                module.configure(mod=self, env=env, args=args)
 
         # Lifecycle: Start
         self._phase = ModuleManager.PHASES.STARTING
         for name, module in self._mods.items():
             if hasattr(module, 'start'):
                 self._logger.debug(f"Starting module '{name}'")
-                module.start(mod=self, env=self._env, args=self._args)
+                module.start(mod=self, env=env, args=args)
  
         # Lifecycle: Invoke and Call (Specified Module)
         self._phase = ModuleManager.PHASES.RUNNING
-        self.call_module(self._args.module)
+        self.call_module(args.module)
 
         # Lifecycle: Stop
         self._phase = ModuleManager.PHASES.STOPPING
         for name, module in self._mods.items():
             if hasattr(module, 'stop'):
                 self._logger.debug(f"Stopping module '{name}'")
-                module.stop(mod=self, env=self._env, args=self._args)
+                module.stop(mod=self, env=env, args=args)
 
     # Module Utils
     # --------------------
@@ -361,12 +378,13 @@ class ModuleManager:
             raise VCSException(f"Module not initialised: '{name}'")
 
         # Lifecycle: Invoke
+        env, args = self._env_args()
         if hasattr(self._mods[name], 'invoke'):
             self._mods[name].invoke(
                 phase=self._phase,
                 mod=self,
-                env=self._env,
-                args=self._args
+                env=env,
+                args=args
             )
 
         return self._mods[name]
@@ -384,19 +402,40 @@ class ModuleManager:
                 f"Attempt to call module '{name}' outside of RUNNING phase"
             )
 
-        if env is None:
-            env = self._env
-        if args is None:
-            args = self._args
-
-        module = self.invoke_module(name)
-        if callable(module):
-            module(mod=self, env=env, args=args)
-        else:
-            raise VCSException(f"Module not found: '{name}'")
+        with self._env_args_of(env, args) as (env, args):
+            module = self.invoke_module(name)
+            if callable(module):
+                module(mod=self, env=env, args=args)
+            else:
+                raise VCSException(f"Module not found: '{name}'")
 
     # Utils
     # --------------------
+
+    def _env_args(self):
+        return (
+            self._env[-1] if len(self._env) > 0 else None,
+            self._args[-1] if len(self._args) > 0 else None
+        )
+
+    @contextmanager
+    def _env_args_of(self,
+            env: Environment = None,
+            args: Namespace = None
+    ):
+        if env is not None:
+            self._env.append(env)
+        try:
+            if args is not None:
+                self._args.append(args)
+            try:
+                yield self._env_args()
+            finally:
+                if args is not None:
+                    self._args.pop()
+        finally:
+            if env is not None:
+                self._env.pop()
 
     # Derived from: https://stackoverflow.com/a/1176023/16967315
     def _camel_to_kebab(self, name):
