@@ -38,21 +38,17 @@ class Log:
             or above the given level
             """)
 
-    def configure(self, *,
-            env: Environment = None,
-            args: Namespace = None,
-            **_
-    ):
+    def configure(self, *, env: Environment = None, args: Namespace = None, **_):
         self._verbosity = 0
         if env is not None:
             self._verbosity = int(env.get('log.verbosity'))
         if args is not None and 'log_verbose' in args:
             self._verbosity = int(args.log_verbose)
 
-    def __call__(self, args: Namespace):
+    def __call__(self, *, args: Namespace, **_):
         self.log(args.message, error=args.error, level=args.level)
 
-    # Actions
+    # Invokation
     # --------------------
 
     def log(self, *objs, error=False, level=0):

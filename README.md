@@ -47,6 +47,40 @@ To get it installed, see [Installation](#installation).
 
 ---
 
+- setup ssh
+  - ssh-keygen -t ed25519 -C 'your.email@address.com'
+    > enter a strong password for your key
+
+- set up repository hosting provider
+  - put your pubkey onto the provider (usage type: authentication and signing)
+  - [if needed] set up a token to access other systems in the provider, eg. repositories, web hosting, etc.
+
+- set up git
+  - tools
+    - git config --global core.editor nano
+
+  - aliases
+    - git config --global alias.repo 'log --oneline --graph --all'
+    - git config --global alias.repo-l 'log --oneline --graph'
+    - git config --global alias.repo-b 'log --oneline --graph develop..HEAD'
+      - ideally, this would be relative to the repo's default branch
+
+  - user
+    - git config --global user.name 'Your Name'
+    - git config --global user.email 'your.email@address.com'
+
+  - commit signing
+    - git config --global commit.gpgsign true
+    - git config --global gpg.format ssh
+    - git config --global user.signingkey ~/.ssh/id_ed25519.pub
+
+- set up your ssh-agent (in each shell instance)
+  - eval `ssh-agent`
+  - ssh-add
+    > enter your key's password
+
+---
+
 - Execute management commands against multiple projects, eg. `vcs for ...`
 
 - Extract data about code elements (try to reuse existing libs where possible), eg:

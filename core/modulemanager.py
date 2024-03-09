@@ -121,6 +121,35 @@ class ModuleManager:
         STOPPING = 'stopping'
     )
 
+    def __init__(self,
+            app_name: str,
+            env: Environment = None,
+            args: Namespace = None
+    ):
+        self._phase = ModuleManager.PHASES.REGISTRATION
+        self._env = env if env is not None else Environment()
+        self._args = args if args is not None else Namespace()
+
+        self._registered_mods = {}
+        self._mods = {}
+
+        self._arg_parser = ArgumentParser(prog=app_name)
+        self._arg_subparsers = self._arg_parser.add_subparsers(dest="module")
+
+        # Create a separate logger to avoid infinite recursion.
+        # TODO: There may be a way of supporting command-line verbosity
+        #       arguments, but getting verbosity from env or parameter args will
+        #       do for now.
+        self._logger = Log()
+        self._logger.configure(
+            mod=self,
+            env=self._env,
+            args=self._args
+        )
+
+    # Registration
+    # --------------------
+
     @staticmethod
     def modules_adjacent_to(file):
         """
@@ -143,30 +172,6 @@ class ModuleManager:
             for module in modules
             if isfile(module) and not basename(module).startswith('__')
         ]
-
-    def __init__(self, app_name, env):
-        self._phase = ModuleManager.PHASES.REGISTRATION
-        self._env = env
-        self._args = None
-
-        self._registered_mods = {}
-        self._mods = {}
-
-        self._arg_parser = ArgumentParser(prog=app_name)
-        self._arg_subparsers = self._arg_parser.add_subparsers(dest="module")
-
-        # Create a separate logger to avoid infinite recursion.
-        # TODO: There may be a way of supporting command-line verbosity
-        #       arguments, but getting verbosity from env will do for now.
-        self._logger = Log()
-        self._logger.configure(
-            mod=self,
-            env=self._env,
-            args=Namespace()
-        )
-
-    # Registration
-    # --------------------
 
     def register_package(self, *packages):
         for package in packages:
@@ -250,6 +255,8 @@ class ModuleManager:
 
         if env is not None:
             self._env = env
+        if args is not None:
+            self._args = args
 
         # Lifecycle: Initialise
         self._phase = ModuleManager.PHASES.INITIALISATION
@@ -364,7 +371,7 @@ class ModuleManager:
 
         return self._mods[name]
 
-    def call_module(self, name, args=None):
+    def call_module(self, name, env=None, args=None):
         """
         Run the module with the given name with the given arguments.
 
@@ -372,12 +379,19 @@ class ModuleManager:
         VCSException.
         """
 
+        if self._phase != ModuleManager.PHASES.RUNNING:
+            raise VCSException(
+                f"Attempt to call module '{name}' outside of RUNNING phase"
+            )
+
+        if env is None:
+            env = self._env
         if args is None:
             args = self._args
 
         module = self.invoke_module(name)
         if callable(module):
-            module(phase=self._phase, mod=self, args=args)
+            module(mod=self, env=env, args=args)
         else:
             raise VCSException(f"Module not found: '{name}'")
 

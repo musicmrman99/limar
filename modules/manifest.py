@@ -311,7 +311,7 @@ class Manifest():
 
         return output
 
-    # Module Configuration Methods
+    # Configuration
     # --------------------
 
     def configure_context_hooks(
@@ -354,7 +354,7 @@ class Manifest():
             for key in sup_ctx[typeName].keys()
         }
 
-    # Module Invokation Methods
+    # Invokation
     # --------------------
 
     def get_project_set(self, pattern: str = None):
