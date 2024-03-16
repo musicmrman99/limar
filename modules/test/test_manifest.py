@@ -6,6 +6,9 @@ import os.path
 import re
 from core.exceptions import VCSException
 
+# Test Fixtures
+from modules.manifest_modules import uris_local, uris_remote
+
 # Under Test
 from modules.manifest import Manifest
 
@@ -321,17 +324,17 @@ class TestManifest(TestCase):
         # Configure
         manifest.configure(mod=self.mock_mod, env=self.mock_env)
 
-        on_enter_context = Mock()
-        manifest.configure_context_hooks('some-context',
-            on_enter_context=on_enter_context
-        )
+        mock_context_module = Mock()
+        mock_context_module.context_type.return_value = 'some-context'
+        mock_context_module_factory = Mock(return_value=mock_context_module)
+        manifest.add_context_module(mock_context_module_factory)
 
         # Start
         manifest.start(mod=self.mock_mod)
 
         # Test
         manifest.get_project('projectA')
-        on_enter_context.assert_called_once_with({
+        mock_context_module.on_enter_context.assert_called_once_with({
             'type': 'some-context',
             'opts': {},
             'projects': {
@@ -449,33 +452,28 @@ class TestManifest(TestCase):
                 'setB': {}
             })
 
-        on_enter_manifest = Mock(side_effect=verify_enter_manifest)
-        on_enter_context = Mock(side_effect=verify_enter_context)
-        on_declare_project = Mock(side_effect=verify_declare_project)
-        on_declare_project_set = Mock(side_effect=verify_declare_project_set)
-        on_exit_context = Mock(side_effect=verify_exit_context)
-        on_exit_manifest = Mock(side_effect=verify_exit_manifest)
-
-        manifest.configure_context_hooks('some-context',
-            on_enter_manifest=on_enter_manifest,
-            on_enter_context=on_enter_context,
-            on_declare_project=on_declare_project,
-            on_declare_project_set=on_declare_project_set,
-            on_exit_context=on_exit_context,
-            on_exit_manifest=on_exit_manifest
-        )
+        mock_context_module = Mock()
+        mock_context_module.context_type.return_value = 'some-context'
+        mock_context_module.on_enter_manifest.side_effect = verify_enter_manifest
+        mock_context_module.on_enter_context.side_effect = verify_enter_context
+        mock_context_module.on_declare_project.side_effect = verify_declare_project
+        mock_context_module.on_declare_project_set.side_effect = verify_declare_project_set
+        mock_context_module.on_exit_context.side_effect = verify_exit_context
+        mock_context_module.on_exit_manifest.side_effect = verify_exit_manifest
+        mock_context_module_factory = Mock(return_value=mock_context_module)
+        manifest.add_context_module(mock_context_module_factory)
 
         # Start
         manifest.start(mod=self.mock_mod)
 
         # Test
         manifest.get_project('projectA')
-        on_enter_manifest.assert_called_once()
-        on_enter_context.assert_called_once()
-        on_declare_project.assert_called_once()
-        on_declare_project_set.assert_called_once()
-        on_exit_context.assert_called_once()
-        on_exit_manifest.assert_called_once()
+        mock_context_module.on_enter_manifest.assert_called_once()
+        mock_context_module.on_enter_context.assert_called_once()
+        mock_context_module.on_declare_project.assert_called_once()
+        mock_context_module.on_declare_project_set.assert_called_once()
+        mock_context_module.on_exit_context.assert_called_once()
+        mock_context_module.on_exit_manifest.assert_called_once()
 
     @patch("builtins.open", new_callable=mock_open, read_data=b'\n'.join([
         b'@uris (',
@@ -491,11 +489,7 @@ class TestManifest(TestCase):
 
         # Configure
         manifest.configure(mod=self.mock_mod, env=self.mock_env)
-        manifest.configure_context_hooks('uris',
-            on_declare_project=self.set_project_local_path_hook,
-            on_exit_context=self.add_verify_project_local_paths_hook,
-            on_exit_manifest=self.verify_project_local_paths_hook
-        )
+        manifest.add_context_module(uris_local.UrisLocal)
 
         # Start
         manifest.start(mod=self.mock_mod)
@@ -529,11 +523,7 @@ class TestManifest(TestCase):
 
         # Configure
         manifest.configure(mod=self.mock_mod, env=self.mock_env)
-        manifest.configure_context_hooks('uris',
-            on_declare_project=self.set_project_local_path_hook,
-            on_exit_context=self.add_verify_project_local_paths_hook,
-            on_exit_manifest=self.verify_project_local_paths_hook
-        )
+        manifest.add_context_module(uris_local.UrisLocal)
 
         # Test: Start
         with self.assertRaises(VCSException):
@@ -554,16 +544,8 @@ class TestManifest(TestCase):
 
         # Configure
         manifest.configure(mod=self.mock_mod, env=self.mock_env)
-        manifest.configure_context_hooks('uris',
-            on_declare_project=self.set_project_local_path_hook,
-            on_exit_context=self.add_verify_project_local_paths_hook,
-            on_exit_manifest=self.verify_project_local_paths_hook
-        )
-        manifest.configure_context_hooks('uris',
-            on_declare_project=self.set_project_remote_path_hook,
-            on_exit_context=self.add_verify_project_remote_paths_hook,
-            on_exit_manifest=self.verify_project_remote_paths_hook
-        )
+        manifest.add_context_module(uris_local.UrisLocal)
+        manifest.add_context_module(uris_remote.UrisRemote)
 
         # Start
         manifest.start(mod=self.mock_mod)
@@ -602,11 +584,7 @@ class TestManifest(TestCase):
 
         # Configure
         manifest.configure(mod=self.mock_mod, env=self.mock_env)
-        manifest.configure_context_hooks('uris',
-            on_declare_project=self.set_project_local_path_hook,
-            on_exit_context=self.add_verify_project_local_paths_hook,
-            on_exit_manifest=self.verify_project_local_paths_hook
-        )
+        manifest.add_context_module(uris_local.UrisLocal)
 
         # Start
         manifest.start(mod=self.mock_mod)
@@ -624,90 +602,3 @@ class TestManifest(TestCase):
                 'tags': dict.fromkeys(['tagA'])
             }
         })
-
-    # Utils
-    # --------------------------------------------------
-
-    def set_project_local_path_hook(self, context, project):
-        proj_ref = project['ref']
-        if 'path' not in project:
-            project['path'] = proj_ref
-
-        try:
-            context_local_path = context['opts']['local']
-            if not context_local_path.startswith('/'):
-                raise ValueError('local mapped URI not absolute')
-
-            project['path'] = os.path.join(context_local_path, proj_ref)
-
-        except (KeyError, ValueError):
-            pass # For now, until all nested contexts have been tried
-
-    def add_verify_project_local_paths_hook(self, context, projects, project_sets):
-        self._uris_local_projects = (
-            self._uris_local_projects | projects.keys()
-        )
-
-    def verify_project_local_paths_hook(self, projects, project_sets):
-        local_projects = (
-            project
-            for project in projects.values()
-            if project['ref'] in self._uris_local_projects
-        )
-
-        for project in local_projects:
-            try:
-                if not project['path'].startswith('/'):
-                    raise ValueError('project path is not absolute')
-            except KeyError:
-                raise VCSException(
-                    f"Path of project '{project['ref']}' not defined"
-                    " (required by @uris context)"
-                )
-            except ValueError:
-                raise VCSException(
-                    f"Path of project '{project['ref']}' not absolute"
-                    " (required by @uris context)"
-                )
-
-    def set_project_remote_path_hook(self, context, project):
-        proj_ref = project['ref']
-        if 'remote' not in project:
-            project['remote'] = proj_ref
-
-        try:
-            context_remote_url = context['opts']['remote']
-            if not re.match('^https?://', context_remote_url):
-                raise ValueError('remote mapped URI is not a HTTP(S) URL')
-
-            project['remote'] = os.path.join(context_remote_url, proj_ref)
-
-        except (KeyError, ValueError):
-            pass # For now, until all nested contexts have been tried
-
-    def add_verify_project_remote_paths_hook(self, context, projects, project_sets):
-        self._uris_remote_projects = (
-            self._uris_remote_projects | projects.keys()
-        )
-
-    def verify_project_remote_paths_hook(self, projects, project_sets):
-        remote_projects = (
-            project
-            for project in projects.values()
-            if project['ref'] in self._uris_remote_projects
-        )
-
-        for project in remote_projects:
-            try:
-                if not re.match('^https?://', project['remote']):
-                    raise ValueError('project path is not a HTTP(S) URL')
-            except KeyError:
-                raise VCSException(
-                    f"Remote of project '{project['ref']}' not defined"
-                    " (required by @uris context)"
-                )
-            except ValueError:
-                raise VCSException(
-                    f"Remote of project '{project['ref']}' not a valid HTTP(S)"
-                    " URL (required by @uris context)"
-                )

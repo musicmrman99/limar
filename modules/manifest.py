@@ -17,36 +17,27 @@ from core.modules.log import Log
 class ManifestListenerImpl(ManifestListener):
     def __init__(self,
             logger: Log,
-            context_hooks: 'dict[str, dict[str, list[function]]]' = None
+            context_modules: 'dict[str, list]' = None
     ):
         """
         Initialises the manifest listener.
 
-        context_hooks must be a dictionary of the following format:
+        context_modules must be a dictionary of the following format:
 
-            {'context-type-name': {'hook_name': [hook(), ...]}, ...}
+            {'context-type-name': [context_module, ...], ...}
 
-        The following hook_names must be defined for every context type given:
+        Each module must define a `context_type()` method that returns the
+        context type that module is for as a string, and may define any of the
+        following methods:
 
-        - on_enter_manifest
-          - Hook Spec: hook()
-
-        - on_enter_context
-          - Hook Spec: hook(context)
-
-        - on_declare_project
-          - Hook Spec: hook(context, project)
-
-        - on_declare_project_set
-          - Hook Spec: hook(context, project_set)
-
-        - on_exit_context
-          - Hook Spec: hook(context, projects, project_sets)
+        - `on_enter_manifest()`
+        - `on_enter_context(context)`
+        - `on_declare_project(context, project)`
+        - `on_declare_project_set(context, project_set)`
+        - `on_exit_context(context, projects, project_sets)`
           - Note that projects and project_sets only contain those that were
             declared in this context.
-
-        - on_exit_manifest
-          - Hook Spec: hook(projects, project_sets)
+        - `on_exit_manifest(projects, project_sets)`
         """
 
         # Outputs
@@ -56,28 +47,26 @@ class ManifestListenerImpl(ManifestListener):
         # Internal operations
         self._logger = logger
 
-        self._context_hooks = context_hooks
-        if self._context_hooks is None:
-            self._context_hooks = {}
+        self._context_modules = context_modules
+        if self._context_modules is None:
+            self._context_modules = {}
 
         self._contexts = []
         self._tag_operand_stack = []
 
     def enterManifest(self, ctx: ManifestParser.ManifestContext):
-        # Call all configured 'on_enter_manifest' hooks
-        for context_hooks in self._context_hooks.values():
-            for hook in context_hooks['on_enter_manifest']:
-                hook()
+        # Call 'on_enter_manifest' on all context modules
+        self._run_context_lifecycle_point('on_enter_manifest', [])
 
     def exitManifest(self, ctx: ManifestParser.ManifestContext):
-        # Call all configured 'on_enter_manifest' hooks
-        for context_hooks in self._context_hooks.values():
-            for hook in context_hooks['on_exit_manifest']:
-                hook(self.projects, self.project_sets)
+        # Call 'on_exit_manifest' on all context modules
+        self._run_context_lifecycle_point('on_exit_manifest',
+            [self.projects, self.project_sets]
+        )
 
     def enterContext(self, ctx: ManifestParser.ContextContext):
         context_type = ctx.typeName.text
-        if context_type not in self._context_hooks.keys():
+        if context_type not in self._context_modules.keys():
             self._logger.warn(
                 f"Unsupported context type '{context_type}' found."
                 " Ignoring context."
@@ -100,24 +89,28 @@ class ManifestListenerImpl(ManifestListener):
 
         self._contexts.append(context)
 
-        # Call all 'on_enter_context' hooks configured for the context
-        context_hooks = self._context_hooks[context['type']]
-        for hook in context_hooks['on_enter_context']:
-            hook(context)
+        # Call 'on_enter_context' on all context modules registered for this
+        # context
+        self._run_context_lifecycle_point('on_enter_context',
+            [context],
+            context['type']
+        )
 
     def exitContext(self, ctx: ManifestParser.ContextContext):
         old_context = self._contexts.pop()
         if old_context is NotImplementedError:
             return # Ignore unrecognised contexts
 
-        # Call all 'on_exit_context' hooks configured for the context
-        context_hooks = self._context_hooks[old_context['type']]
-        for hook in context_hooks['on_exit_context']:
-            hook(
+        # Call 'on_exit_context' on all context modules registered for this
+        # context
+        self._run_context_lifecycle_point('on_exit_context',
+            [
                 old_context,
                 old_context['projects'],
                 old_context['project_sets']
-            )
+            ],
+            old_context['type']
+        )
 
     def enterProject(self, ctx: ManifestParser.ProjectContext):
         proj_ref = ctx.ref().getText()
@@ -146,14 +139,16 @@ class ManifestListenerImpl(ManifestListener):
 
             context['projects'][proj_ref] = self.projects[proj_ref]
 
-        # Call all configured 'on_declare_project' hooks for all active contexts
+        # Call 'on_declare_project' on all context modules registered for all
+        # active contexts
         for context in self._contexts:
             if context is NotImplementedError:
                 continue # Skip unrecognised contexts
 
-            context_hooks = self._context_hooks[context['type']]
-            for hook in context_hooks['on_declare_project']:
-                hook(context, self.projects[proj_ref])
+            self._run_context_lifecycle_point('on_declare_project',
+                [context, self.projects[proj_ref]],
+                context['type']
+            )
 
     def enterTagBase(self, ctx: ManifestParser.TagBaseContext):
         project_set_name = ctx.tag().getText()
@@ -196,15 +191,41 @@ class ManifestListenerImpl(ManifestListener):
                 self.project_sets[proj_set_ref]
             )
 
-        # Call all configured 'on_declare_project_set' hooks for all active
-        # contexts
+        # Call 'on_declare_project_set' on all context modules registered for
+        # all active contexts
         for context in self._contexts:
             if context is NotImplementedError:
                 continue # Skip unrecognised contexts
 
-            context_hooks = self._context_hooks[context['type']]
-            for hook in context_hooks['on_declare_project_set']:
-                hook(context, self.project_sets[proj_set_ref])
+            self._run_context_lifecycle_point('on_declare_project_set',
+                [context, self.project_sets[proj_set_ref]],
+                context['type']
+            )
+
+    def _run_context_lifecycle_point(self, name, args, context_type=None):
+        """
+        Run the named context lifecycle point for all context modules, passing
+        args.
+
+        If context_type is given, then only run the lifecycle point on context
+        modules for that context type.
+        """
+
+        if context_type is not None:
+            try:
+                module_set = self._context_modules[context_type]
+            except KeyError:
+                module_set = []
+        else:
+            module_set = [
+                mod
+                for mod_set in self._context_modules.values()
+                for mod in mod_set
+            ]
+
+        for module in module_set:
+            if hasattr(module, name):
+                getattr(module, name)(*args)
 
 class Manifest():
 
@@ -212,7 +233,7 @@ class Manifest():
     # --------------------
 
     def __init__(self):
-        self._supported_contexts: dict[str, dict[str, list[function]]] = {}
+        self._context_module_factories = []
         self._projects: dict[str, dict[str, object]] = None
         self._project_sets: dict[str, dict[str, dict[str, object]]] = None
 
@@ -266,6 +287,15 @@ class Manifest():
         self._default_project_set = env.VCS_MANIFEST_DEFAULT_PROJECT_SET
 
     def start(self, *, mod: ModuleManager, **_):
+        # Create context modules
+        context_modules = {}
+        for module_factory in self._context_module_factories:
+            context_mod = module_factory()
+            if context_mod.context_type() not in context_modules:
+                context_modules[context_mod.context_type()] = []
+            context_modules[context_mod.context_type()].append(context_mod)
+
+        # Setup parser
         input_stream = FileStream(
             os.path.join(self._manifest_root, 'manifest.txt')
         )
@@ -274,10 +304,12 @@ class Manifest():
         parser = ManifestParser(tokens)
         tree = parser.manifest()
 
-        listener = ManifestListenerImpl(mod.log(), self._supported_contexts)
+        # Parse
+        listener = ManifestListenerImpl(mod.log(), context_modules)
         walker = ParseTreeWalker()
         walker.walk(listener, tree)
 
+        # Extract results
         self._projects = listener.projects
         self._project_sets = listener.project_sets
 
@@ -304,41 +336,27 @@ class Manifest():
     # Configuration
     # --------------------
 
-    def configure_context_hooks(self, typeName: str, **hooks):
+    def add_context_module(self, *modules):
         """
         Allows other modules to extend the manifest format with new contexts.
         """
 
-        # It is only useful to configure context hooks *before* the manifest is
-        # parsed. If it's already been parsed, then registration will have no
-        # effect. As such, fail loudly to tell module developers that they've
-        # done something wrong.
-        if self._projects is not None:
+        # It is only useful to configure context modules *before* the manifest
+        # is parsed. If it's already been parsed, then registration will have no
+        # effect. As such, fail loudly to tell ModuleManager module developers
+        # that they've done something wrong.
+        if self._projects is not None and len(modules) > 0:
             raise VCSException(
-                f"Attempted registration of context type '{typeName}' after"
+                f"Attempted registration of context module '{modules[0]}' after"
                 " manifest has been parsed. This was probably caused by"
-                " inappropriate use of mod.Manifest.configure_context_hooks()"
-                " by the last module to be invoked (possibly internally)."
+                " inappropriate use of mod.Manifest.add_context_module() by the"
+                " last ModuleManager module to be invoked (possibly"
+                " internally)."
             )
 
-        sup_ctx = self._supported_contexts
-        if typeName not in sup_ctx:
-            sup_ctx[typeName] = {
-                'on_enter_manifest': [],
-                'on_enter_context': [],
-                'on_declare_project': [],
-                'on_declare_project_set': [],
-                'on_exit_context': [],
-                'on_exit_manifest': []
-            }
-
-        sup_ctx[typeName] = {
-            key: [
-                *sup_ctx[typeName][key],
-                *([hooks[key]] if key in hooks.keys() else [])
-            ]
-            for key in sup_ctx[typeName].keys()
-        }
+        for module in modules:
+            if module not in self._context_module_factories:
+                self._context_module_factories.append(module)
 
     # Invokation
     # --------------------

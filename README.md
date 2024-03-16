@@ -6,65 +6,20 @@ To get it installed, see [Installation](#installation).
 
 ## TODO
 
-- ./ rename CommandSet -> ModuleSet, cmd/_cmd -> mod/_mod
-- ./ change module.setup_args() signature to setup_args(*, parser, root_parser)
+- move to class-based manifest context modules
 
-- ./ create multi-phase module system like:
-  - ./ __init__()
-    - called once for all modules during registration
+- Tidy:
+  - "self._mod: ModuleManager = mod" - remove unnecessary type
 
-  - ./ configure_args(env, parser, root_parser)
-    - called once for all modules during registration
-
-  - ./ configure(mod, env, args)
-    - called once for all modules after all modules have done basic initialisation
-    - X other configure_*() methods (except the special ones mentioned above) of
-      other modules may be called here *without* invoking the module.
-      - handled differently, but task is done.
-
-  - ./ start(mod, env, args)
-    - called once the first time the module is invoked (if it is invoked)
-
-  - ./ invoke(phase, mod, env, args)
-    - called each time the module is invoked, regardless of whether or how it is used
-
-  - ./ stop(mod, env, args)
-    - called once the first time the module is invoked (if it is invoked)
-
-- ./ don't re-register a module if it's already been registered
-- ./ set module phases
-
-- ./ improve state handling in modulemanager
-  - ./ env vs. self._env is a mess
-  - ./ same with args vs. self._args
-  - ./ same with self._phase
-
-- ./ use Test.configure(mod, **) to call Manifest.configure_context_hooks()
-- ./ use Manifest.start() instead of Manifest._load_manifest()
-  - ./ and remove Manifest._load_manifest() from module methods
-
----
-
-- ./ transition to use argparse.Namespace for env parsing, rather than a custom Evironment
-  - ./ convert Environment into envparse
-  - fix modules
-
-- ./ envparse:
-  - ./ root_parser = envparse.EnvironmentParser()
-  - X subparsers = root_parser.subparsers()
-
-  - ./ parser = subparsers.add_parser(...)
-  - ./ provide the parser and a root_parser (a subparser has automatic var name prefixing)
-
-  - ./ env = root_parser.parse_env(cli_env)
-  - ./  OR
-  - ./ env = root_parser.parse_env()
-
-VCS_VERBOSITY           -> unused
-VCS_LOG_VERBOSITY       -> same
-VCS_REPO                -> unused
-VCS_MANIFEST            -> VCS_MANIFEST_ROOT
-VCS_DEFAULT_PROJECT_SET -> VCS_MANIFEST_DEFAULT_PROJECT_SET
+- support contexts without a set of projects/project lists; can be used for eg:
+  - **global contexts** (use `on_exit_manifest()` instead of `on_define_project()`/`on_define_project_set()`)
+    - avoids nesting everything inside several top-level contexts
+  - **decorators** (define `on_enter_context()` to set a state flag to true, and define `on_define_project()` and/or `on_define_project_set()` to check if the flag is true, and if so, set it to false then do whatever with the project/project set)
+    - this avoids the need to wrap the project/project set in `{}`
+  - **modes/imports/etc.** (define `on_enter_context()` to do something)
+    - sets something at a given point
+  - etc.
+- support getting env vars without prefixing
 
 ---
 
@@ -75,6 +30,9 @@ VCS_DEFAULT_PROJECT_SET -> VCS_MANIFEST_DEFAULT_PROJECT_SET
 - make log module include timestamp in message output
 - rotate log + clean up old logs
 - add logging to module invokation and all other relevant points
+
+---
+
 - TESTING
 
 ---
