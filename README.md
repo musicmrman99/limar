@@ -45,20 +45,37 @@ To get it installed, see [Installation](#installation).
 
 ---
 
-- transition to use argparse.Namespace for env parsing, rather than a custom Evironment
-  - convert Environment into envparse
+- ./ transition to use argparse.Namespace for env parsing, rather than a custom Evironment
+  - ./ convert Environment into envparse
   - fix modules
 
-- envparse:
-  - root_parser = envparse.EnvironmentParser()
-  - subparsers = root_parser.subparsers()
+- ./ envparse:
+  - ./ root_parser = envparse.EnvironmentParser()
+  - X subparsers = root_parser.subparsers()
 
-  - parser = subparsers.add_parser(...)
-  - provide the parser and a root_parser (a subparser has automatic var name prefixing)
+  - ./ parser = subparsers.add_parser(...)
+  - ./ provide the parser and a root_parser (a subparser has automatic var name prefixing)
 
-  - env = root_parser.parse_env(cli_env)
-      OR
-  - env = root_parser.parse_env()
+  - ./ env = root_parser.parse_env(cli_env)
+  - ./  OR
+  - ./ env = root_parser.parse_env()
+
+VCS_VERBOSITY           -> unused
+VCS_LOG_VERBOSITY       -> same
+VCS_REPO                -> unused
+VCS_MANIFEST            -> VCS_MANIFEST_ROOT
+VCS_DEFAULT_PROJECT_SET -> VCS_MANIFEST_DEFAULT_PROJECT_SET
+
+---
+
+- maybe merge env and arg namespaces?
+    def _merge_namespaces(self, ns1, ns2):
+        return Namespace(**{**vars(ns1), **vars(ns2)})
+
+- make log module include timestamp in message output
+- rotate log + clean up old logs
+- add logging to module invokation and all other relevant points
+- TESTING
 
 ---
 
@@ -96,7 +113,24 @@ To get it installed, see [Installation](#installation).
 
 ---
 
-- add logging to module invokation and all other relevant points
+Ideas from: https://www.youtube.com/watch?v=aolI_Rz0ZqY
+
+git blame -wCCCL <range_start>,<range_end> <path/to/file>
+git log [--full-diff] -L <range_start>,<range_end>:<path/to/file>
+git log -S <search_string>
+git reflog - history of current commit
+git diff --word-diff --word-diff-regex='.'
+
+git push --force-with-lease (not -f)
+
+git config --global rerere.enabled true (re-apply resolutions to conflicts, etc.)
+git config --global fetch.writeCommitGraph true (compute the commit graph on fetch, rather than on `git log --graph`)
+
+git clone --filter=blob:none
+
+git maintenance start (adds a cron job to do maintenance on repos)
+
+---
 
 - Execute management commands against multiple projects, eg. `vcs for ...`
 

@@ -10,7 +10,7 @@ from core.exceptions import VCSException
 
 # Types
 from core.modulemanager import ModuleManager
-from core.environment import Environment
+from core.envparse import EnvironmentParser
 from argparse import ArgumentParser, Namespace
 from core.modules.log import Log
 
@@ -216,19 +216,20 @@ class Manifest():
         self._projects: dict[str, dict[str, object]] = None
         self._project_sets: dict[str, dict[str, dict[str, object]]] = None
 
-    def configure_args(self, *,
-            parser: ArgumentParser,
-            **_
-    ):
+    def configure_env(self, *, parser: EnvironmentParser, **_):
+        parser.add_variable('ROOT')
+        parser.add_variable('DEFAULT_PROJECT_SET', default_is_none=True)
+
+    def configure_args(self, *, parser: ArgumentParser, **_):
         manifest_subparsers = parser.add_subparsers(dest="manifest_command")
 
-        # Resolve Subcommand
+        # Resolve Project
         resolve_parser = manifest_subparsers.add_parser('project')
 
         resolve_parser.add_argument('pattern', metavar='PATTERN',
             help='A regex pattern to resolve to a project reference')
 
-        # Options
+        # Resolve Project: Options
         resolve_parser.add_argument('-l', '--location',
             choices=['local', 'remote'],
             help='Specify the location to reosolve the project pattern to')
@@ -251,27 +252,20 @@ class Manifest():
             A pattern that matches the project set to use to resolve the project
             """)
 
-        # Resolve Subcommand
+        # Resolve Project Set
         resolve_parser = manifest_subparsers.add_parser('project-set')
 
         resolve_parser.add_argument('pattern', metavar='PATTERN',
             help='A regex pattern to resolve to a project set')
 
-    def configure(self, *,
-            mod: ModuleManager,
-            env: Environment,
-            **_
-    ):
+    def configure(self, *, mod: ModuleManager, env: Namespace, **_):
         # For methods that aren't directly given it
         self._mod: ModuleManager = mod
 
-        self._manifest_root = env.get('manifest.root')
-        self._default_project_set = env.get('manifest.default_project_set')
+        self._manifest_root = env.VCS_MANIFEST_ROOT
+        self._default_project_set = env.VCS_MANIFEST_DEFAULT_PROJECT_SET
 
-    def start(self, *,
-            mod: ModuleManager,
-            **_
-    ):
+    def start(self, *, mod: ModuleManager, **_):
         input_stream = FileStream(
             os.path.join(self._manifest_root, 'manifest.txt')
         )
@@ -287,11 +281,7 @@ class Manifest():
         self._projects = listener.projects
         self._project_sets = listener.project_sets
 
-    def __call__(self, *,
-            mod: ModuleManager,
-            args: Namespace,
-            **_
-    ):
+    def __call__(self, *, mod: ModuleManager, args: Namespace, **_):
         mod.log().trace(f"manifest(args={args})")
 
         output = ''
@@ -314,11 +304,7 @@ class Manifest():
     # Configuration
     # --------------------
 
-    def configure_context_hooks(
-            self,
-            typeName: str,
-            **hooks
-    ):
+    def configure_context_hooks(self, typeName: str, **hooks):
         """
         Allows other modules to extend the manifest format with new contexts.
         """
@@ -386,7 +372,7 @@ class Manifest():
 
     def get_project(self,
             pattern: str,
-            *_,
+            *,
             project_set_pattern=None,
             location=None,
             relative_to=None

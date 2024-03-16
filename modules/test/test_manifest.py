@@ -11,21 +11,19 @@ from modules.manifest import Manifest
 
 class TestManifest(TestCase):
 
+    def _log(self, *objs, error=False, level=0):
+        print(*objs)
+
     def setUp(self) -> None:
         logger = Mock()
-        logger.log.side_effect = lambda self, *objs, error=False, level=0: print(*objs)
+        logger.log.side_effect = self._log
 
         self.mock_mod = Mock()
         self.mock_mod.log.return_value=logger
 
         self.mock_env = Mock()
-        def envGet(value):
-            if value == 'manifest.default_project_set':
-                return None
-            if value == 'manifest.root':
-                return '/manifest/root'
-            return None
-        self.mock_env.get.side_effect = envGet
+        self.mock_env.VCS_MANIFEST_DEFAULT_PROJECT_SET = None
+        self.mock_env.VCS_MANIFEST_ROOT = '/manifest/root'
 
         # Used in some context hooks tests
         self._uris_local_projects = set()
@@ -35,7 +33,12 @@ class TestManifest(TestCase):
         b'/home/username/test/projectA'
     ])+b'\n')
     def test_resolve_basic(self, mock_manifest: MagicMock):
-        manifest = Manifest(mod=self.mock_mod, env=self.mock_env)
+        # Initialise/Configure/Start
+        manifest = Manifest()
+        manifest.configure(mod=self.mock_mod, env=self.mock_env)
+        manifest.start(mod=self.mock_mod)
+
+        # Test
         self.assertEqual(manifest.get_project('projectA'), {
             'ref': '/home/username/test/projectA',
             'tags': {}
@@ -46,7 +49,12 @@ class TestManifest(TestCase):
         b'/home/username/test/projectA (tagA)'
     ])+b'\n')
     def test_resolve_single_tag_manifest(self, _):
-        manifest = Manifest(mod=self.mock_mod, env=self.mock_env)
+        # Initialise/Configure/Start
+        manifest = Manifest()
+        manifest.configure(mod=self.mock_mod, env=self.mock_env)
+        manifest.start(mod=self.mock_mod)
+
+        # Test
         self.assertEqual(manifest.get_project('projectA'), {
             'ref': '/home/username/test/projectA',
             'tags': dict.fromkeys(['tagA'])
@@ -56,7 +64,12 @@ class TestManifest(TestCase):
         b'/home/username/test/projectA (tagA, tagB)'
     ])+b'\n')
     def test_resolve_multi_tag_manifest(self, _):
-        manifest = Manifest(mod=self.mock_mod, env=self.mock_env)
+        # Initialise/Configure/Start
+        manifest = Manifest()
+        manifest.configure(mod=self.mock_mod, env=self.mock_env)
+        manifest.start(mod=self.mock_mod)
+
+        # Test
         self.assertEqual(manifest.get_project('projectA'), {
             'ref': '/home/username/test/projectA',
             'tags': dict.fromkeys(['tagA', 'tagB'])
@@ -67,8 +80,12 @@ class TestManifest(TestCase):
         b'/home/username/test/projectB (tagA, tagC)'
     ])+b'\n')
     def test_resolve_multi_projects_manifest(self, _):
-        manifest = Manifest(mod=self.mock_mod, env=self.mock_env)
+        # Initialise/Configure/Start
+        manifest = Manifest()
+        manifest.configure(mod=self.mock_mod, env=self.mock_env)
+        manifest.start(mod=self.mock_mod)
 
+        # Test
         self.assertEqual(manifest.get_project('projectA'), {
             'ref': '/home/username/test/projectA',
             'tags': dict.fromkeys(['tagA', 'tagB'])
@@ -84,8 +101,12 @@ class TestManifest(TestCase):
         b'/home/username/test/projectB (tagA, tagC)',
     ])+b'\n')
     def test_resolve_tag_project_set(self, _):
-        manifest = Manifest(mod=self.mock_mod, env=self.mock_env)
+        # Initialise/Configure/Start
+        manifest = Manifest()
+        manifest.configure(mod=self.mock_mod, env=self.mock_env)
+        manifest.start(mod=self.mock_mod)
 
+        # Test
         self.assertEqual(manifest.get_project_set('tagA'), {
             '/home/username/test/projectA': {
                 'ref': '/home/username/test/projectA',
@@ -117,8 +138,12 @@ class TestManifest(TestCase):
         b'setA {tagA}'
     ])+b'\n')
     def test_resolve_explicit_project_set_one_tag(self, _):
-        manifest = Manifest(mod=self.mock_mod, env=self.mock_env)
+        # Initialise/Configure/Start
+        manifest = Manifest()
+        manifest.configure(mod=self.mock_mod, env=self.mock_env)
+        manifest.start(mod=self.mock_mod)
 
+        # Test
         self.assertEqual(manifest.get_project_set('setA'), {
             '/home/username/test/projectA': {
                 'ref': '/home/username/test/projectA',
@@ -136,8 +161,12 @@ class TestManifest(TestCase):
         b'setA {tagA & tagB}'
     ])+b'\n')
     def test_resolve_explicit_project_set_two_tags_and(self, _):
-        manifest = Manifest(mod=self.mock_mod, env=self.mock_env)
+        # Initialise/Configure/Start
+        manifest = Manifest()
+        manifest.configure(mod=self.mock_mod, env=self.mock_env)
+        manifest.start(mod=self.mock_mod)
 
+        # Test
         self.assertEqual(manifest.get_project_set('setA'), {
             '/home/username/test/projectA': {
                 'ref': '/home/username/test/projectA',
@@ -151,8 +180,12 @@ class TestManifest(TestCase):
         b'setA {tagB | tagC}'
     ])+b'\n')
     def test_resolve_explicit_project_set_two_tags_or(self, _):
-        manifest = Manifest(mod=self.mock_mod, env=self.mock_env)
+        # Initialise/Configure/Start
+        manifest = Manifest()
+        manifest.configure(mod=self.mock_mod, env=self.mock_env)
+        manifest.start(mod=self.mock_mod)
 
+        # Test
         self.assertEqual(manifest.get_project_set('setA'), {
             '/home/username/test/projectA': {
                 'ref': '/home/username/test/projectA',
@@ -171,8 +204,12 @@ class TestManifest(TestCase):
         b'setA {tagA & tagB | tagD}'
     ])+b'\n')
     def test_resolve_explicit_project_set_grouping_default(self, _):
-        manifest = Manifest(mod=self.mock_mod, env=self.mock_env)
+        # Initialise/Configure/Start
+        manifest = Manifest()
+        manifest.configure(mod=self.mock_mod, env=self.mock_env)
+        manifest.start(mod=self.mock_mod)
 
+        # Test
         self.assertEqual(manifest.get_project_set('setA'), {
             '/home/username/test/projectA': {
                 'ref': '/home/username/test/projectA',
@@ -192,8 +229,12 @@ class TestManifest(TestCase):
         b'setB {tagA & (tagB | tagD)}'
     ])+b'\n')
     def test_resolve_explicit_project_set_grouping_explicit(self, _):
-        manifest = Manifest(mod=self.mock_mod, env=self.mock_env)
+        # Initialise/Configure/Start
+        manifest = Manifest()
+        manifest.configure(mod=self.mock_mod, env=self.mock_env)
+        manifest.start(mod=self.mock_mod)
 
+        # Test
         self.assertEqual(manifest.get_project_set('setA'), {
             '/home/username/test/projectA': {
                 'ref': '/home/username/test/projectA',
@@ -221,8 +262,12 @@ class TestManifest(TestCase):
         b'setA { (tagA & tagB) | (tagD & tagE) }'
     ])+b'\n')
     def test_resolve_explicit_project_set_grouping_of_groups(self, _):
-        manifest = Manifest(mod=self.mock_mod, env=self.mock_env)
+        # Initialise/Configure/Start
+        manifest = Manifest()
+        manifest.configure(mod=self.mock_mod, env=self.mock_env)
+        manifest.start(mod=self.mock_mod)
 
+        # Test
         self.assertEqual(manifest.get_project_set('setA'), {
             '/home/username/test/projectA': {
                 'ref': '/home/username/test/projectA',
@@ -243,8 +288,12 @@ class TestManifest(TestCase):
         b'setA { (tagA & tagB) | (tagD & (tagE | tagF)) }'
     ])+b'\n')
     def test_resolve_explicit_project_set_grouping_nesting(self, _):
-        manifest = Manifest(mod=self.mock_mod, env=self.mock_env)
+        # Initialise/Configure/Start
+        manifest = Manifest()
+        manifest.configure(mod=self.mock_mod, env=self.mock_env)
+        manifest.start(mod=self.mock_mod)
 
+        # Test
         self.assertEqual(manifest.get_project_set('setA'), {
             '/home/username/test/projectA': {
                 'ref': '/home/username/test/projectA',
@@ -266,13 +315,21 @@ class TestManifest(TestCase):
         b'}',
     ])+b'\n')
     def test_resolve_context_basic(self, _):
-        manifest = Manifest(mod=self.mock_mod, env=self.mock_env)
+        # Initialise
+        manifest = Manifest()
+
+        # Configure
+        manifest.configure(mod=self.mock_mod, env=self.mock_env)
 
         on_enter_context = Mock()
         manifest.configure_context_hooks('some-context',
             on_enter_context=on_enter_context
         )
 
+        # Start
+        manifest.start(mod=self.mock_mod)
+
+        # Test
         manifest.get_project('projectA')
         on_enter_context.assert_called_once_with({
             'type': 'some-context',
@@ -295,7 +352,11 @@ class TestManifest(TestCase):
         b'}',
     ])+b'\n')
     def test_resolve_context_inside_and_outside(self, _):
-        manifest = Manifest(mod=self.mock_mod, env=self.mock_env)
+        # Initialise
+        manifest = Manifest()
+
+        # Configure
+        manifest.configure(mod=self.mock_mod, env=self.mock_env)
 
         # Note: Can't used self.assert_called_once_with() because arguments are
         #       mutated as the parse progresses.
@@ -403,8 +464,12 @@ class TestManifest(TestCase):
             on_exit_context=on_exit_context,
             on_exit_manifest=on_exit_manifest
         )
-        manifest.get_project('projectA')
 
+        # Start
+        manifest.start(mod=self.mock_mod)
+
+        # Test
+        manifest.get_project('projectA')
         on_enter_manifest.assert_called_once()
         on_enter_context.assert_called_once()
         on_declare_project.assert_called_once()
@@ -421,13 +486,21 @@ class TestManifest(TestCase):
         b'}',
     ])+b'\n')
     def test_resolve_context_complex(self, _):
-        manifest = Manifest(mod=self.mock_mod, env=self.mock_env)
+        # Initialise
+        manifest = Manifest()
+
+        # Configure
+        manifest.configure(mod=self.mock_mod, env=self.mock_env)
         manifest.configure_context_hooks('uris',
             on_declare_project=self.set_project_local_path_hook,
             on_exit_context=self.add_verify_project_local_paths_hook,
             on_exit_manifest=self.verify_project_local_paths_hook
         )
 
+        # Start
+        manifest.start(mod=self.mock_mod)
+
+        # Test
         self.assertEqual(manifest.get_project('projectA'), {
             'ref': 'projectA',
             'path': '/home/username/test/projectA',
@@ -451,14 +524,20 @@ class TestManifest(TestCase):
         b'}',
     ])+b'\n')
     def test_resolve_context_fails_if_hook_fails(self, _):
-        manifest = Manifest(mod=self.mock_mod, env=self.mock_env)
+        # Initialise
+        manifest = Manifest()
+
+        # Configure
+        manifest.configure(mod=self.mock_mod, env=self.mock_env)
         manifest.configure_context_hooks('uris',
             on_declare_project=self.set_project_local_path_hook,
             on_exit_context=self.add_verify_project_local_paths_hook,
             on_exit_manifest=self.verify_project_local_paths_hook
         )
 
-        self.assertRaises(VCSException, manifest.get_project, 'projectA')
+        # Test: Start
+        with self.assertRaises(VCSException):
+            manifest.start(mod=self.mock_mod)
 
     @patch("builtins.open", new_callable=mock_open, read_data=b'\n'.join([
         b'@uris (',
@@ -470,7 +549,11 @@ class TestManifest(TestCase):
         b'}',
     ])+b'\n')
     def test_resolve_context_multi_hooks(self, _):
-        manifest = Manifest(mod=self.mock_mod, env=self.mock_env)
+        # Initialise
+        manifest = Manifest()
+
+        # Configure
+        manifest.configure(mod=self.mock_mod, env=self.mock_env)
         manifest.configure_context_hooks('uris',
             on_declare_project=self.set_project_local_path_hook,
             on_exit_context=self.add_verify_project_local_paths_hook,
@@ -482,6 +565,10 @@ class TestManifest(TestCase):
             on_exit_manifest=self.verify_project_remote_paths_hook
         )
 
+        # Start
+        manifest.start(mod=self.mock_mod)
+
+        # Test
         self.assertEqual(manifest.get_project('projectA'), {
             'ref': 'projectA',
             'path': '/home/username/test/projectA',
@@ -510,13 +597,21 @@ class TestManifest(TestCase):
         b'}',
     ])+b'\n')
     def test_resolve_context_nested(self, _):
-        manifest = Manifest(mod=self.mock_mod, env=self.mock_env)
+        # Initialise
+        manifest = Manifest()
+
+        # Configure
+        manifest.configure(mod=self.mock_mod, env=self.mock_env)
         manifest.configure_context_hooks('uris',
             on_declare_project=self.set_project_local_path_hook,
             on_exit_context=self.add_verify_project_local_paths_hook,
             on_exit_manifest=self.verify_project_local_paths_hook
         )
 
+        # Start
+        manifest.start(mod=self.mock_mod)
+
+        # Test
         self.assertEqual(manifest.get_project_set('setA'), {
             'projectA': {
                 'ref': 'projectA',

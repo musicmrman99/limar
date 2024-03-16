@@ -8,5 +8,8 @@
 *.pyc
 /modules/manifest_lang/build
 
+# Run output files
+/core/*.log
+
 # Special directories (for now)
 /manifest

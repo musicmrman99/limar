@@ -5,7 +5,7 @@ import glob
 import re
 from argparse import ArgumentParser, Namespace
 
-from core.environment import Environment
+from core.envparse import EnvironmentParser
 from core.modules.log import Log
 from core.exceptions import VCSException
 
@@ -20,7 +20,6 @@ class ModuleManager:
     like so:
 
     ```py
-    from core.environment import Environment
     from core.modulemanager import ModuleManager
 
     import modules
@@ -55,8 +54,13 @@ class ModuleManager:
       module object for that module. Initialisation here should be kept to a
       minimum, with the majority of initialisation done in the Starting phase.
 
+    - Environment Configuration (`configure_env(parser, root_parser)`):
+      Passes the module an EnvironmentParser just for it, as well as the root
+      parser, so that the module can configure the environment variables it
+      supports when called.
+
     - Argument Configuration (`configure_args(env, parser, root_parser)`):
-      Passes the module a command-line parser just for it, as well as the root
+      Passes the module an ArgumentParser just for it, as well as the root
       parser, so that the module can configure the command-line arguments and
       options it takes when called.
 
@@ -80,8 +84,8 @@ class ModuleManager:
 
     - `mod` is a reference to the ModuleManager itself. This can be used to
       invoke and retrieve references to other modules - see below.
-    - `env` is an Environment based on the actual environment, or whatever
-      Environment is passed to the `run()` method.
+    - `env` is a Namespace based on the python environment, or whatever
+      environment was passed to the `run()` method.
     - `args` is an argparse Namespace containing the command-line arguments, or
       whatever arguments were passed to the `run()` method.
 
@@ -123,7 +127,7 @@ class ModuleManager:
 
     def __init__(self,
             app_name: str,
-            env: Environment = None,
+            env: Namespace = None,
             args: Namespace = None
     ):
         self._phase = ModuleManager.PHASES.REGISTRATION
@@ -133,19 +137,31 @@ class ModuleManager:
         self._registered_mods = {}
         self._mods = {}
 
+        self._env_parser = EnvironmentParser(app_name)
         self._arg_parser = ArgumentParser(prog=app_name)
         self._arg_subparsers = self._arg_parser.add_subparsers(dest="module")
 
+    def __enter__(self):
         # Create a separate logger to avoid infinite recursion.
-        # TODO: There may be a way of supporting command-line verbosity
-        #       arguments, but getting verbosity from env or parameter args will
-        #       do for now.
+        # TODO: There may be a way of supporting environment variables or
+        #       command-line arguments for verbosity and output destination, but
+        #       hard-coding these will be fine for now.
         self._logger = Log()
         self._logger.configure(
             mod=self,
-            env=self._env[-1] if len(self._env) > 0 else Environment(),
+            env=self._env[-1] if len(self._env) > 0 else Namespace(
+                VCS_LOG_OUTPUT_FILE=join(dirname(__file__), 'modulemanager.log'),
+                VCS_LOG_ERROR_FILE=None,
+                VCS_LOG_VERBOSITY=4
+            ),
             args=self._args[-1] if len(self._args) > 0 else Namespace()
         )
+        self._logger.start()
+
+        return self
+
+    def __exit__(self, type, value, traceback):
+        self._logger.stop()
 
     # Registration
     # --------------------
@@ -230,7 +246,7 @@ class ModuleManager:
     # --------------------
 
     def run(self,
-            env: Environment = None,
+            env: Namespace = None,
             args: Namespace = None,
             cli_env: 'dict[str, str]' = None,
             cli_args: 'list[str]' = None
@@ -240,7 +256,8 @@ class ModuleManager:
 
         Includes:
         - Initialise all registered modules.
-        - Configure supported arguments for all registered modules.
+        - Configure supported environment variables and arguments for all
+          registered modules.
         - Configure all registered modules.
         - Start all registered modules.
         - Invoke and call the module specified in one of the following (the
@@ -274,6 +291,9 @@ class ModuleManager:
 
             try:
                 self._mods[name] = module_factory()
+                self._logger.debug(
+                    f"Initialised module '{name}' as {self._mods[name]}"
+                )
             except RecursionError as e:
                 raise VCSException(
                     f"Initialisation failed: '{name}' could not be initialised:"
@@ -285,17 +305,30 @@ class ModuleManager:
             if name not in self.__dict__:
                 self.__dict__[name] = lambda name=name: self.invoke_module(name)
 
-        # TODO: Lifecycle: Configure Environment
+        # Lifecycle: Configure Environment
         # Note: Configuring environment before args means that configuring args
         #       can depend on the environment, which allows for things like
         #       environment-based feature toggles.
 
+        for name, module in self._mods.items():
+            if hasattr(module, 'configure_env'):
+                self._logger.debug(
+                    f"Configuring environment for module '{name}'"
+                )
+                module_env_parser = self._env_parser.add_parser(name)
+                module.configure_env(
+                    parser=module_env_parser,
+                    root_parser=self._env_parser
+                )
+
         # Finalise Environment (at the run level)
         if len(self._env) == 0:
             if cli_env is not None:
-                self._env.append(Environment(cli_env))
+                self._logger.debug(f"Parsing given environment")
+                self._env.append(self._env_parser.parse_env(cli_env))
             else:
-                self._env.append(Environment())
+                self._logger.debug(f"Parsing environment")
+                self._env.append(self._env_parser.parse_env())
 
         env, args = self._env_args()
 
@@ -407,7 +440,7 @@ class ModuleManager:
             if callable(module):
                 module(mod=self, env=env, args=args)
             else:
-                raise VCSException(f"Module not found: '{name}'")
+                raise VCSException(f"Module not callable: '{name}'")
 
     # Utils
     # --------------------
@@ -420,7 +453,7 @@ class ModuleManager:
 
     @contextmanager
     def _env_args_of(self,
-            env: Environment = None,
+            env: Namespace = None,
             args: Namespace = None
     ):
         if env is not None:
