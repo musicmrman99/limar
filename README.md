@@ -64,6 +64,9 @@ To get it installed, see [Installation](#installation).
     - git config --global gpg.format ssh
     - git config --global user.signingkey ~/.ssh/id_ed25519.pub
 
+  - usage
+    - git config --global push.autosetupremote true
+
 - set up your ssh-agent (in each shell instance)
   - eval `ssh-agent`
   - ssh-add
