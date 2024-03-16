@@ -6,23 +6,6 @@ To get it installed, see [Installation](#installation).
 
 ## TODO
 
-- move to class-based manifest context modules
-
-- Tidy:
-  - "self._mod: ModuleManager = mod" - remove unnecessary type
-
-- support contexts without a set of projects/project lists; can be used for eg:
-  - **global contexts** (use `on_exit_manifest()` instead of `on_define_project()`/`on_define_project_set()`)
-    - avoids nesting everything inside several top-level contexts
-  - **decorators** (define `on_enter_context()` to set a state flag to true, and define `on_define_project()` and/or `on_define_project_set()` to check if the flag is true, and if so, set it to false then do whatever with the project/project set)
-    - this avoids the need to wrap the project/project set in `{}`
-  - **modes/imports/etc.** (define `on_enter_context()` to do something)
-    - sets something at a given point
-  - etc.
-- support getting env vars without prefixing
-
----
-
 - maybe merge env and arg namespaces?
     def _merge_namespaces(self, ns1, ns2):
         return Namespace(**{**vars(ns1), **vars(ns2)})
@@ -34,6 +17,21 @@ To get it installed, see [Installation](#installation).
 ---
 
 - TESTING
+
+---
+
+- support getting env vars without prefixing
+
+---
+
+- support contexts without a set of projects/project lists; can be used for eg:
+  - **global contexts** (use `on_exit_manifest()` instead of `on_define_project()`/`on_define_project_set()`)
+    - avoids nesting everything inside several top-level contexts
+  - **decorators** (define `on_enter_context()` to set a state flag to true, and define `on_define_project()` and/or `on_define_project_set()` to check if the flag is true, and if so, set it to false then do whatever with the project/project set)
+    - this avoids the need to wrap the project/project set in `{}`
+  - **modes/imports/etc.** (define `on_enter_context()` to do something)
+    - sets something at a given point
+  - etc.
 
 ---
 
@@ -118,20 +116,30 @@ git maintenance start (adds a cron job to do maintenance on repos)
 
 ### `manifest`
 
+#### Environment
+
+```sh
+VCS_MANIFEST_PATH = "$HOME/manifest.txt"      # Required
+VCS_MANIFEST_DEFAULT_PROJECT_SET = 'some-set' # Optional, default: all projects
 ```
-... manifest resolve \
-  [--project-set PROJ_SET_PATTERN] \
-  [-l {local,remote}] \
-  [-r {root,manifest,current}] \
-  PATTERN
+
+#### Synopsys
+
+```sh
+vcs manifest project [-p PROPERTY] [--project-set PROJECT_SET_PATTERN] PATTERN
+vcs manifest project-set [-p PROPERTY] PATTERN
 ```
+
+#### Description
+
+**TODO**
 
 ### `for`
 
 #### Synopsys
 
-```
-... for [-only] [-q QUANTIFIER] [-o ORDER] SET COMMAND ARGS...
+```sh
+vcs for [-only] [-q QUANTIFIER] [-o ORDER] SET COMMAND ARGS...
 ```
 
 #### Description

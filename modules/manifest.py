@@ -228,6 +228,10 @@ class ManifestListenerImpl(ManifestListener):
                 getattr(module, name)(*args)
 
 class Manifest():
+    """
+    MM module to parse a manifest file and provide information about the
+    projects it defines.
+    """
 
     # Lifecycle
     # --------------------
@@ -238,7 +242,7 @@ class Manifest():
         self._project_sets: dict[str, dict[str, dict[str, object]]] = None
 
     def configure_env(self, *, parser: EnvironmentParser, **_):
-        parser.add_variable('ROOT')
+        parser.add_variable('PATH')
         parser.add_variable('DEFAULT_PROJECT_SET', default_is_none=True)
 
     def configure_args(self, *, parser: ArgumentParser, **_):
@@ -251,20 +255,13 @@ class Manifest():
             help='A regex pattern to resolve to a project reference')
 
         # Resolve Project: Options
-        resolve_parser.add_argument('-l', '--location',
-            choices=['local', 'remote'],
-            help='Specify the location to reosolve the project pattern to')
-
-        resolve_parser.add_argument('-r', '--relative-to',
-            choices=['root', 'manifest', 'current'],
+        resolve_parser.add_argument('-p', '--property',
+            action='append',
             help="""
-            Specify the location that the output reference should be relative
-            to, or one of:
-                'root' (resolve to an absolute URI),
-                'manifest' (resolve to a URI relative to the relevant URI in the
-                    @uris context that is closest to the resolved project in
-                    the manifest that includes this URI type),
-                or 'current' (relative to the current directory)
+            Specify a property to include in the output. If given, excludes all
+            properties not given. May be given more than once to include
+            multiple properties. Supported properties include 'ref', 'tags', and
+            any properties added by other MM modules.
             """)
 
         resolve_parser.add_argument('--project-set',
@@ -279,11 +276,21 @@ class Manifest():
         resolve_parser.add_argument('pattern', metavar='PATTERN',
             help='A regex pattern to resolve to a project set')
 
+        # Resolve Project Set: Options
+        resolve_parser.add_argument('-p', '--property',
+            action='append',
+            help="""
+            Specify a property to include in the output. If given, excludes all
+            properties not given. May be given more than once to include
+            multiple properties. Supported properties include 'ref', 'tags', and
+            any properties added by other MM modules.
+            """)
+
     def configure(self, *, mod: ModuleManager, env: Namespace, **_):
         # For methods that aren't directly given it
-        self._mod: ModuleManager = mod
+        self._mod = mod
 
-        self._manifest_root = env.VCS_MANIFEST_ROOT
+        self._manifest_path = env.VCS_MANIFEST_PATH
         self._default_project_set = env.VCS_MANIFEST_DEFAULT_PROJECT_SET
 
     def start(self, *, mod: ModuleManager, **_):
@@ -296,9 +303,7 @@ class Manifest():
             context_modules[context_mod.context_type()].append(context_mod)
 
         # Setup parser
-        input_stream = FileStream(
-            os.path.join(self._manifest_root, 'manifest.txt')
-        )
+        input_stream = FileStream(os.path.join(self._manifest_path))
         lexer = ManifestLexer(input_stream)
         tokens = CommonTokenStream(lexer)
         parser = ManifestParser(tokens)
@@ -322,13 +327,15 @@ class Manifest():
             output = self.get_project(
                 args.pattern,
                 project_set_pattern=args.project_set,
-                location=args.location,
-                relative_to=args.relative_to
+                properties=args.property
             )
             print(self._format_project(output))
 
         if args.manifest_command == 'project-set':
-            output = self.get_project_set(args.pattern)
+            output = self.get_project_set(
+                args.pattern,
+                properties=args.property
+            )
             print(self._format_project_set(output))
 
         return output
@@ -361,10 +368,14 @@ class Manifest():
     # Invokation
     # --------------------
 
-    def get_project_set(self, pattern: str = None):
+    def get_project_set(self,
+            pattern: str = None,
+            properties: 'list[str]' = None
+    ):
         self._mod.log().trace(
             "manifest.get_project_set("
-                +(f"{pattern}" if pattern is None else f"'{pattern}'")+
+                +(f"{pattern}" if pattern is None else f"'{pattern}'")+","
+                f" properties={properties}"
             ")"
         )
 
@@ -386,26 +397,19 @@ class Manifest():
                     f"Project set not found from pattern '{pattern}'"
                 )
 
-        return project_set
+        return self._filtered(project_set, properties)
 
     def get_project(self,
             pattern: str,
             *,
-            project_set_pattern=None,
-            location=None,
-            relative_to=None
+            project_set_pattern: str = None,
+            properties: 'list[str]' = None
     ):
-        if location is None:
-            location = 'local'
-        if relative_to is None:
-            relative_to = 'root'
-
         self._mod.log().trace(
             "manifest.get_project("
                 +(pattern if pattern is None else f"'{pattern}'")+","
                 f" project_set_pattern={project_set_pattern},"
-                f" location={location},"
-                f" relative_to={relative_to}"
+                f" properties={properties}"
             ")"
         )
 
@@ -432,7 +436,7 @@ class Manifest():
         # - Verify (-v, --verify) makes resolve verify that the specified project exists (mutex with -c)
         # - Candidate (-c, --candidate) makes resolve come up with a proposed project path where the project/list could be stored in future (mutex with -v)
 
-        return project
+        return self._filtered(project, properties)
 
     # Utils
     # --------------------
@@ -444,9 +448,18 @@ class Manifest():
             if key not in ['ref', 'tags']
         )
         return '\n'.join([
-            f"ref: {project['ref']}",
-            f"tags: {', '.join(project['tags'].keys())}",
-            *([extra_attrs] if extra_attrs != '' else [])
+            *(
+                [f"ref: {project['ref']}"]
+                if 'ref' in project else []
+            ),
+            *(
+                [f"tags: {', '.join(project['tags'].keys())}"]
+                if 'tags' in project else []
+            ),
+            *(
+                [extra_attrs]
+                if extra_attrs != '' else []
+            )
         ])
 
     def _format_project_set(self, project_set: 'dict[str, dict[str, object]]'):
@@ -454,3 +467,13 @@ class Manifest():
             self._format_project(project)
             for project in project_set.values()
         )
+
+    def _filtered(self, obj, props):
+        if props is None:
+            return obj
+        else:
+            return {
+                prop: obj[prop]
+                for prop in props
+                if prop in obj
+            }
