@@ -38,7 +38,26 @@ vcs manifest project-set [-p PROPERTY] PATTERN
 
 #### Description
 
-**TODO**
+Provides commands and plumbing methods for accessing declared information about
+projects and sets of projects.
+
+### `env`
+
+#### Synopsys
+
+```sh
+vcs env cd PROJECT_PATTERN
+vcs [-cd PROJECT_PATTERN] ...
+```
+
+#### Description
+
+Provides commands relating to the shell environment. Currently includes:
+
+- The ability to change directory to the root of the first project in the
+  manifest to match the given pattern, either temporarily while executing
+  another command by using the global `-cd` option, or permanently with the
+  `env cd` command.
 
 ### `for`
 
