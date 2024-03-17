@@ -52,8 +52,8 @@ class Log:
     def configure(self, *, env: Namespace = None, args: Namespace = None, **_):
         # Verbosity
         self._verbosity = env.VCS_LOG_VERBOSITY
-        if 'log_verbosity' in args and args.log_verbosity is not None:
-            self._verbosity = args.log_verbosity
+        if 'log_verbose' in args and args.log_verbose is not None:
+            self._verbosity = args.log_verbose
 
         # Output file
         self._output_file_path = env.VCS_LOG_OUTPUT_FILE
