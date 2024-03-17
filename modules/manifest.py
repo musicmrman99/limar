@@ -422,7 +422,7 @@ class Manifest():
                 for project in project_set.values()
                 if project_regex.search(project['ref'])
             )
-            self._mod.log().trace('found:', project)
+            self._mod.log().debug('found:', project)
         except StopIteration:
             raise VCSException(
                 f"Project not found from pattern '{pattern}'"
