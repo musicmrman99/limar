@@ -1,11 +1,12 @@
-from contextlib import contextmanager
-import importlib
 from os.path import dirname, basename, isfile, join
 import glob
 import re
+import importlib
+from contextlib import contextmanager
 from argparse import ArgumentParser, Namespace
 
 from core.envparse import EnvironmentParser
+from core.shellscript import ShellScript
 from core.modules.log import Log
 from core.exceptions import VCSException
 
@@ -332,6 +333,21 @@ class ModuleManager:
 
         env, args = self._env_args()
 
+        # Configure ModuleManager Arguments
+        self._arg_parser.add_argument('--mm-source-file',
+            default='/tmp/vcs-source',
+            help="""
+            The path to a temporary file that will be sourced in the parent
+            shell (outside of this python app). Your ModuleManager-based app
+            should use a shell wrapper (such as a bash function) that generates
+            the value for this option, passes it to the python app, then sources
+            the file it refers to.
+
+            This option allows modules managed by ModuleManager to add commands
+            to execute in the context of the calling shell process, such as
+            changing directory or setting environment variables.
+            """)
+
         # Lifecycle: Configure Arguments
         self._phase = ModuleManager.PHASES.ARGUMENT_CONFIGURATION
         for name, module in self._mods.items():
@@ -355,6 +371,9 @@ class ModuleManager:
 
         env, args = self._env_args()
 
+        # Initialise Source File Manager
+        self._source_file = ShellScript(args.mm_source_file)
+
         # Lifecycle: Configure
         self._phase = ModuleManager.PHASES.CONFIGURATION
         for name, module in self._mods.items():
@@ -362,25 +381,71 @@ class ModuleManager:
                 self._logger.debug(f"Configuring module '{name}'")
                 module.configure(mod=self, env=env, args=args)
 
+        # Initialise Error Management
+        modules_started = []
+        exceptions = []
+
+        # TODO: Log exception tracebacks as well as capturing exception objects
+
         # Lifecycle: Start
         self._phase = ModuleManager.PHASES.STARTING
         for name, module in self._mods.items():
             if hasattr(module, 'start'):
                 self._logger.debug(f"Starting module '{name}'")
-                module.start(mod=self, env=env, args=args)
- 
+                try:
+                    module.start(mod=self, env=env, args=args)
+                    modules_started.append(module)
+                except (Exception, KeyboardInterrupt) as e:
+                    self._logger.error(
+                        f"Starting module '{name}' failed, attempting to stop"
+                        " all successfully started modules ..."
+                    )
+                    exceptions.append(e)
+
+                    # Don't try to start any more modules if we've already got
+                    # an error.
+                    break
+
         # Lifecycle: Invoke and Call (Specified Module)
-        self._phase = ModuleManager.PHASES.RUNNING
-        self.call_module(args.module)
+        if len(exceptions) == 0:
+            self._phase = ModuleManager.PHASES.RUNNING
+            self._logger.debug(f"Running module '{args.module}'")
+            try:
+                self.call_module(args.module)
+            except (Exception, KeyboardInterrupt) as e:
+                self._logger.error(f"Run of module '{args.module}' failed")
+                exceptions.append(e)
 
         # Lifecycle: Stop
         self._phase = ModuleManager.PHASES.STOPPING
-        for name, module in self._mods.items():
+        for name, module in reversed(modules_started):
             if hasattr(module, 'stop'):
                 self._logger.debug(f"Stopping module '{name}'")
-                module.stop(mod=self, env=env, args=args)
+                try:
+                    module.stop(mod=self, env=env, args=args)
+                except (Exception, KeyboardInterrupt) as e:
+                    self._logger.error(
+                        f"Stopping module '{name}' failed, SKIPPING."
+                    )
+                    self._logger.warning(
+                        "THIS MAY HAVE LEFT YOUR SHELL, PROJECT, OR ANYTHING"
+                        " ELSE UNDER ModuleManager's MANAGEMENT IN AN UNCLEAN"
+                        " STATE! If you know what the above module does, then"
+                        " you may be able to clean up manually."
+                    )
 
-    # Module Utils
+        # Write Source File
+        if len(exceptions) == 0:
+            self._logger.debug("Writing added commands to source file")
+            self._source_file.write()
+        else:
+            self._logger.warning(
+                "Skipping writing commands to the source file to avoid causing"
+                " any more changes than necessary after the above error(s)."
+            )
+            raise exceptions[0]
+
+    # ModuleManager Utils
     # --------------------
 
     def is_registered(self, name):
@@ -441,6 +506,9 @@ class ModuleManager:
                 module(mod=self, env=env, args=args)
             else:
                 raise VCSException(f"Module not callable: '{name}'")
+
+    def add_shell_command(self, command):
+        self._source_file.add_command(command)
 
     # Utils
     # --------------------

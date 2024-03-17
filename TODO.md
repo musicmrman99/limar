@@ -1,31 +1,7 @@
 # Todo
 
-- maybe merge env and arg namespaces?
-    def _merge_namespaces(self, ns1, ns2):
-        return Namespace(**{**vars(ns1), **vars(ns2)})
-
-- make log module include timestamp in message output
-- rotate log + clean up old logs
-- add logging to module invokation and all other relevant points
-
----
-
-- TESTING
-
----
-
-- support getting env vars without prefixing
-
----
-
-- support contexts without a set of projects/project lists; can be used for eg:
-  - **global contexts** (use `on_exit_manifest()` instead of `on_define_project()`/`on_define_project_set()`)
-    - avoids nesting everything inside several top-level contexts
-  - **decorators** (define `on_enter_context()` to set a state flag to true, and define `on_define_project()` and/or `on_define_project_set()` to check if the flag is true, and if so, set it to false then do whatever with the project/project set)
-    - this avoids the need to wrap the project/project set in `{}`
-  - **modes/imports/etc.** (define `on_enter_context()` to do something)
-    - sets something at a given point
-  - etc.
+- Implement a dependency system (so that loading an entire package can be done
+  in the correct order)
 
 ---
 
@@ -82,6 +58,53 @@ git config --global fetch.writeCommitGraph true (compute the commit graph on fet
 git clone --filter=blob:none
 
 git maintenance start (adds a cron job to do maintenance on repos)
+
+---
+
+- common git commands
+  - init
+  - clone
+  - status
+  - add
+  - commit
+  - push
+  - pull
+  - branch
+  - checkout
+  - merge
+  - diff
+  - log
+
+  - https://media.licdn.com/dms/image/D5622AQGyZVKG_zTdkg/feedshare-shrink_2048_1536/0/1709867659521?e=1713398400&v=beta&t=YYf2nC6L6YYy3A8u7lpP3CeTtsuBgv4sA9Vq-neZ03A
+
+---
+
+- maybe merge env and arg namespaces?
+    def _merge_namespaces(self, ns1, ns2):
+        return Namespace(**{**vars(ns1), **vars(ns2)})
+
+- make log module include timestamp in message output
+- rotate log + clean up old logs
+- add logging to module invokation and all other relevant points
+
+---
+
+- TESTING
+
+---
+
+- support getting env vars without prefixing
+
+---
+
+- support contexts without a set of projects/project lists; can be used for eg:
+  - **global contexts** (use `on_exit_manifest()` instead of `on_define_project()`/`on_define_project_set()`)
+    - avoids nesting everything inside several top-level contexts
+  - **decorators** (define `on_enter_context()` to set a state flag to true, and define `on_define_project()` and/or `on_define_project_set()` to check if the flag is true, and if so, set it to false then do whatever with the project/project set)
+    - this avoids the need to wrap the project/project set in `{}`
+  - **modes/imports/etc.** (define `on_enter_context()` to do something)
+    - sets something at a given point
+  - etc.
 
 ---
 

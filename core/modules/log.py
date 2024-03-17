@@ -27,7 +27,7 @@ class Log:
             root_parser: ArgumentParser,
             **_
     ):
-        # Root parser
+        # Root
         root_parser.add_argument('--log-output-file', default=None,
             help="Set the file to output log messages to")
         root_parser.add_argument('--log-error-file', default=None,
@@ -37,7 +37,7 @@ class Log:
             action='count', default=None,
             help="Can be given up to 4 times to increase the log level")
 
-        # Options
+        # Log - Options
         parser.add_argument('-e', '--error', action='store_true', default=False,
             help='Send the log message to the error log')
         parser.add_argument('-l', '--level', type=int, default=0,
@@ -46,7 +46,7 @@ class Log:
             or above the given level
             """)
 
-        # Arguments
+        # Log - Arguments
         parser.add_argument('message', help='The message to log')
 
     def configure(self, *, env: Namespace = None, args: Namespace = None, **_):
@@ -110,7 +110,7 @@ class Log:
     def error(self, *objs):
         self.log(*objs, error=True, level=0)
 
-    def warn(self, *objs):
+    def warning(self, *objs):
         self.log(*objs, error=True, level=1)
 
     def info(self, *objs):

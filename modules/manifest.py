@@ -67,7 +67,7 @@ class ManifestListenerImpl(ManifestListener):
     def enterContext(self, ctx: ManifestParser.ContextContext):
         context_type = ctx.typeName.text
         if context_type not in self._context_modules.keys():
-            self._logger.warn(
+            self._logger.warning(
                 f"Unsupported context type '{context_type}' found."
                 " Ignoring context."
             )
