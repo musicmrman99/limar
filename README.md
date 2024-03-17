@@ -4,53 +4,50 @@ Git Source Manager (though the command is called `vcs`) is a system primarily de
 
 To get it installed, see [Installation](#installation).
 
-## Usage
+## Overview
 
 `vcs` has a veriety of sub-commands for different purposes:
 
-| Command        | Summary                                                            |
-|----------------|--------------------------------------------------------------------|
-| `vcs manifest` | Manage the vcs manifest file and project references                |
-| `vcs clone`    | Manage your local clones of repos                                  |
-| `vcs update`   | Fetch upstream changes and sync your local refs                    |
-| `vcs for`      | Execute a supported sub-command against many repos at once         |
-| `vcs cd`       | `cd` directly to a repo based on pattern matching of your manifest |
-| `vcs info`     | Show various information about a repo's state                      |
-| `vcs mr`       | Manage PR/MR-ing branches into the upstream and cleaning up after  |
-| `vcs git`      | Execute a raw git command against a repo                           |
-| `vcs sh`       | Execute a raw shell command against a repo                         |
+| Usable? | In Dev? | Command        | Summary                                                         |
+|---------|---------|----------------|-----------------------------------------------------------------|
+| &check; | &check; | `vcs manifest` | Manage the vcs manifest file and project references             |
+| &check; | &check; | `vcs env`      | Manage the shell environment, eg. current dir, env vars, etc.   |
+|         |         | `vcs repo`     | Get info about repositories and manage repo instances and state |
+|         |         | `vcs for`      | Execute a supported sub-command against many repos at once      |
+|         |         | `vcs git`      | Execute a raw git command against a repo                        |
+|         |         | `vcs sh`       | Execute a raw shell command against a repo                      |
 
-### `manifest`
+## `manifest`
 
-#### Environment
+### Environment
 
 ```sh
 VCS_MANIFEST_PATH = "$HOME/manifest.txt"      # Required
 VCS_MANIFEST_DEFAULT_PROJECT_SET = 'some-set' # Optional, default: all projects
 ```
 
-#### Synopsys
+### Synopsys
 
-```sh
+```
 vcs manifest project [-p PROPERTY] [--project-set PROJECT_SET_PATTERN] PATTERN
 vcs manifest project-set [-p PROPERTY] PATTERN
 ```
 
-#### Description
+### Description
 
 Provides commands and plumbing methods for accessing declared information about
 projects and sets of projects.
 
-### `env`
+## `env`
 
-#### Synopsys
+### Synopsys
 
-```sh
+```
 vcs env cd PROJECT_PATTERN
 vcs [-cd PROJECT_PATTERN] ...
 ```
 
-#### Description
+### Description
 
 Provides commands relating to the shell environment. Currently includes:
 
@@ -59,15 +56,30 @@ Provides commands relating to the shell environment. Currently includes:
   another command by using the global `-cd` option, or permanently with the
   `env cd` command.
 
-### `for`
+## `repo`
 
-#### Synopsys
+### Synopsys
 
-```sh
+```
+vcs repo instance [--project PROJECT_PATTERN]
+vcs repo update [--project PROJECT_PATTERN]
+vcs repo info [--project PROJECT_PATTERN]
+vcs repo (mr|pr) [--project PROJECT_PATTERN]
+```
+
+### Description
+
+Provides commands relating to repository management.
+
+## `for`
+
+### Synopsys
+
+```
 vcs for [-only] [-q QUANTIFIER] [-o ORDER] SET COMMAND ARGS...
 ```
 
-#### Description
+### Description
 
 `-only` determines whether to short-circuit and yield the result as soon as the
 QUANTIFIER's condition has been met.
