@@ -6,7 +6,7 @@ To get it installed, see [Installation](#installation).
 
 ## Overview
 
-`vcs` has a veriety of sub-commands for different purposes:
+`vcs` has a variety of sub-commands for different purposes:
 
 | Usable? | In Dev? | Command        | Summary                                                         |
 |---------|---------|----------------|-----------------------------------------------------------------|
@@ -26,7 +26,7 @@ VCS_MANIFEST_PATH = "$HOME/manifest.txt"      # Required
 VCS_MANIFEST_DEFAULT_PROJECT_SET = 'some-set' # Optional, default: all projects
 ```
 
-### Synopsys
+### Synopsis
 
 ```
 vcs manifest project [-p PROPERTY] [--project-set PROJECT_SET_PATTERN] PATTERN
@@ -40,7 +40,7 @@ projects and sets of projects.
 
 ## `env`
 
-### Synopsys
+### Synopsis
 
 ```
 vcs env cd PROJECT_PATTERN
@@ -58,7 +58,7 @@ Provides commands relating to the shell environment. Currently includes:
 
 ## `repo`
 
-### Synopsys
+### Synopsis
 
 ```
 vcs repo instance [--project PROJECT_PATTERN]
@@ -73,7 +73,7 @@ Provides commands relating to repository management.
 
 ## `for`
 
-### Synopsys
+### Synopsis
 
 ```
 vcs for [-only] [-q QUANTIFIER] [-o ORDER] SET COMMAND ARGS...

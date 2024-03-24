@@ -1,7 +1,18 @@
 # Todo
 
-- Implement a dependency system (so that loading an entire package can be done
+- implement a dependency system (so that loading an entire package can be done
   in the correct order)
+- ensure tags are always indexed into project lists by Manifest itself (even if
+  tags are added by context modules)
+  - it doesn't matter which way you cut it, you can't really fix this problem
+    by rearranging the order of operations - on_exit_manifest() could still make
+    changes to tags, well after indexing would be needed to compute project
+    sets.
+  - the best fix is to add a method to Manifest, eg.
+    `add_project_tag(self, project, tag)`, that adds the tag and updates all
+    indexes.
+- change `manifest WHATEVER --property/-p` to `--format`/`-f`
+- command to open the remote url of a project, or any sub-url of it, in a browser
 
 ---
 
@@ -153,6 +164,8 @@ Quality:
 - conciseness
 - clarity (also aids Knowledge)
 - completeness (eg. is it releasable?)
+
+Check Areas of Competence for anything else I might have
 
 **TODO**: Check git presentation for specific things you may want to control (that are usually put on the `.gitignore`).
 
