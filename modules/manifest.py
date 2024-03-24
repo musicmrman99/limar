@@ -283,16 +283,8 @@ class Manifest():
         parser.add_variable('DEFAULT_PROJECT_SET', default_is_none=True)
 
     def configure_args(self, *, parser: ArgumentParser, **_):
-        manifest_subparsers = parser.add_subparsers(dest="manifest_command")
-
-        # Resolve Project
-        resolve_parser = manifest_subparsers.add_parser('project')
-
-        resolve_parser.add_argument('pattern', metavar='PATTERN',
-            help='A regex pattern to resolve to a project reference')
-
-        # Resolve Project: Options
-        resolve_parser.add_argument('-p', '--property',
+        # Options
+        parser.add_argument('-p', '--property',
             action='append',
             help="""
             Specify a property to include in the output. If given, excludes all
@@ -300,6 +292,15 @@ class Manifest():
             multiple properties. Supported properties include 'ref', 'tags', and
             any properties added by other MM modules.
             """)
+
+        # Subcommands
+        manifest_subparsers = parser.add_subparsers(dest="manifest_command")
+
+        # Subcommands / Resolve Project
+        resolve_parser = manifest_subparsers.add_parser('project')
+
+        resolve_parser.add_argument('pattern', metavar='PATTERN',
+            help='A regex pattern to resolve to a project reference')
 
         resolve_parser.add_argument('--project-set',
             metavar='PROJECT_SET_PATTERN',
@@ -307,21 +308,11 @@ class Manifest():
             A pattern that matches the project set to use to resolve the project
             """)
 
-        # Resolve Project Set
+        # Subcommands / Resolve Project Set
         resolve_parser = manifest_subparsers.add_parser('project-set')
 
         resolve_parser.add_argument('pattern', metavar='PATTERN',
             help='A regex pattern to resolve to a project set')
-
-        # Resolve Project Set: Options
-        resolve_parser.add_argument('-p', '--property',
-            action='append',
-            help="""
-            Specify a property to include in the output. If given, excludes all
-            properties not given. May be given more than once to include
-            multiple properties. Supported properties include 'ref', 'tags', and
-            any properties added by other MM modules.
-            """)
 
     def configure(self, *, mod: ModuleManager, env: Namespace, **_):
         # For methods that aren't directly given it
@@ -434,7 +425,13 @@ class Manifest():
                     f"Project set not found from pattern '{pattern}'"
                 )
 
-        return self._filtered(project_set, properties)
+        if properties is None:
+            return project_set
+        else:
+            return {
+                name: self._filtered_project(project, properties)
+                for name, project in project_set.items()
+            }
 
     def get_project(self,
             pattern: str,
@@ -473,7 +470,10 @@ class Manifest():
         # - Verify (-v, --verify) makes resolve verify that the specified project exists (mutex with -c)
         # - Candidate (-c, --candidate) makes resolve come up with a proposed project path where the project/list could be stored in future (mutex with -v)
 
-        return self._filtered(project, properties)
+        if properties is None:
+            return project
+        else:
+            return self._filtered_project(project, properties)
 
     # Utils
     # --------------------
@@ -505,12 +505,9 @@ class Manifest():
             for project in project_set.values()
         )
 
-    def _filtered(self, obj, props):
-        if props is None:
-            return obj
-        else:
-            return {
-                prop: obj[prop]
-                for prop in props
-                if prop in obj
-            }
+    def _filtered_project(self, project, properties):
+        return {
+            property: project[property]
+            for property in properties
+            if property in project
+        }
