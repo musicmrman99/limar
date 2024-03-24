@@ -15,29 +15,66 @@ from argparse import ArgumentParser, Namespace
 from core.modules.log import Log
 
 class ManifestListenerImpl(ManifestListener):
+    """
+    An ANTLR4 Listener to parse the manifest file.
+
+    You can give an indexed list (ie. a dictionary) of 'context modules' when
+    initialising this class. Context modules are used to extend the manifest
+    format (usually) by defining custom contexts. Contexts may be implicit
+    (ie. global), or may be explicitly given in the manifest. If given, contexts
+    are declared with `@context-type`, wrap one or more declarations, and may
+    take one or more options.
+
+    The declarations a context applies to can be given by placing them within a
+    pair of braces after the context type. Each declaration must be on its own
+    line, separate from the lines the braces are on. This is the declaration
+    block.
+
+    Context options are specified by placing key-value pairs, where the key and
+    value are separated by an '=', within a pair of brackets between the context
+    type and the declaration block. If more than one option is given, each
+    option must be on its own line, separate from the lines the brackets are on.
+
+    Spaces are mandatory between the type, option block, and declaration block.
+
+    Examples of contexts:
+
+        @context-type {
+          dir/project-a
+        }
+
+        @context-type (someOption = /home/username/mystuff) {
+          dir/project-b
+        }
+
+        @context-type (
+            optionA = /home/username/directory
+            optionB = https://somegithost.com/username
+        ) {
+          dir/project-c
+        }
+
+    Each context module must be a Python class that defines a `context_type()`
+    method that returns the context type that module is for (as a string), and
+    may define any of the following method-based hooks:
+
+    - `on_enter_manifest()`
+    - `on_enter_context(context)`
+    - `on_declare_project(context, project)`
+    - `on_declare_project_set(context, project_set)`
+    - `on_exit_context(context, projects, project_sets)`
+        - Note that projects and project_sets only contain those that were
+        declared in this context.
+    - `on_exit_manifest(projects, project_sets)`
+    """
+
     def __init__(self,
             logger: Log,
             context_modules: 'dict[str, list]' = None
     ):
         """
-        Initialises the manifest listener.
-
         context_modules must be a dictionary of the following format:
-
             {'context-type-name': [context_module, ...], ...}
-
-        Each module must define a `context_type()` method that returns the
-        context type that module is for as a string, and may define any of the
-        following methods:
-
-        - `on_enter_manifest()`
-        - `on_enter_context(context)`
-        - `on_declare_project(context, project)`
-        - `on_declare_project_set(context, project_set)`
-        - `on_exit_context(context, projects, project_sets)`
-          - Note that projects and project_sets only contain those that were
-            declared in this context.
-        - `on_exit_manifest(projects, project_sets)`
         """
 
         # Outputs

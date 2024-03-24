@@ -1,7 +1,3 @@
-"""
-Entry point for `vcs`.
-"""
-
 from core.modulemanager import ModuleManager
 
 from core.modules.log import Log

@@ -16,7 +16,7 @@ class ModuleManager:
 
     ## Basic Usage
     
-    Create a ModuleManager, register the modules you wish to use using
+    Create a ModuleManager, register the modules you wish to use by using
     `register()` or `register_package()`, then `run()` the manager's lifecycle,
     like so:
 
@@ -41,76 +41,127 @@ class ModuleManager:
 
     A module is a factory function for an object that can be 'invoked'
     (retrieved so that it can be called or used in some other way), either by
-    the ModuleManager itself, or by another module.
+    the ModuleManager itself (for the module given on the command line), or by
+    another module.
 
-    The lifecycle of a module consists of the following phases:
+    The module lifecycle consists of the following phases:
 
     - Registration (no hook):
-      Adds the module to the list of modules this ModuleManager knows about.
+      Adds each module to the list of modules this ModuleManager knows about.
       Note: Any attempt to register a module after the registration phase will
             raise a VCSException.
 
     - Initialisation (`__init__()`):
-      Uses the module's factory callable (a class or a function) to create the
-      module object for that module. Initialisation here should be kept to a
-      minimum, with the majority of initialisation done in the Starting phase.
+      Uses each module's factory callable (a class or a function) to create the
+      module object for that module. Module initialisation during this phase
+      should be kept to a minimum, with the majority of initialisation done in
+      the Starting phase.
 
     - Environment Configuration (`configure_env(parser, root_parser)`):
-      Passes the module an EnvironmentParser just for it, as well as the root
-      parser, so that the module can configure the environment variables it
-      supports when called.
+      Passes each module an EnvironmentParser just for it, as well as the root
+      EnvironmentParser, so that the module can configure the environment
+      variables it supports when invoked.
 
     - Argument Configuration (`configure_args(env, parser, root_parser)`):
-      Passes the module an ArgumentParser just for it, as well as the root
-      parser, so that the module can configure the command-line arguments and
-      options it takes when called.
+      Passes each module an ArgumentParser just for it, as well as the root
+      ArgumentParser, so that the module can configure the command-line
+      arguments and options it takes when invoked.
 
     - Configuration (`configure(mod, env, args)`):
-      Allows a module to configure itself and any other modules it depends on.
+      Allows each module to configure itself and any other modules it depends
+      on. This phase is usually used to configure other modules.
 
     - Starting (`start(mod, env, args)`):
-      Allows a module to fully initialise itself after configuration.
+      Allows each module to fully initialise itself after environment/argument
+      parsing and module configuration. This phase is usually used for setting
+      env/args-dependent attributes, acquiring resources, etc.
 
     - Running (`__call__(mod, env, args)`):
-      The phase when the module indicated by the command-line, or whoever called
-      `ModuleManager.run()` if that is given explicit command-line arguments,
-      is run, cascading down to any modules it in turn invokes, until the
-      indicated module completes.
+      Runs the directly-called module. The module being 'directly called' is
+      determined by the first argument (see below for where arguments can come
+      from). The called module may call other modules and/or supported methods
+      of other modules, recursively, within this phase.
 
     - Stopping (`stop(mod, env, args)`):
-      Allows a module to fully tear itself down after running.
+      Allows each module to fully tear itself down after running. This lifecycle
+      method is guaranteed to run for all modules that started without error
+      (including if they have no `start()` lifecycle method), in reverse order
+      of starting. This phase is usually used for releasing resources.
 
     In the above, all arguments are passed as keyword arguments. The following
     values are passed for them:
 
     - `mod` is a reference to the ModuleManager itself. This can be used to
       invoke and retrieve references to other modules - see below.
-    - `env` is a Namespace based on the python environment, or whatever
-      environment was passed to the `run()` method.
-    - `args` is an argparse Namespace containing the command-line arguments, or
-      whatever arguments were passed to the `run()` method.
 
-    In all lifecycle phases that `mod` is given, a module can invoke another
-    module by calling the method on `mod` with the name of the module to be
-    invoked. Invoking a module will call that module's special lifecycle method
-    `invoke(phase, mod, env, args)` and return a reference to the other module.
-    `phase` is the current phase of all modules (of the constants in the
-    `ModuleManager.PHASES` Namespace). If the module you want to invoke is named
-    the same as one of ModuleManager's own methods (though this should be rare)
-    then you can use `mod.invoke_module(name)` instead. Once you have a
-    reference to the module instance, you can call the module or run any methods
-    that module specifies are supported. ModuleManager does not support calling
-    module lifecycle methods via this reference, though they may happen to work
-    correctly.
+    - `env` is an argparse Namespace based on the command-line environment and
+      any configured default values. The environment can come from one of the
+      following sources (the first one found is used):
+      - The post-parse env given to `run()`
+      - The pre-parse cli_env given to `run()`
+      - The post-parse env given to `ModuleManager.__init__()`
+      - The pre-parse arguments from the command line (ie. from sys.argv)
+
+    - `args` is an argparse Namespace containing all command-line arguments and
+      any configured default values. Arguments can come from one of the
+      following sources (the first one found is used):
+      - The post-parse args given to `run()`
+      - The pre-parse cli_args given to `run()`
+      - The post-parse args given to `ModuleManager.__init__()`
+      - The pre-parse environment from the command line (ie. from os.environ)
+
+    In all lifecycle phases that have `mod` passed to them, a module can invoke
+    another module by calling the method on `mod` with the same name as the
+    module to be invoked. Invoking a module will call that module's special
+    lifecycle method `invoke(phase, mod, env, args)` if it exists, then return
+    that module's module object back to the invoking module. In the `invoke()`
+    call, `mod`, `env`, and `args` are as they are defined above. `phase` is one
+    of the constants in the `ModuleManager.PHASES` argparse Namespace that
+    represents the current lifecycle phase. `phase` allows the invoked module
+    to change its behaviour depending on which phase it is being invoked in.
+
+    Once you have a reference to the module instance, you can call the module or
+    run any methods that module specifies are supported to be run in that phase.
+    ModuleManager does not support calling module lifecycle methods via this
+    reference, though they may happen to work correctly.
+
+    ## Utility Methods
+
+    ModuleManager provides some utility methods that can be used by modules:
+
+    - You can determine if a particular module has been loaded by using
+      `mod.is_registered('module_name')`.
+
+    - If the module you want to invoke is named the same as one of
+      ModuleManager's own methods (though this should be rare) then you can
+      directly invoke a named module by using
+      `mod.invoke_module('module_name')`.
+
+    - If you need to call a module using a different environment or arguments
+      than those your module was called with, then you can use:
+      ```
+      mod.call_module(
+        'module_name',
+        argparse.Namespace(APPNAME_MODULENAME_SOME_ENV_VAR='value'),
+        argparse.Namespace(arg='another-value')
+      )
+      ```
+
+    - If you need to make modifications to the _outer_ shell proces, such as
+      setting environment variables or changing the current directory, then you
+      can add commands to be run after this script by using
+      `mod.add_command('command')`. Note that module authors are responsible for
+      word splitting, escaping, etc.
 
     ## Notes and Tips
 
     Here are some notes about the system and some tips on module development:
-    
-    - If you come across an error condition while trying to execute some action,
-      always raise a VCSException instead of logging an error and exiting. This
-      exception is handled gracefully and any wrapping/contextual actions by
-      other modules are undone/finalised.
+
+    - If your module is designed to provide some temporary change to the shell
+      environment, repository, or anything else for the duration of the command
+      being run, then make sure to revert those changes in the `stop()`
+      lifecycle method, conditionally if needed (eg. if you only make the change
+      when certain arguments are passed).
 
     - Be careful when developing module classes to avoid infinite recursion when
       modules call each other or each other's methods without a base case.
@@ -253,20 +304,8 @@ class ModuleManager:
             cli_args: 'list[str]' = None
     ):
         """
-        Set off the module manager's lifecycle.
-
-        Includes:
-        - Initialise all registered modules.
-        - Configure supported environment variables and arguments for all
-          registered modules.
-        - Configure all registered modules.
-        - Start all registered modules.
-        - Invoke and call the module specified in one of the following (the
-          first found is used):
-          - In args (an argparse Namespace)
-          - In cli_args (a list of strings parsed as command line arguments)
-          - In the command line arguments (from sys.argv)
-        - Stop all registered modules.
+        Set off the module manager's lifecycle (see class docstring for
+        details of the lifecycle).
 
         Must be called after all modules have been registered. Attempts to
         register new modules after this is called will raise an exception.
