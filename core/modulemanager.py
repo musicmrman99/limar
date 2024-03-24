@@ -421,7 +421,7 @@ class ModuleManager:
                 module.configure(mod=self, env=env, args=args)
 
         # Initialise Error Management
-        modules_started = []
+        modules_started = {}
         exceptions = []
 
         # TODO: Log exception tracebacks as well as capturing exception objects
@@ -433,7 +433,7 @@ class ModuleManager:
                 self._logger.debug(f"Starting module '{name}'")
                 try:
                     module.start(mod=self, env=env, args=args)
-                    modules_started.append(module)
+                    modules_started[name] = module
                 except (Exception, KeyboardInterrupt) as e:
                     self._logger.error(
                         f"Starting module '{name}' failed, attempting to stop"
@@ -457,7 +457,7 @@ class ModuleManager:
 
         # Lifecycle: Stop
         self._phase = ModuleManager.PHASES.STOPPING
-        for name, module in reversed(modules_started):
+        for name, module in reversed(modules_started.items()):
             if hasattr(module, 'stop'):
                 self._logger.debug(f"Stopping module '{name}'")
                 try:
