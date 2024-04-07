@@ -1,7 +1,5 @@
 # Todo
 
-- implement a dependency system (so that loading an entire package can be done
-  in the correct order)
 - ensure tags are always indexed into project lists by Manifest itself (even if
   tags are added by context modules)
   - it doesn't matter which way you cut it, you can't really fix this problem
@@ -11,8 +9,24 @@
   - the best fix is to add a method to Manifest, eg.
     `add_project_tag(self, project, tag)`, that adds the tag and updates all
     indexes.
-- change `manifest WHATEVER --property/-p` to `--format`/`-f`
-- command to open the remote url of a project, or any sub-url of it, in a browser
+
+- add `manifest [(--format|-f) FORMAT] <command> ...`
+
+- add command to open the remote url of a project, or any sub-url of it, in a browser
+
+---
+
+- get a list of all unix/linux commands (that come pre-installed on at least one distro)
+  - look in all folders on `$PATH`
+    - ie. `echo "$PATH" | tr ':' '\n' | grep -v "^/mnt/c" | xargs -I{} sh -c 'printf "%s\n" "" "{}" "----------" ""; ls -Hl "{}"' > test.txt`
+
+- categorise and summarise them
+
+Look at:
+- ST
+- zsh
+- PS1/PS2 (and 3 & 4 in some shells)
+  - show if dirty git tree
 
 ---
 
