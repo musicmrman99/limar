@@ -3,6 +3,7 @@ import glob
 import re
 import importlib
 from contextlib import contextmanager
+from graphlib import CycleError, TopologicalSorter
 from argparse import ArgumentParser, Namespace
 
 from core.envparse import EnvironmentParser
@@ -56,6 +57,13 @@ class ModuleManager:
       module object for that module. Module initialisation during this phase
       should be kept to a minimum, with the majority of initialisation done in
       the Starting phase.
+
+    - Dependency Resolution (`dependencies()`):
+      Retrieves the dependencies (an iterable of module names) of each module
+      and sorts the main list of modules into order. All subsequent lifecycle
+      phases are run against each module in this order.
+      Note: The presence of circular or unregistered dependencies will raise a
+            VCSException.
 
     - Environment Configuration (`configure_env(parser, root_parser)`):
       Passes each module an EnvironmentParser just for it, as well as the root
@@ -345,12 +353,50 @@ class ModuleManager:
             if name not in self.__dict__:
                 self.__dict__[name] = lambda name=name: self.invoke_module(name)
 
+        # Lifecycle: Resolve Dependencies
+        module_deps = {
+            name: (
+                self._mods[name].dependencies()
+                if hasattr(self._mods[name], 'dependencies')
+                else []
+            )
+            for name in self._mods.keys()
+        }
+
+        self._logger.debug('Modules (dependency graph):', module_deps)
+        module_sorter = TopologicalSorter(module_deps)
+        try:
+            modules_sorted = tuple(module_sorter.static_order())
+        except CycleError:
+            raise VCSException(
+                f"Resolve Dependencies failed: Modules have circular"
+                " dependencies"
+            )
+
+        _mods = {}
+        for name in modules_sorted:
+            try:
+                _mods[name] = self._mods[name]
+            except KeyError:
+                # Only need single-level resolution - the user should be able
+                # to figure out the problem from there.
+                missing_module_rev_deps = [
+                    check_name
+                    for check_name, check_deps in module_deps.items()
+                    if name in check_deps
+                ]
+                raise VCSException(
+                    f"Resolve Dependencies failed: Module '{name}' depended on"
+                    f" by modules {missing_module_rev_deps} not registered"
+                )
+        self._logger.debug('Modules (dependencies resolved):', module_deps)
+
         # Lifecycle: Configure Environment
         # Note: Configuring environment before args means that configuring args
         #       can depend on the environment, which allows for things like
         #       environment-based feature toggles.
 
-        for name, module in self._mods.items():
+        for name, module in _mods.items():
             if hasattr(module, 'configure_env'):
                 self._logger.debug(
                     f"Configuring environment for module '{name}'"
@@ -389,7 +435,7 @@ class ModuleManager:
 
         # Lifecycle: Configure Arguments
         self._phase = ModuleManager.PHASES.ARGUMENT_CONFIGURATION
-        for name, module in self._mods.items():
+        for name, module in _mods.items():
             if hasattr(module, 'configure_args'):
                 self._logger.debug(f"Configuring arguments for module '{name}'")
                 module_arg_parser = self._arg_subparsers.add_parser(name)
@@ -415,7 +461,7 @@ class ModuleManager:
 
         # Lifecycle: Configure
         self._phase = ModuleManager.PHASES.CONFIGURATION
-        for name, module in self._mods.items():
+        for name, module in _mods.items():
             if hasattr(module, 'configure'):
                 self._logger.debug(f"Configuring module '{name}'")
                 module.configure(mod=self, env=env, args=args)
@@ -428,7 +474,7 @@ class ModuleManager:
 
         # Lifecycle: Start
         self._phase = ModuleManager.PHASES.STARTING
-        for name, module in self._mods.items():
+        for name, module in _mods.items():
             if hasattr(module, 'start'):
                 self._logger.debug(f"Starting module '{name}'")
                 try:

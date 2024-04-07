@@ -6,7 +6,6 @@ from core.exceptions import VCSException
 from core.modulemanager import ModuleManager
 from core.envparse import EnvironmentParser
 from argparse import ArgumentParser, Namespace
-from core.modules.log import Log
 
 class Env():
     """
@@ -20,6 +19,13 @@ class Env():
 
         self._proj_pattern = None
         self._proj_path = None
+
+    def dependencies(self):
+        return [
+            'log',
+            'manifest',
+            'manifest-context-uris'
+        ]
 
     def configure_args(self, *,
             parser: ArgumentParser,

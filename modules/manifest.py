@@ -278,6 +278,9 @@ class Manifest():
         self._projects: dict[str, dict[str, object]] = None
         self._project_sets: dict[str, dict[str, dict[str, object]]] = None
 
+    def dependencies(self):
+        return ['log']
+
     def configure_env(self, *, parser: EnvironmentParser, **_):
         parser.add_variable('PATH')
         parser.add_variable('DEFAULT_PROJECT_SET', default_is_none=True)
