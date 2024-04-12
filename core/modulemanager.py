@@ -155,7 +155,7 @@ class ModuleManager:
       )
       ```
 
-    - If you need to make modifications to the _outer_ shell proces, such as
+    - If you need to make modifications to the _outer_ shell process, such as
       setting environment variables or changing the current directory, then you
       can add commands to be run after this script by using
       `mod.add_command('command')`. Note that module authors are responsible for
