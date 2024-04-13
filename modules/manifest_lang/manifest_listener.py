@@ -4,6 +4,27 @@ from modules.manifest_lang.build.ManifestListener import ManifestListener
 from modules.manifest_lang.build.ManifestParser import ManifestParser
 from core.modules.log import Log
 
+class Tags:
+    def __init__(self, add_callback=None, remove_callback=None):
+        self._tags = {}
+        self._add_callback = add_callback
+        self._remove_callback = remove_callback
+
+    def add(self, **kwargs):
+        for name, value in kwargs.items():
+            self._tags[name] = value
+            if self._add_callback is not None:
+                self._add_callback(kwargs)
+
+    def remove(self, *names):
+        for name in names:
+            del self._tags[name]
+            if self._remove_callback is not None:
+                self._remove_callback(names)
+
+    def raw(self):
+        return self._tags
+
 class ManifestListenerImpl(ManifestListener):
     """
     An ANTLR4 Listener to parse the manifest file.
@@ -91,6 +112,10 @@ class ManifestListenerImpl(ManifestListener):
             [self.projects, self.project_sets]
         )
 
+        # Finalise tag set
+        for project in self.projects.values():
+            project['tags'] = project['tags'].raw()
+
     def enterContext(self, ctx: ManifestParser.ContextContext):
         context_type = ctx.typeName.text
         if context_type not in self._context_modules.keys():
@@ -139,25 +164,39 @@ class ManifestListenerImpl(ManifestListener):
             old_context['type']
         )
 
+    def _on_add_project_tags(self, proj_ref, tags):
+        for tag_name in tags.keys():
+            if tag_name not in self.project_sets.keys():
+                self.project_sets[tag_name] = {}
+            self.project_sets[tag_name][proj_ref] = self.projects[proj_ref]
+
+    def _on_remove_project_tags(self, proj_ref, names):
+        for tag_name in names:
+            if proj_ref in self.project_sets[tag_name].keys():
+                del self.project_sets[tag_name][proj_ref]
+            if len(self.project_sets[tag_name]) == 0:
+                del self.project_sets[tag_name]
+
     def enterProject(self, ctx: ManifestParser.ProjectContext):
         proj_ref = ctx.ref().getText()
 
         # Add to main project set
         self.projects[proj_ref] = {
             'ref': proj_ref,
-            'tags': {}
+            'tags': Tags(
+                # If any context module updates this module's tags, also update
+                # all relevant indexes.
+                lambda tags: self._on_add_project_tags(proj_ref, tags),
+                lambda tags: self._on_remove_project_tags(proj_ref, tags)
+            )
         }
+
+        # Add all declared tags
         if ctx.tagList() is not None:
-            self.projects[proj_ref]['tags'] = {
+            self.projects[proj_ref]['tags'].add(**{
                 tag.getText(): None
                 for tag in ctx.tagList().tag()
-            }
-
-        # Add to all relevant project sets
-        for tag in self.projects[proj_ref]['tags']:
-            if tag not in self.project_sets.keys():
-                self.project_sets[tag] = {}
-            self.project_sets[tag][proj_ref] = self.projects[proj_ref]
+            })
 
         # Add to all active contexts
         for context in self._contexts:

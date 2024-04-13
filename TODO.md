@@ -1,14 +1,6 @@
 # Todo
 
-- ensure tags are always indexed into project lists by Manifest itself (even if
-  tags are added by context modules)
-  - it doesn't matter which way you cut it, you can't really fix this problem
-    by rearranging the order of operations - on_exit_manifest() could still make
-    changes to tags, well after indexing would be needed to compute project
-    sets.
-  - the best fix is to add a method to Manifest, eg.
-    `add_project_tag(self, project, tag)`, that adds the tag and updates all
-    indexes.
+- only load modules depended on (directly or indirectly) by the directly-called module
 
 - add `manifest [(--format|-f) FORMAT] <command> ...`
 
