@@ -98,9 +98,10 @@ class Manifest():
             context_modules = {}
             for module_factory in self._context_module_factories:
                 context_mod = module_factory()
-                if context_mod.context_type() not in context_modules:
-                    context_modules[context_mod.context_type()] = []
-                context_modules[context_mod.context_type()].append(context_mod)
+                context_mod_type = context_mod.context_type()
+                if context_mod_type not in context_modules:
+                    context_modules[context_mod_type] = []
+                context_modules[context_mod_type].append(context_mod)
 
             # Setup parser
             input_stream = FileStream(self._manifest_path)
