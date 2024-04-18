@@ -1,5 +1,20 @@
 # Todo
 
+- allow manifest tags to have values
+
+- support contexts without a set of projects/project lists; can be used for eg:
+  - **global contexts** (use `on_exit_manifest()` instead of `on_define_project()`/`on_define_project_set()`)
+    - avoids nesting everything inside several top-level contexts
+  - **decorators** (define `on_enter_context()` to set a state flag to true, and define `on_define_project()` and/or `on_define_project_set()` to check if the flag is true, and if so, set it to false then do whatever with the project/project set)
+    - this avoids the need to wrap the project/project set in `{}`
+  - **modes/imports/etc.** (define `on_enter_context()` to do something)
+    - sets something at a given point
+  - etc.
+
+- do something with tag values
+
+---
+
 - only load modules depended on (directly or indirectly) by the directly-called module
 
 - add `manifest [(--format|-f) FORMAT] <command> ...`
@@ -22,80 +37,6 @@ Look at:
 
 ---
 
-- setup ssh
-  - ssh-keygen -t ed25519 -C 'your.email@address.com'
-    > enter a strong password for your key
-
-- set up repository hosting provider
-  - put your pubkey onto the provider (usage type: authentication and signing)
-  - [if needed] set up a token to access other systems in the provider, eg. repositories, web hosting, etc.
-
-- set up git
-  - tools
-    - git config --global core.editor nano
-
-  - aliases
-    - git config --global alias.repo 'log --oneline --graph --all'
-    - git config --global alias.repo-l 'log --oneline --graph'
-    - git config --global alias.repo-b 'log --oneline --graph develop..HEAD'
-      - ideally, this would be relative to the repo's default branch
-
-  - user
-    - git config --global user.name 'Your Name'
-    - git config --global user.email 'your.email@address.com'
-
-  - commit signing
-    - git config --global commit.gpgsign true
-    - git config --global gpg.format ssh
-    - git config --global user.signingkey ~/.ssh/id_ed25519.pub
-
-  - usage
-    - git config --global push.autosetupremote true
-
-- set up your ssh-agent (in each shell instance)
-  - eval `ssh-agent`
-  - ssh-add
-    > enter your key's password
-
----
-
-Ideas from: https://www.youtube.com/watch?v=aolI_Rz0ZqY
-
-git blame -wCCCL <range_start>,<range_end> <path/to/file>
-git log [--full-diff] -L <range_start>,<range_end>:<path/to/file>
-git log -S <search_string>
-git reflog - history of current commit
-git diff --word-diff --word-diff-regex='.'
-
-git push --force-with-lease (not -f)
-
-git config --global rerere.enabled true (re-apply resolutions to conflicts, etc.)
-git config --global fetch.writeCommitGraph true (compute the commit graph on fetch, rather than on `git log --graph`)
-
-git clone --filter=blob:none
-
-git maintenance start (adds a cron job to do maintenance on repos)
-
----
-
-- common git commands
-  - init
-  - clone
-  - status
-  - add
-  - commit
-  - push
-  - pull
-  - branch
-  - checkout
-  - merge
-  - diff
-  - log
-
-  - https://media.licdn.com/dms/image/D5622AQGyZVKG_zTdkg/feedshare-shrink_2048_1536/0/1709867659521?e=1713398400&v=beta&t=YYf2nC6L6YYy3A8u7lpP3CeTtsuBgv4sA9Vq-neZ03A
-
----
-
 - maybe merge env and arg namespaces?
     def _merge_namespaces(self, ns1, ns2):
         return Namespace(**{**vars(ns1), **vars(ns2)})
@@ -111,17 +52,6 @@ git maintenance start (adds a cron job to do maintenance on repos)
 ---
 
 - support getting env vars without prefixing
-
----
-
-- support contexts without a set of projects/project lists; can be used for eg:
-  - **global contexts** (use `on_exit_manifest()` instead of `on_define_project()`/`on_define_project_set()`)
-    - avoids nesting everything inside several top-level contexts
-  - **decorators** (define `on_enter_context()` to set a state flag to true, and define `on_define_project()` and/or `on_define_project_set()` to check if the flag is true, and if so, set it to false then do whatever with the project/project set)
-    - this avoids the need to wrap the project/project set in `{}`
-  - **modes/imports/etc.** (define `on_enter_context()` to do something)
-    - sets something at a given point
-  - etc.
 
 ---
 
@@ -141,6 +71,13 @@ git maintenance start (adds a cron job to do maintenance on repos)
   - https://mermaid.js.org/intro/
 
 - Rearrange into LIMAR (Local Information Management, Architecture, and Representation system)
+  - management - the continuous adjustment of the more mutable configuration of a system to meet the needs of its stakeholders
+  - architecture - the less mutable configuration of a system
+  - representation - the display of the configuration of a system and changes to it in a comprehensible manner
+
+  - in this context, configuration = structure and function (to meet context)
+    - as in "the configuration of the living room" (the components, their orientation, and their functions, that as a whole make the room fit for purpose)
+    - management = organising the structure and function to effectively fit into the context
 
 # Scratchpad
 
