@@ -162,7 +162,7 @@ vcs init
 To build the ANTLR4 language (after installing the packages in `requirements.txt` with `vcs init`):
 
 ```sh
-cd src/manifest && \
+cd modules/manifest_lang && \
   antlr4 -Dlanguage=Python3 -o ./build ./Manifest.g4 && \
   cd ../..
 ```
@@ -172,5 +172,19 @@ cd src/manifest && \
 To run unit tests:
 
 ```sh
-python -m unittest discover -s src
+python -m unittest discover -s modules
+```
+
+### Checking the grammar of a manifest file
+
+When developing ANTLR4 grammars, you can visualise the parse tree of a file for a particular grammar with:
+
+```sh
+antlr4-parse modules/manifest_lang/Manifest.g4 manifest -gui <file>
+```
+
+For example:
+
+```sh
+antlr4-parse modules/manifest_lang/Manifest.g4 manifest -gui manifest/manifest.txt
 ```
