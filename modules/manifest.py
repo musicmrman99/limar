@@ -115,8 +115,8 @@ class Manifest():
             walker = ParseTreeWalker()
             walker.walk(listener, tree)
 
-            projects = listener.projects
-            project_sets = listener.project_sets
+            projects = listener.items
+            project_sets = listener.item_sets
 
             # Cache results
             with open(cache_path, 'wb') as cache_file:

@@ -3,33 +3,64 @@ grammar Manifest;
 /* Expressions
 -------------------------------------------------- */
 
-manifest : (statement? NEWLINE)+ EOF ;
-statement : SPACE? (comment | (context | project | projectSet) comment?) ;
+manifest : (statement | NEWLINE)+ EOF ;
+statement : SPACE? (comment | (context | item | itemSet) (SPACE? comment)?) NEWLINE ;
+
+/* Statements
+-------------------- */
+
+/*
+Note: You must use a separate rule when you have multiple instances of a
+specific case of a general rule, as you cannot use the same label more than
+once. Labels are can only refer to a single rule in ANTLR-generated parsers -
+later instances of a label on a single rule overwrite earlier ones.
+*/
 
 comment : COMMENT_OPEN text=toEndOfLine ;
 
-context : BLOCK_NAME_OPEN typeName=NAME (SPACE? contextOpts)? SPACE BLOCK_OPEN NEWLINE
-            statement ((NEWLINE SPACE? statement)+)?
-          NEWLINE SPACE? BLOCK_CLOSE ;
-contextOpts : GROUP_OPEN (
-                  contextOpt ((SPACE? GROUP_ITEM_SEPARATOR SPACE? contextOpt)+)?
-                | NEWLINE SPACE? contextOpt ((NEWLINE SPACE? contextOpt)+)? NEWLINE
-              ) SPACE? GROUP_CLOSE ;
-contextOpt : optName=NAME SPACE? NAME_VALUE_SEPARATOR SPACE? optValue=toEndOfGroupItem ;
+context : CONTEXT_OPEN typeName=NAME (SPACE? dataOpen
+             contextOpt (dataItemSeparator contextOpt)*
+          dataClose)? (SPACE? blockOpen
+             statement+
+           blockClose)? ;
+contextOpt : kvPair ;
 
-project : ref (SPACE GROUP_OPEN SPACE? tagList SPACE? GROUP_CLOSE)? ;
-projectSet : ref SPACE BLOCK_OPEN SPACE? tagSet SPACE? BLOCK_CLOSE ;
-ref : PATH | NAME ;
+item : ref (SPACE dataOpen
+              tag (dataItemSeparator tag)*
+            dataClose)? ;
+itemSet : ref SPACE setOpen itemSetList setClose ;
+itemSetList : ref                                     #setItemSet
+            | tag                                     #setTag
+            | setOpen itemSetList setClose            #setOpGroup
+            | itemSetList setItemOperator itemSetList #setOp
+            ;
+tag : kvPair ;
+ref : NAME | PATH ;
 
-tagList : tag ((SPACE? GROUP_ITEM_SEPARATOR SPACE? tag)+)? ;
-tagSet : tag                                              #tagBase
-       | GROUP_OPEN SPACE? tagSet SPACE? GROUP_CLOSE      #tagOpGroup
-       | tagSet SPACE? op=TAG_SET_SEPARATOR SPACE? tagSet #tagOp
-       ;
-tag : NAME ;
+/* Primitives
+-------------------- */
 
-// A newline counts as a group item separator
-toEndOfGroupItem : ~(GROUP_ITEM_SEPARATOR | NEWLINE | GROUP_CLOSE)+ ;
+kvPair : name=NAME (kvSeparator value=toEndOfItem)? ;
+kvSeparator : SPACE? KEY_VALUE_SEPARATOR SPACE? ;
+
+blockOpen : BLOCK_OPEN NEWLINE? SPACE? ;
+blockClose : NEWLINE? SPACE? BLOCK_CLOSE ;
+blockItemSeparator : NEWLINE SPACE? ;
+
+dataOpen : DATA_OPEN NEWLINE? SPACE? ;
+dataClose : NEWLINE? SPACE? DATA_CLOSE ;
+dataItemSeparator : (DATA_ITEM_SEPARATOR | NEWLINE | DATA_ITEM_SEPARATOR NEWLINE) SPACE? ;
+
+setOpen : SET_OPEN NEWLINE? SPACE? ;
+setClose : NEWLINE? SPACE? SET_CLOSE ;
+setItemOperator : NEWLINE? SPACE? SET_ITEM_OPERATOR NEWLINE? SPACE? ;
+
+toEndOfItem : ~( NEWLINE 
+               | DATA_ITEM_SEPARATOR
+               | SET_ITEM_OPERATOR
+               | DATA_CLOSE
+               | SET_CLOSE
+               )+ ;
 toEndOfLine : ~NEWLINE+ ;
 
 /* Tokens
@@ -41,16 +72,20 @@ SPACE : SPACE_CHAR+ ;
 
 // General
 COMMENT_OPEN : '#' ;
-BLOCK_NAME_OPEN : '@' ;
+CONTEXT_OPEN : '@' ;
+
 BLOCK_OPEN : '{' ;
 BLOCK_CLOSE : '}' ;
-GROUP_OPEN : '(' ;
-GROUP_CLOSE : ')' ;
-GROUP_ITEM_SEPARATOR : ',' ;
-NAME_VALUE_SEPARATOR : '=' ;
 
-// Tags
-TAG_SET_SEPARATOR : [&|] ;
+DATA_OPEN : '(' ;
+DATA_CLOSE : ')' ;
+DATA_ITEM_SEPARATOR : ',' ;
+
+SET_OPEN : '[' ;
+SET_CLOSE : ']' ;
+SET_ITEM_OPERATOR : [&|] ;
+
+KEY_VALUE_SEPARATOR : ':' ;
 
 // Names and values
 NAME : NAME_CHAR+ ;

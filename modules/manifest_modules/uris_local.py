@@ -9,7 +9,7 @@ class UrisLocal:
     def context_type(self):
         return 'uris'
 
-    def on_declare_project(self, context, project):
+    def on_declare_item(self, context, project):
         proj_ref = project['ref']
         if 'path' not in project:
             project['path'] = proj_ref

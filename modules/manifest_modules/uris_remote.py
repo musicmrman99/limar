@@ -10,7 +10,7 @@ class UrisRemote:
     def context_type(self):
         return 'uris'
 
-    def on_declare_project(self, context, project):
+    def on_declare_item(self, context, project):
         proj_ref = project['ref']
         if 'remote' not in project:
             project['remote'] = proj_ref
