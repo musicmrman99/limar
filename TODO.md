@@ -97,6 +97,14 @@ Look at:
     - as in "the configuration of the living room" (the components, their orientation, and their functions, that as a whole make the room fit for purpose)
     - management = organising the structure and function to effectively fit into the context
 
+---
+
+- consider the 7 Cs and SGCV
+  - temporal scope/granualrity could be a useful way of categorising:
+    - areas of code (eg. terraform resources)
+    - commands (eg. whether data is something related to the current environment, or persistent)
+    - other things?
+
 # Scratchpad
 
 ## Concepts
@@ -134,6 +142,18 @@ A provider is a module that adds the ability to view, modify, and otherwise
 manipulate one or more subjects using a specific tool. For example, the `git`
 provider adds various commands for manipulating git repositories, mainly within
 the `changes` subject.
+
+### Software Engineering Common Tasks
+
+- docs generation
+- validation, tests (inc. performance)
+- infrastructure, pipelines, monitoring/alerting
+- ID+T, certs
+- docker
+- machine image builds
+
+- data manipulation
+  - jq / yq
 
 ### Areas of SE
 

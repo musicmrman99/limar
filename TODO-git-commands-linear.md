@@ -2,6 +2,10 @@
 
 ## Notes
 
+- https://www.youtube.com/watch?v=Md44rcw13k4
+
+---
+
 - https://stackoverflow.com/questions/57265785/whats-the-difference-between-git-switch-and-git-checkout-branch
 - git checkout/switch/restore
 
@@ -121,3 +125,19 @@ show-w = git show --word-diff
 show-wr = diff-w HEAD^..HEAD
 show-c = git show --word-diff --word-diff-regex='.'
 show-cr = diff-c HEAD^..HEAD
+
+---
+
+- GitLab
+- GitHub
+- Azure
+- Concourse - CI system
+
+- Remote repo state
+  - eg. archive status (auto-tag?)
+
+---
+
+- flow patterns
+  - atomic commits (https://dev.to/samuelfaure/how-atomic-git-commits-dramatically-increased-my-productivity-and-will-increase-yours-too-4a84)
+    - linked from https://dev.to/samuelfaure/how-to-be-a-great-software-engineer-without-using-your-brain-1g5k
