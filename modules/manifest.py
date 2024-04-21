@@ -231,7 +231,11 @@ class Manifest():
             tree = parser.manifest()
 
             # Parse
-            listener = ManifestListenerImpl(self._mod.log(), context_modules)
+            listener = ManifestListenerImpl(
+                self._mod.log(),
+                context_modules,
+                [name]
+            )
             walker = ParseTreeWalker()
             walker.walk(listener, tree)
 

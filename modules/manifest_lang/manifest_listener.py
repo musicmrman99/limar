@@ -1,3 +1,4 @@
+from core.exceptions import VCSException
 from modules.manifest_lang.build.ManifestListener import ManifestListener
 
 # Types
@@ -10,11 +11,14 @@ class Tags:
         self._add_callback = add_callback
         self._remove_callback = remove_callback
 
-    def add(self, **kwargs):
-        for name, value in kwargs.items():
+    def add(self, *names, **tags):
+        for name, value in tags.items():
             self._tags[name] = value
             if self._add_callback is not None:
-                self._add_callback(kwargs)
+                self._add_callback(tags)
+
+        if len(names) > 0:
+            self.add(**{name: None for name in names})
 
     def remove(self, *names):
         for name in names:
@@ -35,11 +39,18 @@ class ManifestListenerImpl(ManifestListener):
 
     def __init__(self,
             logger: Log,
-            context_modules: 'dict[str, list]' = None
+            context_modules: dict[str, list] = None,
+            default_contexts: list[str] = None
     ):
         """
-        context_modules must be a dictionary of the following format:
+        `context_modules` must be a dictionary of the following format:
             {'context-type-name': [context_module, ...], ...}
+
+        `default_contexts` is a list of context type names to enter immediately
+        after entering the manifest. Enter the contexts in the order the names
+        are given, passing no options to each. Raise a VCSException if any
+        module names given in `default_contexts` are not defined in
+        `context_modules`.
         """
 
         # Outputs
@@ -54,13 +65,124 @@ class ManifestListenerImpl(ManifestListener):
             self._context_modules = {}
 
         self._contexts = []
-        self._tag_operand_stack = []
+
+        self._default_context_names = (
+            default_contexts
+            if default_contexts is not None
+            else []
+        )
+        for name in self._default_context_names:
+            if name not in self._context_modules:
+                raise VCSException('Default context')
+
+    # Listen Points
+    # --------------------------------------------------
 
     def enterManifest(self, ctx: ManifestParser.ManifestContext):
+        self._enter_manifest()
+
+    def exitManifest(self, ctx: ManifestParser.ManifestContext):
+        self._exit_manifest()
+
+    def enterContext(self, ctx: ManifestParser.ContextContext):
+        context_type = ctx.typeName.text
+        context_opts = {
+            opt.kvPair().name.text: (
+                opt.kvPair().value.getText()
+                if opt.kvPair().value is not None
+                else None
+            )
+            for opt in ctx.contextOpt()
+        }
+
+        self._enter_context(context_type, context_opts)
+
+    def exitContext(self, ctx: ManifestParser.ContextContext):
+        self._exit_context()
+
+    def enterItem(self, ctx: ManifestParser.ItemContext):
+        ref = ctx.ref().getText()
+        tags = {
+            tag.kvPair().name.text: (
+                tag.kvPair().value.getText()
+                if tag.kvPair().value is not None
+                else None
+            )
+            for tag in ctx.tag()
+        }
+
+        self._declare_item(ref, tags)
+
+    def enterItemSet(self, ctx: ManifestParser.ItemSetContext):
+        self._item_set_operand_stack = []
+
+    def enterSetItemSet(self, ctx: ManifestParser.SetItemSetContext):
+        # Extract
+        item_set_name = ctx.ref().getText()
+
+        # Store (text-only - not a logical operation)
+        item_set = (
+            self.item_sets[item_set_name]
+            if item_set_name in self.item_sets
+            else {} # In case the item set isn't defined
+        )
+        self._item_set_operand_stack.append(item_set)
+
+    # TODO: For now, a tag (with a value) appearning in a set is treated the
+    #       same as a ref (ie. without a value).
+    def enterSetTag(self, ctx: ManifestParser.SetTagContext):
+        # Extract
+        item_set_name = ctx.tag().getText()
+
+        # Store (text-only - not a logical operation)
+        item_set = (
+            self.item_sets[item_set_name]
+            if item_set_name in self.item_sets
+            else {} # In case the item set isn't defined
+        )
+        self._item_set_operand_stack.append(item_set)
+
+    def exitSetOp(self, ctx: ManifestParser.SetOpContext):
+        # Extract
+        operator = ctx.setItemOperator().SET_ITEM_OPERATOR().getText()
+        right_item_set = self._item_set_operand_stack.pop()
+        left_item_set = self._item_set_operand_stack.pop()
+
+        # Store
+        if operator == '&':
+            result = {
+                item_set_name: left_item_set[item_set_name]
+                for item_set_name in left_item_set.keys() & right_item_set.keys()
+            }
+        elif operator == '|':
+            result = {
+                item_set_name: (
+                    left_item_set[item_set_name]
+                    if item_set_name in left_item_set
+                    else right_item_set[item_set_name]
+                )
+                for item_set_name in left_item_set.keys() | right_item_set.keys()
+            }
+        self._item_set_operand_stack.append(result)
+
+    def exitItemSet(self, ctx: ManifestParser.ItemSetContext):
+        item_set_ref = ctx.ref().getText()
+        self._declare_item_set(item_set_ref, self._item_set_operand_stack.pop())
+
+    # Operations
+    # --------------------------------------------------
+
+    def _enter_manifest(self):
         # Call - 'on_enter_manifest' on all context modules
         self._run_context_lifecycle_point('on_enter_manifest', [])
 
-    def exitManifest(self, ctx: ManifestParser.ManifestContext):
+        for context_name in self._default_context_names:
+            self._enter_context(context_name)
+
+    def _exit_manifest(self):
+        for context_name in reversed(self._default_context_names):
+            self._exit_context(context_name)
+
         # Call - 'on_exit_manifest' on all context modules
         self._run_context_lifecycle_point('on_exit_manifest',
             [self.items, self.item_sets]
@@ -70,23 +192,11 @@ class ManifestListenerImpl(ManifestListener):
         for item in self.items.values():
             item['tags'] = item['tags'].raw()
 
-    def enterContext(self, ctx: ManifestParser.ContextContext):
-        # Extract
-        context_type = ctx.typeName.text
-        context_opts = {
-            # Value is mandatory
-            opt.kvPair().name.text: (
-                opt.kvPair().value.getText()
-                if opt.kvPair().value is not None
-                else None
-            )
-            for opt in ctx.contextOpt()
-        }
-
+    def _enter_context(self, type, opts = None):
         # Validate
-        if context_type not in self._context_modules.keys():
+        if type not in self._context_modules.keys():
             self._logger.warning(
-                f"Unsupported context type '{context_type}' found."
+                f"Unsupported context type '{type}' found."
                 " Ignoring context."
             )
             # Used to represent an unrecognised context (not an error for
@@ -94,10 +204,10 @@ class ManifestListenerImpl(ManifestListener):
             self._contexts.append(NotImplementedError)
             return
 
-        # Transform
+        # Structure
         context = {
-            'type': context_type,
-            'opts': context_opts,
+            'type': type,
+            'opts': opts if opts is not None else {},
             'items': {},
             'item_sets': {}
         }
@@ -112,7 +222,7 @@ class ManifestListenerImpl(ManifestListener):
             context['type']
         )
 
-    def exitContext(self, ctx: ManifestParser.ContextContext):
+    def _exit_context(self):
         # Discard
         old_context = self._contexts.pop()
 
@@ -131,12 +241,14 @@ class ManifestListenerImpl(ManifestListener):
             old_context['type']
         )
 
+    # Util for _declare_item()
     def _on_add_item_tags(self, item_ref, tags):
         for tag_name in tags.keys():
             if tag_name not in self.item_sets.keys():
                 self.item_sets[tag_name] = {}
             self.item_sets[tag_name][item_ref] = self.items[item_ref]
 
+    # Util for _declare_item()
     def _on_remove_item_tags(self, item_ref, names):
         for tag_name in names:
             if item_ref in self.item_sets[tag_name].keys():
@@ -144,39 +256,29 @@ class ManifestListenerImpl(ManifestListener):
             if len(self.item_sets[tag_name]) == 0:
                 del self.item_sets[tag_name]
 
-    def enterItem(self, ctx: ManifestParser.ItemContext):
-        # Extract
-        item_ref = ctx.ref().getText()
-        tags = {
-            tag.kvPair().name.text: (
-                tag.kvPair().value.getText()
-                if tag.kvPair().value is not None
-                else None
-            )
-            for tag in ctx.tag()
-        }
-
+    def _declare_item(self, ref, tags = None):
         # Store
           # Add to main item set
-        self.items[item_ref] = {
-            'ref': item_ref,
+        self.items[ref] = {
+            'ref': ref,
             'tags': Tags(
                 # If any context module updates this module's tags, also update
                 # all relevant indexes.
-                lambda tags: self._on_add_item_tags(item_ref, tags),
-                lambda tags: self._on_remove_item_tags(item_ref, tags)
+                lambda tags: self._on_add_item_tags(ref, tags),
+                lambda tags: self._on_remove_item_tags(ref, tags)
             )
         }
 
           # Add all declared tags
-        self.items[item_ref]['tags'].add(**tags)
+        if tags is not None:
+            self.items[ref]['tags'].add(**tags)
 
           # Add to all active contexts
         for context in self._contexts:
             if context is NotImplementedError:
                 continue # Skip unrecognised contexts
 
-            context['items'][item_ref] = self.items[item_ref]
+            context['items'][ref] = self.items[ref]
 
         # Call - 'on_declare_item' on all context modules registered for all
         # active contexts
@@ -185,70 +287,22 @@ class ManifestListenerImpl(ManifestListener):
                 continue # Skip unrecognised contexts
 
             self._run_context_lifecycle_point('on_declare_item',
-                [context, self.items[item_ref]],
+                [context, self.items[ref]],
                 context['type']
             )
 
-    def enterSetItemSet(self, ctx: ManifestParser.SetItemSetContext):
-        # Extract
-        item_set_name = ctx.ref().getText()
-
-        # Store
-        item_set = {} # In case the item set isn't defined
-        if item_set_name in self.item_sets:
-            item_set = self.item_sets[item_set_name]
-        self._tag_operand_stack.append(item_set)
-
-    # TODO: For now, a tag (with a value) appearning in a set is treated the
-    #       same as a ref (ie. without a value).
-    def enterSetTag(self, ctx: ManifestParser.SetTagContext):
-        # Extract
-        item_set_name = ctx.tag().getText()
-
-        # Store
-        item_set = {} # In case the tag isn't defined
-        if item_set_name in self.item_sets:
-            item_set = self.item_sets[item_set_name]
-        self._tag_operand_stack.append(item_set)
-
-    def exitSetOp(self, ctx: ManifestParser.SetOpContext):
-        # Extract
-        operator = ctx.setItemOperator().SET_ITEM_OPERATOR().getText()
-        right_item_set = self._tag_operand_stack.pop()
-        left_item_set = self._tag_operand_stack.pop()
-
-        # Store
-        if operator == '&':
-            result = {
-                item_set_name: left_item_set[item_set_name]
-                for item_set_name in left_item_set.keys() & right_item_set.keys()
-            }
-        elif operator == '|':
-            result = {
-                item_set_name: (
-                    left_item_set[item_set_name]
-                    if item_set_name in left_item_set
-                    else right_item_set[item_set_name]
-                )
-                for item_set_name in left_item_set.keys() | right_item_set.keys()
-            }
-        self._tag_operand_stack.append(result)
-
-    def exitItemSet(self, ctx: ManifestParser.ItemSetContext):
-        # Extract
-        item_set_ref = ctx.ref().getText()
-
+    def _declare_item_set(self, ref, items):
         # Store
           # Add to main item sets
-        self.item_sets[item_set_ref] = self._tag_operand_stack.pop()
+        self.item_sets[ref] = items
 
           # Add to all active contexts
         for context in self._contexts:
             if context is NotImplementedError:
                 continue # Skip unrecognised contexts
 
-            context['item_sets'][item_set_ref] = (
-                self.item_sets[item_set_ref]
+            context['item_sets'][ref] = (
+                self.item_sets[ref]
             )
 
         # Call - 'on_declare_item_set' on all context modules registered for
@@ -258,9 +312,12 @@ class ManifestListenerImpl(ManifestListener):
                 continue # Skip unrecognised contexts
 
             self._run_context_lifecycle_point('on_declare_item_set',
-                [context, self.item_sets[item_set_ref]],
+                [context, self.item_sets[ref]],
                 context['type']
             )
+
+    # Utils
+    # --------------------------------------------------
 
     def _run_context_lifecycle_point(self, name, args, context_type=None):
         """

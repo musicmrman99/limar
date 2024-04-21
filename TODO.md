@@ -13,12 +13,9 @@
 
 - ./ support multiple manifest files (defined by context modules) in a manifest directory (wohse location comes from env)
 
----
-
 - ./ move docs into manifest MM module
 
-    For details of the expected structure of a manifest file, see the Manifest
-    MM module's docstring.
+- ./ make default context for a manifest file be entered when parsing it
 
 ---
 
