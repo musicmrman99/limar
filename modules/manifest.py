@@ -1,6 +1,5 @@
 from hashlib import md5
 from operator import itemgetter
-from pathlib import Path
 import re
 
 from core.store import Store
@@ -10,11 +9,12 @@ from core.exceptions import VCSException
 from core.modulemanager import ModuleManager
 from core.envparse import EnvironmentParser
 from argparse import ArgumentParser, Namespace
+from typing import Any, Callable
 
 class Manifest():
     """
-    MM module to parse a manifest file and provide information about the
-    projects it defines.
+    MM module to parse all manifest files declared by added context modules and
+    to provide information about the items they declare.
     """
 
     # Lifecycle
@@ -24,7 +24,9 @@ class Manifest():
         self._manifest_store = manifest_store
         self._cache = cache
 
-        self._context_module_factories = []
+        self._ctx_mod_factories: dict[str, Callable[[], Any]] = {}
+        self._manifest_names: list[str] = []
+
         self._projects: dict[str, dict[str, object]] = None
         self._project_sets: dict[str, dict[str, dict[str, object]]] = None
 
@@ -32,7 +34,7 @@ class Manifest():
         return ['log']
 
     def configure_env(self, *, parser: EnvironmentParser, **_):
-        parser.add_variable('PATH')
+        parser.add_variable('ROOT')
         parser.add_variable('DEFAULT_PROJECT_SET', default_is_none=True)
 
     def configure_args(self, *, parser: ArgumentParser, **_):
@@ -70,31 +72,40 @@ class Manifest():
     def configure(self, *, mod: ModuleManager, env: Namespace, **_):
         self._mod = mod # For methods that aren't directly given it
 
-        manifest_path = Path(env.VCS_MANIFEST_PATH).resolve()
-        self._manifest_name = manifest_path.name
         if self._manifest_store is None:
-            self._manifest_store = Store(manifest_path.parent)
+            self._manifest_store = Store(env.VCS_MANIFEST_ROOT)
 
         if self._cache is None:
             self._cache = self._manifest_store
 
         self._default_project_set = env.VCS_MANIFEST_DEFAULT_PROJECT_SET
 
-    def start(self, *, mod: ModuleManager, **_):
-        manifest = self._manifest_store.get(self._manifest_name)
+    def start(self, *_, **__):
+        for manifest_name in self._manifest_names:
+            self._load_manifest(manifest_name)
+
+    def _load_manifest(self, name):
+        try:
+            manifest = self._manifest_store.get(name+'.manifest.txt')
+        except KeyError:
+            self._mod.log().trace(
+                f"Manifest '{name}' not found. Skipping."
+            )
+            return
 
         # Determine cache filename for this version of the manifest file
-        # FIXME: Hard-coding the manifest's name here is evil.
-        cache_name = 'manifest.'+md5(manifest).hexdigest()+'.pickle'
+        digest = md5(manifest.encode('utf-8')).hexdigest()
+        cache_name = '.'.join([name, 'manifest', digest, 'pickle'])
 
         # Try cache
         try:
+            self._cache.setattr(cache_name, 'type', 'pickle')
             projects, project_sets = itemgetter(
                 'projects',
                 'project_sets'
             )(self._cache.get(cache_name))
 
-        except FileNotFoundError:
+        except KeyError:
             # Import deps (these are slow to import, so only (re)parse the
             # manifest if needed)
             from antlr4 import InputStream, CommonTokenStream, ParseTreeWalker
@@ -103,13 +114,14 @@ class Manifest():
             from modules.manifest_lang.manifest_listener import ManifestListenerImpl
 
             # Create context modules
-            context_modules = {}
-            for module_factory in self._context_module_factories:
-                context_mod = module_factory()
-                context_mod_type = context_mod.context_type()
-                if context_mod_type not in context_modules:
-                    context_modules[context_mod_type] = []
-                context_modules[context_mod_type].append(context_mod)
+            context_modules = {
+                context_type: [
+                    mod_factory()
+                    for mod_factory in ctx_mod_factories
+                ]
+                for context_type, ctx_mod_factories in
+                    self._ctx_mod_factories.items()
+            }
 
             # Setup parser
             input_stream = InputStream(manifest)
@@ -119,12 +131,15 @@ class Manifest():
             tree = parser.manifest()
 
             # Parse
-            listener = ManifestListenerImpl(mod.log(), context_modules)
+            listener = ManifestListenerImpl(self._mod.log(), context_modules)
             walker = ParseTreeWalker()
             walker.walk(listener, tree)
 
             projects = listener.items
             project_sets = listener.item_sets
+            self._mod.log().info(
+                f"Loaded manifest '{name}' from '{self._manifest_store}'"
+            )
 
             # Cache results
             self._cache.set(cache_name, {
@@ -132,6 +147,9 @@ class Manifest():
                 'project_sets': project_sets
             })
             self._cache.flush()
+            self._mod.log().trace(
+                f"Cached result '{cache_name}' in '{self._cache}'"
+            )
 
         # Extract results
         self._projects = projects
@@ -162,7 +180,7 @@ class Manifest():
     # Configuration
     # --------------------
 
-    def add_context_module(self, *modules):
+    def add_context_modules(self, *modules):
         """
         Allows other modules to extend the manifest format with new contexts.
         """
@@ -175,14 +193,27 @@ class Manifest():
             raise VCSException(
                 f"Attempted registration of context module '{modules[0]}' after"
                 " manifest has been parsed. This was probably caused by"
-                " inappropriate use of mod.Manifest.add_context_module() by the"
-                " last ModuleManager module to be invoked (possibly"
-                " internally)."
+                " inappropriate use of mod.manifest().add_context_modules() by"
+                " the last ModuleManager module to be invoked (either directly"
+                " or by another MM module)."
             )
 
         for module in modules:
-            if module not in self._context_module_factories:
-                self._context_module_factories.append(module)
+            module_added = True
+            if module.context_type() not in self._ctx_mod_factories:
+                self._ctx_mod_factories[module.context_type()] = [module]
+
+            elif module not in self._ctx_mod_factories[module.context_type()]:
+                self._ctx_mod_factories[module.context_type()].append(module)
+
+            else:
+                module_added = False
+            if (
+                module_added and
+                hasattr(module, 'can_be_root') and
+                module.can_be_root()
+            ):
+                self._manifest_names.append(module.context_type())
 
     # Invokation
     # --------------------

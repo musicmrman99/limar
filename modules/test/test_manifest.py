@@ -2,8 +2,6 @@ from unittest import TestCase
 from unittest.mock import MagicMock, Mock, mock_open, patch
 
 # Util
-import os.path
-import re
 from core.exceptions import VCSException
 
 # Test Fixtures
@@ -327,7 +325,7 @@ class TestManifest(TestCase):
         mock_context_module = Mock()
         mock_context_module.context_type.return_value = 'some-context'
         mock_context_module_factory = Mock(return_value=mock_context_module)
-        manifest.add_context_module(mock_context_module_factory)
+        manifest.add_context_modules(mock_context_module_factory)
 
         # Start
         manifest.start(mod=self.mock_mod)
@@ -461,7 +459,7 @@ class TestManifest(TestCase):
         mock_context_module.on_exit_context.side_effect = verify_exit_context
         mock_context_module.on_exit_manifest.side_effect = verify_exit_manifest
         mock_context_module_factory = Mock(return_value=mock_context_module)
-        manifest.add_context_module(mock_context_module_factory)
+        manifest.add_context_modules(mock_context_module_factory)
 
         # Start
         manifest.start(mod=self.mock_mod)
@@ -489,7 +487,7 @@ class TestManifest(TestCase):
 
         # Configure
         manifest.configure(mod=self.mock_mod, env=self.mock_env)
-        manifest.add_context_module(uris_local.UrisLocal)
+        manifest.add_context_modules(uris_local.UrisLocal)
 
         # Start
         manifest.start(mod=self.mock_mod)
@@ -523,7 +521,7 @@ class TestManifest(TestCase):
 
         # Configure
         manifest.configure(mod=self.mock_mod, env=self.mock_env)
-        manifest.add_context_module(uris_local.UrisLocal)
+        manifest.add_context_modules(uris_local.UrisLocal)
 
         # Test: Start
         with self.assertRaises(VCSException):
@@ -544,8 +542,8 @@ class TestManifest(TestCase):
 
         # Configure
         manifest.configure(mod=self.mock_mod, env=self.mock_env)
-        manifest.add_context_module(uris_local.UrisLocal)
-        manifest.add_context_module(uris_remote.UrisRemote)
+        manifest.add_context_modules(uris_local.UrisLocal)
+        manifest.add_context_modules(uris_remote.UrisRemote)
 
         # Start
         manifest.start(mod=self.mock_mod)
@@ -584,7 +582,7 @@ class TestManifest(TestCase):
 
         # Configure
         manifest.configure(mod=self.mock_mod, env=self.mock_env)
-        manifest.add_context_module(uris_local.UrisLocal)
+        manifest.add_context_modules(uris_local.UrisLocal)
 
         # Start
         manifest.start(mod=self.mock_mod)

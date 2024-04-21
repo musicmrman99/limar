@@ -1,8 +1,8 @@
 # Todo
 
-- allow manifest tags to have values
+- ./ allow manifest tags to have values
 
-- support contexts without a set of projects/project lists; can be used for eg:
+- ./ support contexts without a set of projects/project lists; can be used for eg:
   - **global contexts** (use `on_exit_manifest()` instead of `on_define_project()`/`on_define_project_set()`)
     - avoids nesting everything inside several top-level contexts
   - **decorators** (define `on_enter_context()` to set a state flag to true, and define `on_define_project()` and/or `on_define_project_set()` to check if the flag is true, and if so, set it to false then do whatever with the project/project set)
@@ -10,6 +10,27 @@
   - **modes/imports/etc.** (define `on_enter_context()` to do something)
     - sets something at a given point
   - etc.
+
+- ./ support multiple manifest files (defined by context modules) in a manifest directory (wohse location comes from env)
+
+---
+
+- move docs into manifest MM module
+
+    For details of the expected structure of a manifest file, see the Manifest
+    MM module's docstring.
+
+---
+
+- make @uris only apply to projects
+
+    def includes(self, *names):
+        for name in names:
+            if name not in self._tags:
+                return False
+        return True
+
+---
 
 - do something with tag values
 

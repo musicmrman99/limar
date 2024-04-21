@@ -4,10 +4,11 @@ import re
 from core.exceptions import VCSException
 
 class UrisRemote:
-    def __init__(self) -> None:
+    def __init__(self):
         self._projects = set()
 
-    def context_type(self):
+    @staticmethod
+    def context_type():
         return 'uris'
 
     def on_declare_item(self, context, project):

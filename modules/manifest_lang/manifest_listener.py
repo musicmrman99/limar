@@ -29,11 +29,11 @@ class ManifestListenerImpl(ManifestListener):
     """
     An ANTLR4 Listener to parse the manifest file.
 
-    ## Basic Structure
+    ## Manifest Files
 
-    A manifest file is made up of declarations, contexts, and comments. There
+    Manifest files are made up of declarations, contexts, and comments. There
     are two types of declarations: items and item sets.
-    
+
     Items declare a named thing to exist. Item declarations may include a list
     of tags (key-value pairs, where the value is optional, defaulting to True of
     omitted) in brackets after the name. Tags are separated by a comma, a
@@ -47,7 +47,7 @@ class ManifestListenerImpl(ManifestListener):
     these names. Nested item set expressions with operators between them are
     also supported.
 
-    ## Context modules
+    ## Context Modules
 
     You can give an indexed list (ie. a dictionary) of 'context modules' when
     initialising this class. Context modules are used to extend the manifest
@@ -73,34 +73,61 @@ class ManifestListenerImpl(ManifestListener):
           # The 'type' tag is made up - tags are only useful if they're
           # interpreted by something, whether a context module, or whatever is
           # using the manifest.
-          dir/project-a (type: project/git_repo)
+          dir/project-a (project, git)
         }
 
         @context-type (someOption: /home/username/mystuff) {
-          dir/project-b (type: project/git_repo)
+          dir/project-b (project, git)
         }
 
         @context-type (
             optionA: /home/username/directory
             optionB: https://somegithost.com/username
         ) {
-          dir/project-c (type: project/git_repo)
+          dir/project-c (project, git)
         }
 
     ## Implementing a Context Module
 
-    Each context module must be a Python class that defines a `context_type()`
-    method that returns the context type that module is for (as a string), and
-    may define any of the following method-based hooks:
+    Each context module must be a Python class. The class must define one class
+    methods:
+
+    - `context_type()`
+      - Return the context type that module is for as a string.
+
+    It may define an additional class method:
+
+    - `can_be_root()`
+      - Return True if the context type supports being used as a root context,
+        otherwise return False. Only one context module for a context type
+        needs to return True for this for it to be applied. If this method
+        is not defined for a context module, then it is equivalent to it
+        returning False.
+
+    It may define any of the following method-based hooks (at least one should
+    be defined to make the context module do anything):
 
     - `on_enter_manifest()`
+      - TODO
+
     - `on_enter_context(context)`
+      - TODO
+
     - `on_declare_item(context, item)`
+      - TODO
+
     - `on_declare_item_set(context, item_set)`
+      - TODO
+
     - `on_exit_context(context, items, item_sets)`
-        - Note that items and item_sets only contain the items/item_sets that
-          were declared in this context.
+      - TODO
+        `items` and `item_sets` contain the items/item_sets that were declared
+        in this context in a single manifest file.
+
     - `on_exit_manifest(items, item_sets)`
+      - TODO
+        `items` and `item_sets` contain all items/item_sets that were declared
+        in a single manifest file.
     """
 
     def __init__(self,

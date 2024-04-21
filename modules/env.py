@@ -24,7 +24,7 @@ class Env():
         return [
             'log',
             'manifest',
-            'manifest-context-uris'
+            'project-manifest'
         ]
 
     def configure_args(self, *,

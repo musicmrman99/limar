@@ -1,16 +1,42 @@
-import os.path
 from pathlib import Path
 import pickle
 
+from core.exceptions import VCSException
+
 class Store():
     def __init__(self, persist_dir='/tmp'):
-        self._persist_dir = Path(persist_dir).absolute()
+        self._persist_dir = Path(persist_dir).resolve()
         self._persist_dir.mkdir(parents=True, exist_ok=True)
 
         self._cache = {}
+        self._attrs = {}
         self._marked_for_removal = set()
 
-    # Core Methods
+    # Attribute Methods
+
+    def setattrs(self, key, **attrs):
+        self._attrs[key] = attrs
+
+    def getattrs(self, key):
+        if key not in self._attrs:
+            self.setattrs(key)
+        return self._attrs[key]
+
+    def delattrs(self, key):
+        if key in self._attrs:
+            del self._attrs[key]
+
+    def setattr(self, key, attr_name, attr_value):
+        attrs = self.getattrs(key)
+        attrs[attr_name] = attr_value
+
+    def getattr(self, key, attr_name):
+        attrs = self.getattrs(key)
+        if attr_name not in attrs:
+            self.setattr(key, attr_name, None)
+        return attrs[attr_name]
+
+    # Content Methods
 
     def set(self, key, value):
         self._cache[key] = value
@@ -20,12 +46,16 @@ class Store():
     def get(self, key):
         if key not in self._cache:
             try:
-                self._cache[key] = pickle.loads(self._path_for(key).read_bytes())
+                key_path = self._path_for(key)
+                if self.getattr(key, 'type') == 'pickle':
+                    self._cache[key] = pickle.loads(key_path.read_bytes())
+                else:
+                    self._cache[key] = key_path.read_text()
             except OSError as e:
                 raise KeyError(f"Key '{key}' not found in this store") from e
         return self._cache[key]
 
-    def remove(self, key):
+    def delete(self, key):
         if key in self._cache:
             del self._cache[key]
         self._marked_for_removal.add(key)
@@ -34,7 +64,11 @@ class Store():
         for key, value in self._cache.items():
             key_path = self._path_for(key)
             key_path.parent.mkdir(parents=True, exist_ok=True)
-            key_path.write_bytes(pickle.dumps(value))
+
+            if self.getattr(key, 'type') == 'pickle':
+                key_path.write_bytes(pickle.dumps(value))
+            else:
+                key_path.write_text(value)
 
         for key in self._marked_for_removal:
             key_path = self._path_for(key)
@@ -65,7 +99,7 @@ class Store():
         return self.get(key)
 
     def __delitem__(self, key):
-        self.remove(key)
+        self.delete(key)
 
     def __enter__(self):
         pass
@@ -73,9 +107,19 @@ class Store():
     def __exit__(self, type, value, traceback):
         self.flush()
 
+    def __str__(self):
+        return f'<Store @ {self._persist_dir}>'
+
     # Utils
 
     def _path_for(self, key):
         if len(key) > 0 and key[0] == '/':
             key = key[1:]
-        return self._persist_dir / key
+        key_path = Path(key)
+
+        if '..' in key_path.parts:
+            raise VCSException(
+                "Store keys must not contain the special path fragment '..':"
+                f" found in key '{key_path}'")
+
+        return (self._persist_dir / key_path).resolve()
