@@ -15,7 +15,7 @@
 
 ---
 
-- move docs into manifest MM module
+- ./ move docs into manifest MM module
 
     For details of the expected structure of a manifest file, see the Manifest
     MM module's docstring.
