@@ -1,8 +1,9 @@
-import hashlib
+from hashlib import md5
 from operator import itemgetter
-import pickle
+from pathlib import Path
 import re
 
+from core.store import Store
 from core.exceptions import VCSException
 
 # Types
@@ -19,7 +20,10 @@ class Manifest():
     # Lifecycle
     # --------------------
 
-    def __init__(self):
+    def __init__(self, manifest_store: Store = None, cache: Store = None):
+        self._manifest_store = manifest_store
+        self._cache = cache
+
         self._context_module_factories = []
         self._projects: dict[str, dict[str, object]] = None
         self._project_sets: dict[str, dict[str, dict[str, object]]] = None
@@ -64,32 +68,36 @@ class Manifest():
             help='A regex pattern to resolve to a project set')
 
     def configure(self, *, mod: ModuleManager, env: Namespace, **_):
-        # For methods that aren't directly given it
-        self._mod = mod
+        self._mod = mod # For methods that aren't directly given it
 
-        self._manifest_path = env.VCS_MANIFEST_PATH
+        manifest_path = Path(env.VCS_MANIFEST_PATH).resolve()
+        self._manifest_name = manifest_path.name
+        if self._manifest_store is None:
+            self._manifest_store = Store(manifest_path.parent)
+
+        if self._cache is None:
+            self._cache = self._manifest_store
+
         self._default_project_set = env.VCS_MANIFEST_DEFAULT_PROJECT_SET
 
     def start(self, *, mod: ModuleManager, **_):
-        # TODO: This opens/reads/closes the manifest file twice - is this a big
-        #       enough performance hit to be worth fixing?
+        manifest = self._manifest_store.get(self._manifest_name)
 
-        # Determine cache filename
-        with open(self._manifest_path, 'rb') as manifest:
-            sha1 = hashlib.md5(manifest.read())
-        cache_path = self._manifest_path+'.'+sha1.hexdigest()+'.pickle'
+        # Determine cache filename for this version of the manifest file
+        # FIXME: Hard-coding the manifest's name here is evil.
+        cache_name = 'manifest.'+md5(manifest).hexdigest()+'.pickle'
 
         # Try cache
         try:
-            with open(cache_path, 'rb') as cache_file:
-                projects, project_sets = itemgetter(
-                    'projects',
-                    'project_sets'
-                )(pickle.load(cache_file))
+            projects, project_sets = itemgetter(
+                'projects',
+                'project_sets'
+            )(self._cache.get(cache_name))
 
         except FileNotFoundError:
-            # Import deps (these are slow to import, so only (re)parse if needed)
-            from antlr4 import FileStream, CommonTokenStream, ParseTreeWalker
+            # Import deps (these are slow to import, so only (re)parse the
+            # manifest if needed)
+            from antlr4 import InputStream, CommonTokenStream, ParseTreeWalker
             from modules.manifest_lang.build.ManifestLexer import ManifestLexer
             from modules.manifest_lang.build.ManifestParser import ManifestParser
             from modules.manifest_lang.manifest_listener import ManifestListenerImpl
@@ -104,7 +112,7 @@ class Manifest():
                 context_modules[context_mod_type].append(context_mod)
 
             # Setup parser
-            input_stream = FileStream(self._manifest_path)
+            input_stream = InputStream(manifest)
             lexer = ManifestLexer(input_stream)
             tokens = CommonTokenStream(lexer)
             parser = ManifestParser(tokens)
@@ -119,14 +127,11 @@ class Manifest():
             project_sets = listener.item_sets
 
             # Cache results
-            with open(cache_path, 'wb') as cache_file:
-                pickle.dump(
-                    {
-                        'projects': projects,
-                        'project_sets': project_sets
-                    },
-                    cache_file
-                )
+            self._cache.set(cache_name, {
+                'projects': projects,
+                'project_sets': project_sets
+            })
+            self._cache.flush()
 
         # Extract results
         self._projects = projects
