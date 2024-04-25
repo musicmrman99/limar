@@ -262,7 +262,7 @@ class ManifestListenerImpl(ManifestListener):
         self.items[ref] = {
             'ref': ref,
             'tags': Tags(
-                # If any context module updates this module's tags, also update
+                # If any context module updates this item's tags, also update
                 # all relevant indexes.
                 lambda tags: self._on_add_item_tags(ref, tags),
                 lambda tags: self._on_remove_item_tags(ref, tags)
