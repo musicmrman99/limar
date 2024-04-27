@@ -23,14 +23,11 @@ class TestManifest(TestCase):
         self.mock_mod.log.return_value=logger
 
         self.mock_env = Mock()
-        self.mock_env.VCS_MANIFEST_DEFAULT_PROJECT_SET = None
+        # TODO: Use this only in the tests that need it
+        #self.mock_env.VCS_MANIFEST_DEFAULT_ITEM_SET = None
         self.mock_env.VCS_MANIFEST_ROOT = '/manifests'
 
-        # Used in some context hooks tests
-        self._uris_local_projects = set()
-        self._uris_remote_projects = set()
-
-    def test_resolve_context_basic(self):
+    def test_resolve_basic(self):
         # Data
         manifest_store = Mock()
         manifest_store.get.side_effect = lambda key: {
@@ -55,41 +52,27 @@ class TestManifest(TestCase):
         manifest.start()
 
         # Test
-        manifest.get_project('itemA')
-        mock_context_module.on_enter_context.assert_called_once_with({
-            'type': 'test',
-            'opts': {},
-            'items': {
-                'itemA': {
-                    'ref': 'itemA',
-                    'tags': {}
-                }
-            },
-            'item_sets': {}
+        self.assertEqual(manifest.get_item('itemA'), {
+            'ref': 'itemA',
+            'tags': {}
         })
-
-    # @patch("builtins.open", new_callable=mock_open, read_data=b'\n'.join([
-    #     b'/home/username/test/projectA'
-    # ])+b'\n')
-    # def test_resolve_basic(self, mock_manifest: MagicMock):
-    #     # Initialise/Configure/Start
-    #     manifest_store = Mock()
-    #     manifest_store.get('/manifest/root/projects.manifest.txt').return_value(
-    #         '\n'.join([
-    #             '/home/username/test/projectA'
-    #         ])+'\n'
-    #     )
-
-    #     manifest = Manifest()
-    #     manifest.configure(mod=self.mock_mod, env=self.mock_env)
-    #     manifest.start(mod=self.mock_mod)
-
-    #     # Test
-    #     self.assertEqual(manifest.get_project('projectA'), {
-    #         'ref': '/home/username/test/projectA',
-    #         'tags': {}
-    #     })
-    #     mock_manifest.assert_called_with('/manifest/root/manifest.txt', 'rb')
+        mock_context_module.on_declare_item.assert_called_once_with(
+            [{
+                'type': 'test',
+                'opts': {},
+                'items': {
+                    'itemA': {
+                        'ref': 'itemA',
+                        'tags': {}
+                    }
+                },
+                'item_sets': {}
+            }],
+            {
+                'ref': 'itemA',
+                'tags': {}
+            }
+        )
 
     # @patch("builtins.open", new_callable=mock_open, read_data=b'\n'.join([
     #     b'/home/username/test/projectA (tagA)'

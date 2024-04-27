@@ -276,9 +276,22 @@ class ManifestBuilder:
                     )
 
 class Manifest:
-    def __init__(self, items, item_sets):
+    def __init__(self,
+            items: dict[str, dict[str, object]],
+            item_sets: dict[str, dict[str, dict[str, object]]]
+    ):
         self._items = items
         self._item_sets = item_sets
+
+    @staticmethod
+    def from_raw(data):
+        return Manifest(data['items'], data['item_sets'])
+
+    def raw(self):
+        return {
+            'items': self._items,
+            'item_sets': self._item_sets
+        }
 
     def items(self):
         return self._items
@@ -365,18 +378,18 @@ class ManifestModule():
           # The 'type' tag is made up - tags are only useful if they're
           # interpreted by something, whether a context module, or whatever is
           # using the manifest.
-          dir/project-a (project, git)
+          collection/thing-a (thing, thing-type)
         }
 
         @context-type (someOption: /home/username/mystuff) {
-          dir/project-b (project, git)
+          collection/thing-b (thing, thing-type)
         }
 
         @context-type (
             optionA: /home/username/directory
-            optionB: https://somegithost.com/username
+            optionB: https://someurl.com/username
         ) {
-          dir/project-c (project, git)
+          collection/thing-c (thing, thing-type)
         }
 
     ## Implementing a Context Module
@@ -432,47 +445,50 @@ class ManifestModule():
         self._ctx_mod_factories: dict[str, Callable[[], Any]] = {}
         self._manifest_names: list[str] = []
 
-        self._projects: dict[str, dict[str, object]] = None
-        self._project_sets: dict[str, dict[str, dict[str, object]]] = None
+        self._manifests: list[Manifest] = None
+
+        # Used as an internal cache of the combination of all manifests
+        self._all_items_data = None
+        self._all_item_sets_data = None
 
     def dependencies(self):
         return ['log']
 
     def configure_env(self, *, parser: EnvironmentParser, **_):
         parser.add_variable('ROOT')
-        parser.add_variable('DEFAULT_PROJECT_SET', default_is_none=True)
+        parser.add_variable('DEFAULT_ITEM_SET', default_is_none=True)
 
     def configure_args(self, *, parser: ArgumentParser, **_):
         # Options
         parser.add_argument('-p', '--property',
             action='append',
             help="""
-            Specify a property to include in the output. If given, excludes all
-            properties not given. May be given more than once to include
-            multiple properties. Supported properties include 'ref', 'tags', and
-            any properties added by other MM modules.
+            Specify a property to include for each output item. If given one or
+            more times, excludes all properties not given. If given more than
+            once, includes all properties specified. Supported properties
+            include 'ref', 'tags', and any properties added by context modules.
             """)
 
         # Subcommands
         manifest_subparsers = parser.add_subparsers(dest="manifest_command")
 
-        # Subcommands / Resolve Project
-        resolve_parser = manifest_subparsers.add_parser('project')
+        # Subcommands / Resolve Item
+        resolve_parser = manifest_subparsers.add_parser('item')
 
         resolve_parser.add_argument('pattern', metavar='PATTERN',
-            help='A regex pattern to resolve to a project reference')
+            help='A regex pattern to resolve to an item reference')
 
-        resolve_parser.add_argument('--project-set',
-            metavar='PROJECT_SET_PATTERN',
+        resolve_parser.add_argument('--item-set',
+            metavar='ITEM_SET_PATTERN',
             help="""
-            A pattern that matches the project set to use to resolve the project
+            A pattern that matches the item set to use to resolve the item
             """)
 
-        # Subcommands / Resolve Project Set
-        resolve_parser = manifest_subparsers.add_parser('project-set')
+        # Subcommands / Resolve Item Set
+        resolve_parser = manifest_subparsers.add_parser('item-set')
 
         resolve_parser.add_argument('pattern', metavar='PATTERN',
-            help='A regex pattern to resolve to a project set')
+            help='A regex pattern to resolve to an item set')
 
     def configure(self, *, mod: ModuleManager, env: Namespace, **_):
         self._mod = mod # For methods that aren't directly given it
@@ -483,7 +499,7 @@ class ManifestModule():
         if self._cache is None:
             self._cache = self._manifest_store
 
-        self._default_project_set = env.VCS_MANIFEST_DEFAULT_PROJECT_SET
+        self._default_item_set = env.VCS_MANIFEST_DEFAULT_ITEM_SET
 
     def start(self, *_, **__):
         for manifest_name in self._manifest_names:
@@ -505,20 +521,17 @@ class ManifestModule():
         # Try cache
         try:
             self._cache.setattr(cache_name, 'type', 'pickle')
-            projects, project_sets = itemgetter(
-                'projects',
-                'project_sets'
-            )(self._cache.get(cache_name))
+            manifest = Manifest.from_raw(self._cache.get(cache_name))
 
         except KeyError:
-            # Import deps (these are slow to import, so only (re)parse the
+            # Import Deps (these are slow to import, so only (re)parse the
             # manifest if needed)
             from antlr4 import InputStream, CommonTokenStream, ParseTreeWalker
             from modules.manifest_lang.build.ManifestLexer import ManifestLexer
             from modules.manifest_lang.build.ManifestParser import ManifestParser
             from modules.manifest_lang.manifest_listener import ManifestListenerImpl
 
-            # Create context modules
+            # Create Context Modules
             context_modules = {
                 context_type: [
                     mod_factory()
@@ -528,7 +541,7 @@ class ManifestModule():
                     self._ctx_mod_factories.items()
             }
 
-            # Setup parser
+            # Setup Parser
             input_stream = InputStream(manifest_text)
             lexer = ManifestLexer(input_stream)
             tokens = CommonTokenStream(lexer)
@@ -547,47 +560,43 @@ class ManifestModule():
             walker = ParseTreeWalker()
             walker.walk(listener, tree)
 
-            # Finalise Builder
+            # Finalise
             manifest = manifest_builder.finalise()
-            projects = manifest.items()
-            project_sets = manifest.item_sets()
             self._mod.log().info(
                 f"Loaded manifest '{name}' from '{self._manifest_store}'"
             )
 
-            # Cache results
-            self._cache.set(cache_name, {
-                'projects': projects,
-                'project_sets': project_sets
-            })
+            # Cache Results
+            self._cache.set(cache_name, manifest.raw())
             self._cache.flush()
             self._mod.log().trace(
                 f"Cached result '{cache_name}' in '{self._cache}'"
             )
 
-        # Extract results
-        self._projects = projects
-        self._project_sets = project_sets
+        # Add Manifest
+        if self._manifests is None:
+            self._manifests = []
+        self._manifests.append(manifest)
 
     def __call__(self, *, mod: ModuleManager, args: Namespace, **_):
         mod.log().trace(f"manifest(args={args})")
 
         output = ''
 
-        if args.manifest_command == 'project':
-            output = self.get_project(
+        if args.manifest_command == 'item':
+            output = self.get_item(
                 args.pattern,
-                project_set_pattern=args.project_set,
+                item_set_pattern=args.item_set,
                 properties=args.property
             )
-            print(self._format_project(output))
+            print(self._format_item(output))
 
-        if args.manifest_command == 'project-set':
-            output = self.get_project_set(
+        if args.manifest_command == 'item-set':
+            output = self.get_item_set(
                 args.pattern,
                 properties=args.property
             )
-            print(self._format_project_set(output))
+            print(self._format_item_set(output))
 
         return output
 
@@ -603,7 +612,7 @@ class ManifestModule():
         # is parsed. If it's already been parsed, then registration will have no
         # effect. As such, fail loudly to tell ModuleManager module developers
         # that they've done something wrong.
-        if self._projects is not None and len(modules) > 0:
+        if self._manifests is not None and len(modules) > 0:
             raise VCSException(
                 f"Attempted registration of context module '{modules[0]}' after"
                 " manifest has been parsed. This was probably caused by"
@@ -632,102 +641,120 @@ class ManifestModule():
     # Invokation
     # --------------------
 
-    def get_project_set(self,
+    def get_item_set(self,
             pattern: str = None,
             properties: 'list[str]' = None
     ):
         self._mod.log().trace(
-            "manifest.get_project_set("
+            "manifest.get_item_set("
                 +(f"{pattern}" if pattern is None else f"'{pattern}'")+","
                 f" properties={properties}"
             ")"
         )
 
         if pattern is None:
-            if self._default_project_set is None:
-                project_set = self._projects
+            if self._default_item_set is None:
+                item_set = self._all_items()
             else:
-                project_set = self._project_sets[self._default_project_set]
+                item_set = self._all_item_sets()[self._default_item_set]
         else:
-            project_set_regex = re.compile(pattern)
+            item_set_regex = re.compile(pattern)
             try:
-                project_set = next(
-                    self._project_sets[project_set_name]
-                    for project_set_name in self._project_sets.keys()
-                    if project_set_regex.search(project_set_name)
+                item_set = next(
+                    self._all_item_sets()[item_set_name]
+                    for item_set_name in self._item_sets.keys()
+                    if item_set_regex.search(item_set_name)
                 )
             except (KeyError, StopIteration):
                 raise VCSException(
-                    f"Project set not found from pattern '{pattern}'"
+                    f"item set not found from pattern '{pattern}'"
                 )
 
         if properties is None:
-            return project_set
+            return item_set
         else:
             return {
-                name: self._filtered_project(project, properties)
-                for name, project in project_set.items()
+                name: self._filtered_item(item, properties)
+                for name, item in item_set.items()
             }
 
-    def get_project(self,
+    def get_item(self,
             pattern: str,
             *,
-            project_set_pattern: str = None,
+            item_set_pattern: str = None,
             properties: 'list[str]' = None
     ):
         self._mod.log().trace(
-            "manifest.get_project("
+            "manifest.get_item("
                 +(pattern if pattern is None else f"'{pattern}'")+","
-                f" project_set_pattern={project_set_pattern},"
+                f" item_set_pattern={item_set_pattern},"
                 f" properties={properties}"
             ")"
         )
 
-        project_set = self.get_project_set(project_set_pattern)
+        item_set = self.get_item_set(item_set_pattern)
 
-        project_regex = re.compile(pattern)
+        item_regex = re.compile(pattern)
         try:
-            project = next(
-                project
-                for project in project_set.values()
-                if project_regex.search(project['ref'])
+            item = next(
+                item
+                for item in item_set.values()
+                if item_regex.search(item['ref'])
             )
-            self._mod.log().debug('found:', project)
+            self._mod.log().debug('found:', item)
         except StopIteration:
             raise VCSException(
-                f"Project not found from pattern '{pattern}'"
+                f"item not found from pattern '{pattern}'"
             )
 
         # TODO:
-        # - Check for existance of project, not just of manifest entry
+        # - Check for existance of item, not just of manifest entry
         # - Map to relative if relative_to is 'manifest' or 'relative'
         #
         # Ideas:
-        # - Verify (-v, --verify) makes resolve verify that the specified project exists (mutex with -c)
-        # - Candidate (-c, --candidate) makes resolve come up with a proposed project path where the project/list could be stored in future (mutex with -v)
+        # - Verify (-v, --verify) makes resolve verify that the specified item exists (mutex with -c)
+        # - Candidate (-c, --candidate) makes resolve come up with a proposed item path where the item could be stored in future (mutex with -v)
 
         if properties is None:
-            return project
+            return item
         else:
-            return self._filtered_project(project, properties)
+            return self._filtered_item(item, properties)
 
     # Utils
     # --------------------
 
-    def _format_project(self, project: 'dict[str, object]'):
+    def _all_items(self):
+        if self._all_items_data is None:
+            self._all_items_data = {
+                ref: item
+                for manifest in self._manifests
+                for ref, item in manifest.items().items()
+            }
+        return self._all_items_data
+
+    def _all_item_sets(self):
+        if self._all_item_sets_data is None:
+            self._all_item_sets_data = {
+                ref: item_set
+                for manifest in self._manifests
+                for ref, item_set in manifest.item_sets().items()
+            }
+        return self._all_item_sets_data
+
+    def _format_item(self, item: 'dict[str, object]'):
         extra_attrs = '\n'.join(
             f'{key}: {value}'
-            for key, value in project.items()
+            for key, value in item.items()
             if key not in ['ref', 'tags']
         )
         return '\n'.join([
             *(
-                [f"ref: {project['ref']}"]
-                if 'ref' in project else []
+                [f"ref: {item['ref']}"]
+                if 'ref' in item else []
             ),
             *(
-                [f"tags: {', '.join(project['tags'].keys())}"]
-                if 'tags' in project else []
+                [f"tags: {', '.join(item['tags'].keys())}"]
+                if 'tags' in item else []
             ),
             *(
                 [extra_attrs]
@@ -735,15 +762,15 @@ class ManifestModule():
             )
         ])
 
-    def _format_project_set(self, project_set: 'dict[str, dict[str, object]]'):
+    def _format_item_set(self, item_set: 'dict[str, dict[str, object]]'):
         return '\n\n'.join(
-            self._format_project(project)
-            for project in project_set.values()
+            self._format_item(item)
+            for item in item_set.values()
         )
 
-    def _filtered_project(self, project, properties):
+    def _filtered_item(self, item, properties):
         return {
-            property: project[property]
+            property: item[property]
             for property in properties
-            if property in project
+            if property in item
         }
