@@ -8,7 +8,7 @@ from core.exceptions import VCSException
 from modules.manifest_modules import uris_local, uris_remote
 
 # Under Test
-from modules.manifest import Manifest
+from modules.manifest import ManifestModule
 
 class TestManifest(TestCase):
 
@@ -40,7 +40,7 @@ class TestManifest(TestCase):
         }[key]
 
         # Initialise
-        manifest = Manifest(manifest_store)
+        manifest = ManifestModule(manifest_store)
 
         # Configure
         manifest.configure(mod=self.mock_mod, env=self.mock_env)
