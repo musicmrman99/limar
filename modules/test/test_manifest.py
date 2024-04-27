@@ -61,7 +61,7 @@ class TestManifest(TestCase):
         context_mod.on_declare_item.side_effect = self._assert_has_calls(
             expected_declare_item_calls
         )
-        manifest.start()
+        manifest.start() # Verifier runs here
 
         self.assertEqual(
             manifest.get_item('itemA'),
@@ -102,7 +102,7 @@ class TestManifest(TestCase):
         context_mod.on_declare_item.side_effect = self._assert_has_calls(
             expected_declare_item_calls
         )
-        manifest.start()
+        manifest.start() # Verifier runs here
 
         self.assertEqual(
             manifest.get_item('itemA'),
@@ -147,7 +147,7 @@ class TestManifest(TestCase):
         context_mod.on_declare_item.side_effect = self._assert_has_calls(
             expected_declare_item_calls
         )
-        manifest.start()
+        manifest.start() # Verifier runs here
 
         self.assertEqual(
             manifest.get_item('itemA'),
@@ -208,7 +208,7 @@ class TestManifest(TestCase):
         context_mod.on_declare_item.side_effect = self._assert_has_calls(
             expected_declare_item_calls
         )
-        manifest.start()
+        manifest.start() # Verifier runs here
 
         self.assertEqual(
             manifest.get_item('itemA'),
@@ -220,6 +220,79 @@ class TestManifest(TestCase):
         )
         context_mod.on_declare_item.assert_called()
 
+    def test_items_tags(self):
+        # Input
+        manifest_store = Mock()
+        manifest_store.get.side_effect = lambda key: {
+            'test.manifest.txt': '\n'.join([
+                'itemA (tagA, tagB)',
+                'itemB (tagA, tagC)'
+            ])+'\n'
+        }[key]
+
+        # Expected Output
+        expected_items = {
+            'itemA': {
+                'ref': 'itemA',
+                'tags': self._manifest_item_tags('tagA', 'tagB')
+            },
+            'itemB': {
+                'ref': 'itemB',
+                'tags': self._manifest_item_tags('tagA', 'tagC')
+            }
+        }
+        expected_declare_item_calls = [
+            call(
+                [{
+                    'type': 'test',
+                    'opts': {},
+                    'items': {
+                        'itemA': expected_items['itemA']
+                    },
+                    'item_sets': {}
+                }],
+                expected_items['itemA']
+            ),
+            call(
+                [{
+                    'type': 'test',
+                    'opts': {},
+                    'items': expected_items,
+                    'item_sets': {}
+                }],
+                expected_items['itemB']
+            )
+        ]
+
+        # Run / Verify
+        manifest, context_mod = self._basic_manifest_setup(manifest_store)
+        context_mod.on_declare_item.side_effect = self._assert_has_calls(
+            expected_declare_item_calls
+        )
+        manifest.start() # Verifier runs here
+
+        self.assertEqual(
+            manifest.get_item('itemA'),
+            self._item_with_finalised_tags(expected_items['itemA'])
+        )
+        self.assertEqual(
+            manifest.get_item_set('tagA'),
+            self._items_with_finalised_tags(expected_items)
+        )
+        self.assertEqual(
+            manifest.get_item_set('tagB'),
+            self._items_with_finalised_tags({
+                k: expected_items[k] for k in ['itemA']
+            })
+        )
+        self.assertEqual(
+            manifest.get_item_set('tagC'),
+            self._items_with_finalised_tags({
+                k: expected_items[k] for k in ['itemB']
+            })
+        )
+        context_mod.on_declare_item.assert_called()
+
     # TODO:
 
     # ./ an item
@@ -227,7 +300,7 @@ class TestManifest(TestCase):
     # ./ item with one tag (get its item set)
     # ./ item with two tags (get their item sets)
     # ./ two items with the same tag (get an item set)
-    # two items with different tags (get all three item sets)
+    # ./ two items with different tags (get all three item sets)
 
     # item set
     # item set & operator
