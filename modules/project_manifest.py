@@ -3,7 +3,7 @@ from modules.manifest_modules import projects, uris_local, uris_remote
 # Types
 from core.modulemanager import ModuleManager
 
-class ProjectManifest():
+class ProjectManifestModule():
 
     # Lifecycle
     # --------------------

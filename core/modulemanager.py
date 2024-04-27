@@ -8,7 +8,7 @@ from argparse import ArgumentParser, Namespace
 
 from core.envparse import EnvironmentParser
 from core.shellscript import ShellScript
-from core.modules.log import Log
+from core.modules.log import LogModule
 from core.exceptions import VCSException
 
 class ModuleManager:
@@ -206,7 +206,7 @@ class ModuleManager:
         # TODO: There may be a way of supporting environment variables or
         #       command-line arguments for verbosity and output destination, but
         #       hard-coding these will be fine for now.
-        self._logger = Log()
+        self._logger = LogModule()
         self._logger.configure(
             mod=self,
             env=self._env[-1] if len(self._env) > 0 else Namespace(
@@ -258,7 +258,7 @@ class ModuleManager:
 
             mm_modules = []
             for py_module_name in package.__all__:
-                mm_module_name = self._module_to_class(py_module_name)
+                mm_class_name = self._py_module_to_class(py_module_name)
 
                 try:
                     py_module = importlib.import_module(
@@ -270,11 +270,11 @@ class ModuleManager:
                     ) from e
 
                 try:
-                    mm_module = getattr(py_module, mm_module_name)
+                    mm_module = getattr(py_module, mm_class_name)
                 except AttributeError as e:
                     raise VCSException(
                         f"Python module '{py_module_name}' in __all__ does not"
-                        f" contain a ModuleManager module: '{mm_module_name}'"
+                        f" contain a ModuleManager module: '{mm_class_name}'"
                         " not found"
                     ) from e
 
@@ -284,23 +284,25 @@ class ModuleManager:
 
     def register(self, *modules):
         for module_factory in modules:
-            name = self._camel_to_kebab(module_factory.__name__)
+            mm_mod_name = self._class_to_mm_module(module_factory.__name__)
             if self._phase != ModuleManager.PHASES.REGISTRATION:
                 raise VCSException(
-                    f"Attempt to register module '{name}' after module"
+                    f"Attempt to register module '{mm_mod_name}' after module"
                     " initialisation"
                 )
 
-            if self.is_registered(name):
+            if self.is_registered(mm_mod_name):
                 self._logger.info(
-                    f"Skipping registering already-registered module '{name}'"
+                    "Skipping registering already-registered module"
+                    f" '{mm_mod_name}'"
                 )
                 continue
 
             self._logger.debug(
-                f"Registering module '{name}' ({module_factory}) with {self}"
+                f"Registering module '{mm_mod_name}' ({module_factory}) with"
+                f" {self}"
             )
-            self._registered_mods[name] = module_factory
+            self._registered_mods[mm_mod_name] = module_factory
 
     # Core Lifecycle
     # --------------------
@@ -624,9 +626,10 @@ class ModuleManager:
                 self._env.pop()
 
     # Derived from: https://stackoverflow.com/a/1176023/16967315
-    def _camel_to_kebab(self, name):
+    def _class_to_mm_module(self, name):
         name = re.sub('(.)([A-Z][a-z]+)', r'\1-\2', name)
-        return re.sub('([a-z0-9])([A-Z])', r'\1-\2', name).lower()
+        name = re.sub('([a-z0-9])([A-Z])', r'\1-\2', name)
+        return name.lower().removesuffix('-module')
 
-    def _module_to_class(self, name: str):
-        return name.title().replace('_', '')
+    def _py_module_to_class(self, name: str):
+        return name.title().replace('_', '') + 'Module'

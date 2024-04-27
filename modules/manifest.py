@@ -11,7 +11,7 @@ from core.envparse import EnvironmentParser
 from argparse import ArgumentParser, Namespace
 from typing import Any, Callable
 
-class Manifest():
+class ManifestModule():
     """
     MM module to parse all manifest files declared by added context modules and
     to provide information about the items they declare.

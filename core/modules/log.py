@@ -5,7 +5,7 @@ import sys
 from core.envparse import EnvironmentParser
 from argparse import ArgumentParser, Namespace
 
-class Log:
+class LogModule:
     LEVELS = [
         'ERROR',
         'WARNING',
@@ -77,14 +77,14 @@ class Log:
             self._error_file = open(self._error_file_path, 'w')
 
         # Say which module instance has been started
-        self.debug(f'Started Log module {self}')
+        self.debug(f'Started LogModule {self}')
 
     def __call__(self, *, args: Namespace, **_):
         self.log(args.message, error=args.error, level=args.level)
 
     def stop(self, *_, **__):
         # Say which module instance has been stopped
-        self.debug(f'Stopping Log module {self}')
+        self.debug(f'Stopping LogModule {self}')
 
         if self._output_file_path is not None:
             self._output_file.close()
@@ -102,9 +102,9 @@ class Log:
 
         if self._verbosity >= level:
             try:
-                level_text = Log.LEVELS[level]
+                level_text = LogModule.LEVELS[level]
             except IndexError:
-                level_text = Log.LEVELS[-1]
+                level_text = LogModule.LEVELS[-1]
             print(level_text+':', *objs, file=file)
 
     def error(self, *objs):

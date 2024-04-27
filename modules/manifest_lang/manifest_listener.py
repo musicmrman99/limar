@@ -3,7 +3,7 @@ from modules.manifest_lang.build.ManifestListener import ManifestListener
 
 # Types
 from modules.manifest_lang.build.ManifestParser import ManifestParser
-from core.modules.log import Log
+from core.modules.log import LogModule
 
 class Tags:
     def __init__(self, add_callback=None, remove_callback=None):
@@ -38,7 +38,7 @@ class ManifestListenerImpl(ManifestListener):
     """
 
     def __init__(self,
-            logger: Log,
+            logger: LogModule,
             context_modules: dict[str, list] = None,
             default_contexts: list[str] = None
     ):

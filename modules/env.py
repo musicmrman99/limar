@@ -7,7 +7,7 @@ from core.modulemanager import ModuleManager
 from core.envparse import EnvironmentParser
 from argparse import ArgumentParser, Namespace
 
-class Env():
+class EnvModule():
     """
     MM module to manage the shell environment it was run from.
     """
