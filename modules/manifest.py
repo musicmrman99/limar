@@ -1,5 +1,4 @@
 from hashlib import md5
-from operator import itemgetter
 import re
 
 from core.store import Store
@@ -328,6 +327,9 @@ class ManifestItemTags:
 
     def raw(self):
         return self._tags
+
+    def __eq__(self, value):
+        return hasattr(value, '_tags') and self._tags == value._tags
 
 class ManifestModule():
     """
@@ -662,7 +664,7 @@ class ManifestModule():
             try:
                 item_set = next(
                     self._all_item_sets()[item_set_name]
-                    for item_set_name in self._item_sets.keys()
+                    for item_set_name in self._all_item_sets().keys()
                     if item_set_regex.search(item_set_name)
                 )
             except (KeyError, StopIteration):

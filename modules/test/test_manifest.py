@@ -1,5 +1,5 @@
 from unittest import TestCase
-from unittest.mock import MagicMock, Mock, mock_open, patch
+from unittest.mock import MagicMock, Mock, call, mock_open, patch
 
 # Util
 from core.exceptions import VCSException
@@ -8,9 +8,11 @@ from core.exceptions import VCSException
 from modules.manifest_modules import uris_local, uris_remote
 
 # Under Test
-from modules.manifest import ManifestModule
+from modules.manifest import ManifestModule, ManifestItemTags
 
 class TestManifest(TestCase):
+    # NOTE: Side-effects are often used in these tests because
+    #       assert_has_calls() doesn't account for mutation between calls.
 
     def _log(self, *objs, error=False, level=0):
         print(*objs)
@@ -27,7 +29,7 @@ class TestManifest(TestCase):
         self.mock_env.VCS_MANIFEST_ROOT = '/manifests'
 
     def test_item_basic(self):
-        # Data
+        # Input
         manifest_store = Mock()
         manifest_store.get.side_effect = lambda key: {
             'test.manifest.txt': '\n'.join([
@@ -35,49 +37,196 @@ class TestManifest(TestCase):
             ])+'\n'
         }[key]
 
-        # Initialise
-        manifest = ManifestModule(manifest_store)
+        # Expected Output
+        expected_items = {
+            'itemA': {
+                'ref': 'itemA',
+                'tags': self._manifest_item_tags()
+            }
+        }
+        expected_declare_item_calls = [
+            call(
+                [{
+                'type': 'test',
+                    'opts': {},
+                    'items': expected_items,
+                    'item_sets': {}
+                }],
+                expected_items['itemA']
+            )
+        ]
 
-        # Configure
-        manifest.configure(mod=self.mock_mod, env=self.mock_env)
-
-        mock_context_module = Mock()
-        mock_context_module_factory = Mock(return_value=mock_context_module)
-        mock_context_module_factory.context_type.return_value = 'test'
-        mock_context_module_factory.can_be_root.return_value = True
-        manifest.add_context_modules(mock_context_module_factory)
-
-        # Start
+        # Run / Verify
+        manifest, context_mod = self._basic_manifest_setup(manifest_store)
+        context_mod.on_declare_item.side_effect = self._assert_has_calls(
+            expected_declare_item_calls
+        )
         manifest.start()
 
-        # Test
-        self.assertEqual(manifest.get_item('itemA'), {
-            'ref': 'itemA',
-            'tags': {}
-        })
-        mock_context_module.on_declare_item.assert_called_once_with(
-            [{
-                'type': 'test',
-                'opts': {},
-                'items': {
-                    'itemA': {
-                        'ref': 'itemA',
-                        'tags': {}
-                    }
-                },
-                'item_sets': {}
-            }],
-            {
-                'ref': 'itemA',
-                'tags': {}
-            }
+        self.assertEqual(
+            manifest.get_item('itemA'),
+            self._item_with_finalised_tags(expected_items['itemA'])
         )
+        context_mod.on_declare_item.assert_called()
+
+    def test_item_tag(self):
+        # Data
+        manifest_store = Mock()
+        manifest_store.get.side_effect = lambda key: {
+            'test.manifest.txt': '\n'.join([
+                'itemA (tagA)'
+            ])+'\n'
+        }[key]
+
+        # Expected Output
+        expected_items = {
+            'itemA': {
+                'ref': 'itemA',
+                'tags': self._manifest_item_tags('tagA')
+            }
+        }
+        expected_declare_item_calls = [
+            call(
+                [{
+                'type': 'test',
+                    'opts': {},
+                    'items': expected_items,
+                    'item_sets': {}
+                }],
+                expected_items['itemA']
+            )
+        ]
+
+        # Run / Verify
+        manifest, context_mod = self._basic_manifest_setup(manifest_store)
+        context_mod.on_declare_item.side_effect = self._assert_has_calls(
+            expected_declare_item_calls
+        )
+        manifest.start()
+
+        self.assertEqual(
+            manifest.get_item('itemA'),
+            self._item_with_finalised_tags(expected_items['itemA'])
+        )
+        self.assertEqual(
+            manifest.get_item_set('tagA'),
+            self._items_with_finalised_tags(expected_items)
+        )
+        context_mod.on_declare_item.assert_called()
+
+    def test_item_tags(self):
+        # Input
+        manifest_store = Mock()
+        manifest_store.get.side_effect = lambda key: {
+            'test.manifest.txt': '\n'.join([
+                'itemA (tagA, tagB)'
+            ])+'\n'
+        }[key]
+
+        # Expected Output
+        expected_items = {
+            'itemA': {
+                'ref': 'itemA',
+                'tags': self._manifest_item_tags('tagA', 'tagB')
+            }
+        }
+        expected_declare_item_calls = [
+            call(
+                [{
+                'type': 'test',
+                    'opts': {},
+                    'items': expected_items,
+                    'item_sets': {}
+                }],
+                expected_items['itemA']
+            )
+        ]
+
+        # Run / Verify
+        manifest, context_mod = self._basic_manifest_setup(manifest_store)
+        context_mod.on_declare_item.side_effect = self._assert_has_calls(
+            expected_declare_item_calls
+        )
+        manifest.start()
+
+        self.assertEqual(
+            manifest.get_item('itemA'),
+            self._item_with_finalised_tags(expected_items['itemA'])
+        )
+        self.assertEqual(
+            manifest.get_item_set('tagA'),
+            self._items_with_finalised_tags(expected_items)
+        )
+        context_mod.on_declare_item.assert_called()
+
+    def test_items(self):
+        # Input
+        manifest_store = Mock()
+        manifest_store.get.side_effect = lambda key: {
+            'test.manifest.txt': '\n'.join([
+                'itemA (tagA)',
+                'itemB (tagA)'
+            ])+'\n'
+        }[key]
+
+        # Expected Output
+        expected_items = {
+            'itemA': {
+                'ref': 'itemA',
+                'tags': self._manifest_item_tags('tagA')
+            },
+            'itemB': {
+                'ref': 'itemB',
+                'tags': self._manifest_item_tags('tagA')
+            }
+        }
+        expected_declare_item_calls = [
+            call(
+                [{
+                    'type': 'test',
+                    'opts': {},
+                    'items': {
+                        'itemA': expected_items['itemA']
+                    },
+                    'item_sets': {}
+                }],
+                expected_items['itemA']
+            ),
+            call(
+                [{
+                    'type': 'test',
+                    'opts': {},
+                    'items': expected_items,
+                    'item_sets': {}
+                }],
+                expected_items['itemB']
+            )
+        ]
+
+        # Run / Verify
+        manifest, context_mod = self._basic_manifest_setup(manifest_store)
+        context_mod.on_declare_item.side_effect = self._assert_has_calls(
+            expected_declare_item_calls
+        )
+        manifest.start()
+
+        self.assertEqual(
+            manifest.get_item('itemA'),
+            self._item_with_finalised_tags(expected_items['itemA'])
+        )
+        self.assertEqual(
+            manifest.get_item_set('tagA'),
+            self._items_with_finalised_tags(expected_items)
+        )
+        context_mod.on_declare_item.assert_called()
 
     # TODO:
 
-    # item with one tag (get its item set)
-    # item with two tags (get their item sets)
-    # two items with the same tag (get an item set)
+    # ./ an item
+
+    # ./ item with one tag (get its item set)
+    # ./ item with two tags (get their item sets)
+    # ./ two items with the same tag (get an item set)
     # two items with different tags (get all three item sets)
 
     # item set
@@ -98,3 +247,46 @@ class TestManifest(TestCase):
     # exceptions from context modules
     # multiple context modules
     # multiple root context modules
+
+    def _basic_manifest_setup(self, manifest_store):
+        # Initialise
+        manifest = ManifestModule(manifest_store)
+
+        # Configure
+        manifest.configure(mod=self.mock_mod, env=self.mock_env)
+
+        mock_context_module = Mock()
+        mock_context_module_factory = Mock(return_value=mock_context_module)
+        mock_context_module_factory.context_type.return_value = 'test'
+        mock_context_module_factory.can_be_root.return_value = True
+        manifest.add_context_modules(mock_context_module_factory)
+
+        return (manifest, mock_context_module)
+
+    def _manifest_item_tags(self, *names, **tags):
+        tags_obj = ManifestItemTags()
+        tags_obj.add(*names, **tags)
+        return tags_obj
+
+    def _item_with_finalised_tags(self, item):
+        return {
+            **item,
+            'tags': item['tags'].raw()
+        }
+
+    def _items_with_finalised_tags(self, items):
+        return {
+            ref: self._item_with_finalised_tags(item)
+            for ref, item in items.items()
+        }
+    
+    def _assert_has_calls(self, expected_calls):
+        call_num = 0
+        def _verifier(*args, **kwargs):
+            nonlocal call_num
+            # print('got:', call(*args, **kwargs))
+            # print('expected:', expected_calls[call_num])
+            self.assertEqual(call(*args, **kwargs), expected_calls[call_num])
+            call_num += 1
+            self.assertLessEqual(call_num, len(expected_calls))
+        return _verifier
