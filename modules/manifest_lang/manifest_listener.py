@@ -157,8 +157,8 @@ class ManifestListenerImpl(ManifestListener):
             self._enter_context(context_name)
 
     def _exit_manifest(self):
-        for context_name in reversed(self._default_context_names):
-            self._exit_context(context_name)
+        for _ in range(len(self._default_context_names)):
+            self._exit_context()
 
         # Call - 'on_exit_manifest' on all context modules
         self._run_context_lifecycle_point('on_exit_manifest',
