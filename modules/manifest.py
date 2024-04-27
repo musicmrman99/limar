@@ -6,10 +6,303 @@ from core.store import Store
 from core.exceptions import VCSException
 
 # Types
+from core.modules.log import LogModule
 from core.modulemanager import ModuleManager
 from core.envparse import EnvironmentParser
 from argparse import ArgumentParser, Namespace
 from typing import Any, Callable
+
+class ManifestBuilder:
+    def __init__(self,
+            logger: LogModule,
+            context_modules: dict[str, list] = None,
+            default_contexts: list[str] = None
+    ):
+        """
+        `context_modules` must be a dictionary of the following format:
+            {'context-type-name': [context_module, ...], ...}
+
+        `default_contexts` is a list of context type names to enter immediately
+        after entering the manifest. Enter the contexts in the order the names
+        are given, passing no options to each. Raise a VCSException if any
+        module names given in `default_contexts` are not defined in
+        `context_modules`.
+        """
+
+        self._context_modules = context_modules
+        self._default_contexts = default_contexts
+
+        self._items = {}
+        self._item_sets = {}
+
+        self._logger = logger
+
+        self._context_modules = context_modules
+        if self._context_modules is None:
+            self._context_modules = {}
+
+        self._contexts = []
+
+        self._default_context_names = (
+            default_contexts
+            if default_contexts is not None
+            else []
+        )
+        for name in self._default_context_names:
+            if name not in self._context_modules:
+                raise VCSException('Default context')
+
+    def enter(self):
+        # Call - 'on_enter_manifest' on all context modules
+        self._run_context_lifecycle_point('on_enter_manifest', [])
+
+        for context_name in self._default_context_names:
+            self.enter_context(context_name)
+
+    def exit(self):
+        for _ in range(len(self._default_context_names)):
+            self.exit_context()
+
+        # Call - 'on_exit_manifest' on all context modules
+        self._run_context_lifecycle_point('on_exit_manifest',
+            [self._items, self._item_sets]
+        )
+
+        # Finalise - tag set
+        for item in self._items.values():
+            item['tags'] = item['tags'].raw()
+
+    def enter_context(self, type, opts = None):
+        # Validate
+        if type not in self._context_modules.keys():
+            self._logger.warning(
+                f"Unsupported context type '{type}' found."
+                " Ignoring context."
+            )
+            # Used to represent an unrecognised context (not an error for
+            # forwards compatibility and to support dynamic modules)
+            self._contexts.append(NotImplementedError)
+            return
+
+        # Structure
+        context = {
+            'type': type,
+            'opts': opts if opts is not None else {},
+            'items': {},
+            'item_sets': {}
+        }
+
+        # Store
+        self._contexts.append(context)
+
+        # Call - 'on_enter_context' on all context modules registered for this
+        # context
+        self._run_context_lifecycle_point('on_enter_context',
+            [context],
+            context['type']
+        )
+
+    def exit_context(self):
+        # Discard
+        old_context = self._contexts.pop()
+
+        # Validate
+        if old_context is NotImplementedError:
+            return # Ignore unrecognised contexts
+
+        # Call - 'on_exit_context' on all context modules registered for this
+        # context
+        self._run_context_lifecycle_point('on_exit_context',
+            [
+                old_context,
+                old_context['items'],
+                old_context['item_sets']
+            ],
+            old_context['type']
+        )
+
+    # Util for _declare_item()
+    def _on_add_item_tags(self, item_ref, tags):
+        for tag_name in tags.keys():
+            if tag_name not in self._item_sets.keys():
+                self._item_sets[tag_name] = {}
+            self._item_sets[tag_name][item_ref] = self._items[item_ref]
+
+    # Util for _declare_item()
+    def _on_remove_item_tags(self, item_ref, names):
+        for tag_name in names:
+            if item_ref in self._item_sets[tag_name].keys():
+                del self._item_sets[tag_name][item_ref]
+            if len(self._item_sets[tag_name]) == 0:
+                del self._item_sets[tag_name]
+
+    def declare_item(self, ref, tags = None):
+        # Store
+          # Add to main item set
+        self._items[ref] = {
+            'ref': ref,
+            'tags': ManifestItemTags(
+                # If any context module updates this item's tags, also update
+                # all relevant indexes.
+                lambda tags: self._on_add_item_tags(ref, tags),
+                lambda tags: self._on_remove_item_tags(ref, tags)
+            )
+        }
+
+          # Add all declared tags
+        if tags is not None:
+            self._items[ref]['tags'].add(**tags)
+
+          # Add to all active contexts
+        for context in self._contexts:
+            if context is NotImplementedError:
+                continue # Skip unrecognised contexts
+
+            context['items'][ref] = self._items[ref]
+
+        # Call - 'on_declare_item' on all context modules registered for all
+        # active contexts
+        for context in self._contexts:
+            if context is NotImplementedError:
+                continue # Skip unrecognised contexts
+
+            self._run_context_lifecycle_point('on_declare_item',
+                [context, self._items[ref]],
+                context['type']
+            )
+
+    # Util for _declare_item_set()
+    def _get_item_set(self, ref):
+        return (
+            self._item_sets[ref]
+            if ref in self._item_sets
+            else {} # In case the item set isn't defined
+        )
+
+    # Util for _declare_item_set()
+    def _compute_set(self, ops_btree):
+        if ops_btree is None:
+            return {} # In case of an empty set
+
+        if type(ops_btree) is str:
+            return self._get_item_set(ops_btree)
+
+        left_item_set = self._compute_set(ops_btree['left'])
+        right_item_set = self._compute_set(ops_btree['right'])
+
+        if ops_btree['operator'] == '&':
+            return {
+                item_set_name: left_item_set[item_set_name]
+                for item_set_name in left_item_set.keys() & right_item_set.keys()
+            }
+
+        elif ops_btree['operator'] == '|':
+            return {
+                item_set_name: (
+                    left_item_set[item_set_name]
+                    if item_set_name in left_item_set
+                    else right_item_set[item_set_name]
+                )
+                for item_set_name in left_item_set.keys() | right_item_set.keys()
+            }
+
+    def declare_item_set(self, ref, ops_btree):
+        # Compute
+        items = self._compute_set(ops_btree)
+
+        # Store
+          # Add to main item sets
+        self._item_sets[ref] = items
+
+          # Add to all active contexts
+        for context in self._contexts:
+            if context is NotImplementedError:
+                continue # Skip unrecognised contexts
+
+            context['item_sets'][ref] = (
+                self._item_sets[ref]
+            )
+
+        # Call - 'on_declare_item_set' on all context modules registered for
+        # all active contexts
+        for context in self._contexts:
+            if context is NotImplementedError:
+                continue # Skip unrecognised contexts
+
+            self._run_context_lifecycle_point('on_declare_item_set',
+                [context, self._item_sets[ref]],
+                context['type']
+            )
+
+    def finalise(self):
+        return Manifest(self._items, self._item_sets)
+
+    # Util
+    def _run_context_lifecycle_point(self, name, args, context_type=None):
+        """
+        Run the named context lifecycle point for all context modules, passing
+        args.
+
+        If context_type is given, then only run the lifecycle point on context
+        modules for that context type.
+        """
+
+        if context_type is not None:
+            try:
+                module_set = self._context_modules[context_type]
+            except KeyError:
+                module_set = []
+        else:
+            module_set = [
+                mod
+                for mod_set in self._context_modules.values()
+                for mod in mod_set
+            ]
+
+        for module in module_set:
+            if hasattr(module, name):
+                getattr(module, name)(*args)
+
+class Manifest:
+    def __init__(self, items, item_sets):
+        self._items = items
+        self._item_sets = item_sets
+
+    def items(self):
+        return self._items
+
+    def item_sets(self):
+        return self._item_sets
+
+    def item(self, ref):
+        self._items[ref]
+
+    def item_set(self, ref):
+        self._item_sets[ref]
+
+class ManifestItemTags:
+    def __init__(self, add_callback=None, remove_callback=None):
+        self._tags = {}
+        self._add_callback = add_callback
+        self._remove_callback = remove_callback
+
+    def add(self, *names, **tags):
+        for name, value in tags.items():
+            self._tags[name] = value
+            if self._add_callback is not None:
+                self._add_callback(tags)
+
+        if len(names) > 0:
+            self.add(**{name: None for name in names})
+
+    def remove(self, *names):
+        for name in names:
+            del self._tags[name]
+            if self._remove_callback is not None:
+                self._remove_callback(names)
+
+    def raw(self):
+        return self._tags
 
 class ManifestModule():
     """
@@ -186,7 +479,7 @@ class ManifestModule():
 
     def _load_manifest(self, name):
         try:
-            manifest = self._manifest_store.get(name+'.manifest.txt')
+            manifest_text = self._manifest_store.get(name+'.manifest.txt')
         except KeyError:
             self._mod.log().trace(
                 f"Manifest '{name}' not found. Skipping."
@@ -194,7 +487,7 @@ class ManifestModule():
             return
 
         # Determine cache filename for this version of the manifest file
-        digest = md5(manifest.encode('utf-8')).hexdigest()
+        digest = md5(manifest_text.encode('utf-8')).hexdigest()
         cache_name = '.'.join([name, 'manifest', digest, 'pickle'])
 
         # Try cache
@@ -224,23 +517,28 @@ class ManifestModule():
             }
 
             # Setup parser
-            input_stream = InputStream(manifest)
+            input_stream = InputStream(manifest_text)
             lexer = ManifestLexer(input_stream)
             tokens = CommonTokenStream(lexer)
             parser = ManifestParser(tokens)
             tree = parser.manifest()
 
-            # Parse
-            listener = ManifestListenerImpl(
+            # Start Builder
+            manifest_builder = ManifestBuilder(
                 self._mod.log(),
                 context_modules,
                 [name]
             )
+
+            # Parse
+            listener = ManifestListenerImpl(self._mod.log(), manifest_builder)
             walker = ParseTreeWalker()
             walker.walk(listener, tree)
 
-            projects = listener.items
-            project_sets = listener.item_sets
+            # Finalise Builder
+            manifest = manifest_builder.finalise()
+            projects = manifest.items()
+            project_sets = manifest.item_sets()
             self._mod.log().info(
                 f"Loaded manifest '{name}' from '{self._manifest_store}'"
             )

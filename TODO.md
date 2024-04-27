@@ -17,6 +17,26 @@
 
 - ./ make default context for a manifest file be entered when parsing it
 
+- add error in case of unsupported operator (for when not being used by the manifest listener)
+
+        raise VCSException(f'Unsupported opera')
+
+- remove unnecessary brackets in class names
+  - search `class .*\(\):`
+
+- add a way of viewing the cache, like:
+```sh
+python -c '
+import glob, pathlib, pickle, json
+glob_path = "manifest/projects.manifest.*.pickle"
+path = glob.glob(glob_path)[0]
+data_txt = pathlib.Path(path).read_bytes()
+data_py = pickle.loads(data_txt)
+data_json = json.dumps(data_py)
+print(data_json)
+'
+```
+
 ---
 
 - make @uris only apply to projects
