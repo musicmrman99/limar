@@ -114,60 +114,37 @@ class ManifestListenerImpl(ManifestListener):
         self._declare_item(ref, tags)
 
     def enterItemSet(self, ctx: ManifestParser.ItemSetContext):
-        self._item_set_operand_stack = []
+        # Stacks item set specs on the way in, then structures them into a
+        # b-tree on the way out based on operators.
+        self._set_stack = []
 
     def enterSetItemSet(self, ctx: ManifestParser.SetItemSetContext):
-        # Extract
-        item_set_name = ctx.ref().getText()
-
-        # Store (text-only - not a logical operation)
-        item_set = (
-            self.item_sets[item_set_name]
-            if item_set_name in self.item_sets
-            else {} # In case the item set isn't defined
-        )
-        self._item_set_operand_stack.append(item_set)
+        item_set_ref = ctx.ref().getText()
+        self._set_stack.append(item_set_ref)
 
     # TODO: For now, a tag (with a value) appearning in a set is treated the
     #       same as a ref (ie. without a value).
     def enterSetTag(self, ctx: ManifestParser.SetTagContext):
-        # Extract
-        item_set_name = ctx.tag().getText()
-
-        # Store (text-only - not a logical operation)
-        item_set = (
-            self.item_sets[item_set_name]
-            if item_set_name in self.item_sets
-            else {} # In case the item set isn't defined
-        )
-        self._item_set_operand_stack.append(item_set)
+        item_set_ref = ctx.tag().getText()
+        self._set_stack.append(item_set_ref)
 
     def exitSetOp(self, ctx: ManifestParser.SetOpContext):
-        # Extract
         operator = ctx.setItemOperator().SET_ITEM_OPERATOR().getText()
-        right_item_set = self._item_set_operand_stack.pop()
-        left_item_set = self._item_set_operand_stack.pop()
-
-        # Store
-        if operator == '&':
-            result = {
-                item_set_name: left_item_set[item_set_name]
-                for item_set_name in left_item_set.keys() & right_item_set.keys()
+        self._set_stack = [
+            *self._set_stack[:-2],
+            {
+                'operator': operator,
+                'left': self._set_stack[-2],
+                'right': self._set_stack[-1]
             }
-        elif operator == '|':
-            result = {
-                item_set_name: (
-                    left_item_set[item_set_name]
-                    if item_set_name in left_item_set
-                    else right_item_set[item_set_name]
-                )
-                for item_set_name in left_item_set.keys() | right_item_set.keys()
-            }
-        self._item_set_operand_stack.append(result)
+        ]
 
     def exitItemSet(self, ctx: ManifestParser.ItemSetContext):
         item_set_ref = ctx.ref().getText()
-        self._declare_item_set(item_set_ref, self._item_set_operand_stack.pop())
+        self._declare_item_set(
+            item_set_ref,
+            self._set_stack[0] if len(self._set_stack) > 0 else None
+        )
 
     # Operations
     # --------------------------------------------------
@@ -291,7 +268,43 @@ class ManifestListenerImpl(ManifestListener):
                 context['type']
             )
 
-    def _declare_item_set(self, ref, items):
+    def _get_item_set(self, ref):
+        return (
+            self.item_sets[ref]
+            if ref in self.item_sets
+            else {} # In case the item set isn't defined
+        )
+
+    def _compute_set(self, ops_btree):
+        if ops_btree is None:
+            return {} # In case of an empty set
+
+        if type(ops_btree) is str:
+            return self._get_item_set(ops_btree)
+
+        left_item_set = self._compute_set(ops_btree['left'])
+        right_item_set = self._compute_set(ops_btree['right'])
+
+        if ops_btree['operator'] == '&':
+            return {
+                item_set_name: left_item_set[item_set_name]
+                for item_set_name in left_item_set.keys() & right_item_set.keys()
+            }
+
+        elif ops_btree['operator'] == '|':
+            return {
+                item_set_name: (
+                    left_item_set[item_set_name]
+                    if item_set_name in left_item_set
+                    else right_item_set[item_set_name]
+                )
+                for item_set_name in left_item_set.keys() | right_item_set.keys()
+            }
+
+    def _declare_item_set(self, ref, ops_btree):
+        # Compute
+        items = self._compute_set(ops_btree)
+
         # Store
           # Add to main item sets
         self.item_sets[ref] = items
