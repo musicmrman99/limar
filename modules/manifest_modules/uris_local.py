@@ -1,53 +1,25 @@
 import os.path
 
-from core.exceptions import VCSException
-
 class UrisLocal:
-    def __init__(self):
-        self._projects = set()
-
     @staticmethod
     def context_type():
         return 'uris'
 
-    def on_declare_item(self, context, project):
-        proj_ref = project['ref']
-        if 'path' not in project:
-            project['path'] = proj_ref
+    def on_declare_item(self, contexts, item):
+        if 'project' not in item['tags'].raw():
+            return
 
-        try:
-            context_local_path = context['opts']['local']
-            if not context_local_path.startswith('/'):
-                raise ValueError('local mapped URI not absolute')
+        # Local path
+        item['path'] = item['ref']
+        for context in reversed(contexts):
+            if 'path-exact' in context['opts']:
+                item['path'] = context['opts']['path-exact']
 
-            project['path'] = os.path.join(context_local_path, proj_ref)
-
-        except (KeyError, ValueError):
-            pass # For now, until all nested contexts have been tried
-
-    def on_exit_context(
-            self, context, projects, project_sets
-    ):
-        self._projects = self._projects | projects.keys()
-
-    def on_exit_manifest(self, projects, project_sets):
-        projects = (
-            project
-            for project in projects.values()
-            if project['ref'] in self._projects
-        )
-
-        for project in projects:
-            try:
-                if not project['path'].startswith('/'):
-                    raise ValueError('project path is not absolute')
-            except KeyError:
-                raise VCSException(
-                    f"Path of project '{project['ref']}' not defined"
-                    " (required by @uris context)"
+            elif 'path' in context['opts']:
+                item['path'] = os.path.join(
+                    context['opts']['path'], item['path']
                 )
-            except ValueError:
-                raise VCSException(
-                    f"Path of project '{project['ref']}' not absolute"
-                    " (required by @uris context)"
-                )
+
+        if not item['path'].startswith('/'):
+            # Assume the result is an absolute path if not already absolute
+            item['path'] = '/'+item['path']

@@ -53,18 +53,20 @@ class ManifestBuilder:
                 raise VCSException('Default context')
 
     def enter(self):
-        # Call - 'on_enter_manifest' on all context modules
-        self._run_context_lifecycle_point('on_enter_manifest', [])
+        # Call - 'on_enter_manifest' on all registered context modules
+        self._run_manifest_lifecycle_point('on_enter_manifest', [])
 
+        # Enter each default context
         for context_name in self._default_context_names:
             self.enter_context(context_name)
 
     def exit(self):
+        # Exit each default context
         for _ in range(len(self._default_context_names)):
             self.exit_context()
 
-        # Call - 'on_exit_manifest' on all context modules
-        self._run_context_lifecycle_point('on_exit_manifest',
+        # Call - 'on_exit_manifest' on all registered context modules
+        self._run_manifest_lifecycle_point('on_exit_manifest',
             [self._items, self._item_sets]
         )
 
@@ -95,8 +97,8 @@ class ManifestBuilder:
         # Store
         self._contexts.append(context)
 
-        # Call - 'on_enter_context' on all context modules registered for this
-        # context
+        # Call - 'on_enter_context' on all context modules registered with the
+        # same context type as the context being entered (if any)
         self._run_context_lifecycle_point('on_enter_context',
             [context],
             context['type']
@@ -110,8 +112,8 @@ class ManifestBuilder:
         if old_context is NotImplementedError:
             return # Ignore unrecognised contexts
 
-        # Call - 'on_exit_context' on all context modules registered for this
-        # context
+        # Call - 'on_exit_context' on all context modules registered with the
+        # same context type as the context being exited (if any)
         self._run_context_lifecycle_point('on_exit_context',
             [
                 old_context,
@@ -138,8 +140,7 @@ class ManifestBuilder:
 
     def declare_item(self, ref, tags = None):
         # Store
-          # Add to main item set
-        self._items[ref] = {
+        item = {
             'ref': ref,
             'tags': ManifestItemTags(
                 # If any context module updates this item's tags, also update
@@ -149,27 +150,24 @@ class ManifestBuilder:
             )
         }
 
+          # Add to main item set
+        self._items[ref] = item
+
           # Add all declared tags
         if tags is not None:
-            self._items[ref]['tags'].add(**tags)
+            item['tags'].add(**tags)
 
           # Add to all active contexts
         for context in self._contexts:
-            if context is NotImplementedError:
-                continue # Skip unrecognised contexts
+            if context is not NotImplementedError:
+                context['items'][ref] = item
 
-            context['items'][ref] = self._items[ref]
-
-        # Call - 'on_declare_item' on all context modules registered for all
-        # active contexts
-        for context in self._contexts:
-            if context is NotImplementedError:
-                continue # Skip unrecognised contexts
-
-            self._run_context_lifecycle_point('on_declare_item',
-                [context, self._items[ref]],
-                context['type']
-            )
+        # Call - 'on_declare_item' on all context modules registered for each
+        # unique context type of all active contexts, passing all active
+        # contexts of the same type as the context module being called.
+        self._run_decl_lifecycle_point('on_declare_item',
+            [item]
+        )
 
     # Util for _declare_item_set()
     def _get_item_set(self, ref):
@@ -208,60 +206,74 @@ class ManifestBuilder:
 
     def declare_item_set(self, ref, ops_btree):
         # Compute
-        items = self._compute_set(ops_btree)
+        item_set = self._compute_set(ops_btree)
 
         # Store
           # Add to main item sets
-        self._item_sets[ref] = items
+        self._item_sets[ref] = item_set
 
           # Add to all active contexts
         for context in self._contexts:
-            if context is NotImplementedError:
-                continue # Skip unrecognised contexts
-
-            context['item_sets'][ref] = (
-                self._item_sets[ref]
-            )
+            if context is not NotImplementedError:
+                context['item_sets'][ref] = item_set
 
         # Call - 'on_declare_item_set' on all context modules registered for
-        # all active contexts
-        for context in self._contexts:
-            if context is NotImplementedError:
-                continue # Skip unrecognised contexts
-
-            self._run_context_lifecycle_point('on_declare_item_set',
-                [context, self._item_sets[ref]],
-                context['type']
-            )
+        # each unique context type of all active contexts, passing all active
+        # contexts of the same type as the context module being called.
+        self._run_decl_lifecycle_point('on_declare_item_set',
+            [item_set]
+        )
 
     def finalise(self):
         return Manifest(self._items, self._item_sets)
 
-    # Util
-    def _run_context_lifecycle_point(self, name, args, context_type=None):
-        """
-        Run the named context lifecycle point for all context modules, passing
-        args.
+    # Utils
 
-        If context_type is given, then only run the lifecycle point on context
-        modules for that context type.
-        """
-
-        if context_type is not None:
-            try:
-                module_set = self._context_modules[context_type]
-            except KeyError:
-                module_set = []
-        else:
-            module_set = [
-                mod
-                for mod_set in self._context_modules.values()
-                for mod in mod_set
-            ]
-
-        for module in module_set:
+    def _run_manifest_lifecycle_point(self, name, args):
+        mods = [
+            mod
+            for mod_set in self._context_modules.values()
+            for mod in mod_set
+        ]
+        for module in mods:
             if hasattr(module, name):
                 getattr(module, name)(*args)
+
+    def _run_context_lifecycle_point(self, name, args, context_type):
+        try:
+            mods = self._context_modules[context_type]
+        except KeyError:
+            mods = []
+        for module in mods:
+            if hasattr(module, name):
+                getattr(module, name)(*args)
+
+    def _run_decl_lifecycle_point(self, name, args):
+        active_contexts = [
+            context
+            for context in self._contexts
+            if context is not NotImplementedError
+        ]
+        active_context_types = list(dict.fromkeys( # Preserve order
+            context['type']
+            for context in active_contexts
+        ))
+        for context_type in active_context_types:
+            # Will exist in the list of registered context modules, or the
+            # context would have been NotImplementedError, and so filtered out.
+            for module in self._context_modules[context_type]:
+                # Will not call the same context module more than once, as
+                # context modules cannot be registered against more than one
+                # context type.
+                if hasattr(module, name):
+                    getattr(module, name)(
+                        [
+                            context
+                            for context in active_contexts
+                            if context['type'] == context_type
+                        ],
+                        *args
+                    )
 
 class Manifest:
     def __init__(self, items, item_sets):

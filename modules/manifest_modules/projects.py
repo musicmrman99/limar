@@ -10,5 +10,5 @@ class Projects:
     def can_be_root():
         return True
 
-    def on_declare_item(self, context, item):
+    def on_declare_item(self, contexts, item):
         item['tags'].add('project')

@@ -1,54 +1,53 @@
 import os.path
-import re
 
 from core.exceptions import VCSException
 
 class UrisRemote:
-    def __init__(self):
-        self._projects = set()
-
     @staticmethod
     def context_type():
         return 'uris'
 
-    def on_declare_item(self, context, project):
-        proj_ref = project['ref']
-        if 'remote' not in project:
-            project['remote'] = proj_ref
+    def on_declare_item(self, contexts, item):
+        if 'project' not in item['tags'].raw():
+            return
 
+        # Remote protocol
         try:
-            context_remote_url = context['opts']['remote']
-            if not re.match('^https?://', context_remote_url):
-                raise ValueError('remote mapped URI is not a HTTP(S) URL')
+            item['protocol'] = next(
+                context['opts']['protocol']
+                for context in reversed(contexts)
+                if 'protocol' in context['opts']
+            )
+        except StopIteration:
+            raise VCSException(
+                "@uris (remote): Protocol not given in any parent context of"
+                f" item '{item['ref']}'"
+            )
 
-            project['remote'] = os.path.join(context_remote_url, proj_ref)
+        # Remote host
+        try:
+            item['host'] = next(
+                context['opts']['host']
+                for context in reversed(contexts)
+                if 'host' in context['opts']
+            )
+        except StopIteration:
+            raise VCSException(
+                "@uris (remote): Remote host not given in any parent context"
+                f" of item '{item['ref']}'"
+            )
 
-        except (KeyError, ValueError):
-            pass # For now, until all nested contexts have been tried
+        # Remote path
+        item['remotePath'] = item['ref']
+        for context in reversed(contexts):
+            if 'remote-path-exact' in context['opts']:
+                item['remotePath'] = context['opts']['remote-path-exact']
 
-    def on_exit_context(
-            self, context, projects, project_sets
-    ):
-        self._projects = self._projects | projects.keys()
-
-    def on_exit_manifest(self, projects, project_sets):
-        projects = (
-            project
-            for project in projects.values()
-            if project['ref'] in self._projects
-        )
-
-        for project in projects:
-            try:
-                if not re.match('^https?://', project['remote']):
-                    raise ValueError('project path is not a HTTP(S) URL')
-            except KeyError:
-                raise VCSException(
-                    f"Remote of project '{project['ref']}' not defined"
-                    " (required by @uris context)"
+            elif 'remote-path' in context['opts']:
+                item['remotePath'] = os.path.join(
+                    context['opts']['remote-path'], item['remotePath']
                 )
-            except ValueError:
-                raise VCSException(
-                    f"Remote of project '{project['ref']}' not a valid HTTP(S)"
-                    " URL (required by @uris context)"
-                )
+
+        if not item['remotePath'].startswith('/'):
+            # Assume the result is an absolute path if not already absolute
+            item['remotePath'] = '/'+item['remotePath']
