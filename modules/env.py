@@ -61,24 +61,30 @@ class EnvModule():
     def start(self, *, mod: ModuleManager, **_):
         # Find projects and get paths
         if self._temp_proj_pattern is not None:
-            temp_proj = mod.manifest().get_project(self._temp_proj_pattern)
+            temp_proj = mod.manifest().get_item(
+                self._temp_proj_pattern,
+                item_set_pattern='^project$'
+            )
             try:
-                self._temp_proj_path = temp_proj['path']
+                self._temp_proj_path = temp_proj['tags']['path']
             except KeyError:
                 raise VCSException(
-                    "'path' not a property of the project resolved from"
+                    "'path' not a tag of the project resolved from"
                     f" {self._temp_proj_pattern}. Are you missing the"
                     " manifest_context_uris module, or an '@uris' context in"
                     " your manifest?"
                 )
 
         if self._proj_pattern is not None:
-            proj = mod.manifest().get_project(self._proj_pattern)
+            proj = mod.manifest().get_item(
+                self._proj_pattern,
+                item_set_pattern='^project$'
+            )
             try:
-                self._proj_path = proj['path']
+                self._proj_path = proj['tags']['path']
             except KeyError:
                 raise VCSException(
-                    "'path' not a property of the project resolved from"
+                    "'path' not a tag of the project resolved from"
                     f" {self._proj_pattern}. Are you missing the"
                     " manifest_context_uris module, or an '@uris' context in"
                     " your manifest?"
