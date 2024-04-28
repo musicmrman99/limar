@@ -456,6 +456,8 @@ class ManifestModule():
         # Used as an internal cache of the combination of all manifests
         self._all_items_data = None
         self._all_item_sets_data = None
+        self._all_tags_data = None
+        self._all_extra_props_data = None
 
     def dependencies(self):
         return ['log']
@@ -473,6 +475,29 @@ class ManifestModule():
             more times, excludes all properties not given. If given more than
             once, includes all properties specified. Supported properties
             include 'ref', 'tags', and any properties added by context modules.
+            """)
+
+        parser.add_argument('-t', '--tag',
+            action='append',
+            help="""
+            Specify a tag to include for each output item. If given one or more
+            times, excludes all tags not given. If given more than once,
+            includes all tags specified.
+            """)
+
+        parser.add_argument('-f', '--format', default='object',
+            help="""
+            Specify the formatter to use. May be one of:
+
+            `object`  - Formats each item's ref on its own line (prefixed by
+            (default)   `ref: `), then the `tags:` header, then each tag (name
+                        and value) on its own line with a two-space indent.
+            `compact` - Formats each item into a single line, showing the ref
+                        and all tags (in brackets, separated by commas), and
+                        omits the blank line between items if formatting an item
+                        set.
+            `tabular` - Same as compact, but aligns the project ref and tag
+                        key/value pairs into columns, as applicable.
             """)
 
         # Subcommands
@@ -592,19 +617,40 @@ class ManifestModule():
         if args.manifest_command == 'item':
             output = self.get_item(
                 args.pattern,
-                item_set_pattern=args.item_set,
-                properties=args.property
+                item_set_pattern=args.item_set
             )
-            print(self._format_item(output))
+
+            output = self._filter_item(
+                output,
+                properties=args.property,
+                tags=args.tag
+            )
+            output = self._format_item(output, format=args.format)
+            print(output)
 
         if args.manifest_command == 'item-set':
-            output = self.get_item_set(
-                args.pattern,
-                properties=args.property
-            )
-            print(self._format_item_set(output))
+            output = self.get_item_set(args.pattern)
+            output = {
+                name: self._filter_item(
+                    output[name],
+                    properties=args.property,
+                    tags=args.tag
+                )
+                for name in output.keys()
+            }
+            output = self._format_item_set(output, format=args.format)
+            print(output)
 
         return output
+
+        # TODO:
+        # - Check for existance of item, not just of manifest entry
+        #   - Verify (-v, --verify) that the specified item exists locally,
+        #     remotely, etc.
+        #
+        # - Map to relative if relative_to is 'manifest' or 'relative'
+        #   - This now means outputting various values (eg. ref only, a specific
+        #     tag, or another property)
 
     # Configuration
     # --------------------
@@ -647,14 +693,10 @@ class ManifestModule():
     # Invokation
     # --------------------
 
-    def get_item_set(self,
-            pattern: str = None,
-            properties: 'list[str]' = None
-    ):
+    def get_item_set(self, pattern: str = None,):
         self._mod.log().trace(
             "manifest.get_item_set("
-                +(f"{pattern}" if pattern is None else f"'{pattern}'")+","
-                f" properties={properties}"
+                +(f"{pattern}" if pattern is None else f"'{pattern}'")+
             ")"
         )
 
@@ -676,13 +718,7 @@ class ManifestModule():
                     f"item set not found from pattern '{pattern}'"
                 )
 
-        if properties is None:
-            return item_set
-        else:
-            return {
-                name: self._filtered_item(item, properties)
-                for name, item in item_set.items()
-            }
+        return item_set
 
     def get_item(self,
             pattern: str,
@@ -713,18 +749,7 @@ class ManifestModule():
                 f"item not found from pattern '{pattern}'"
             )
 
-        # TODO:
-        # - Check for existance of item, not just of manifest entry
-        # - Map to relative if relative_to is 'manifest' or 'relative'
-        #
-        # Ideas:
-        # - Verify (-v, --verify) makes resolve verify that the specified item exists (mutex with -c)
-        # - Candidate (-c, --candidate) makes resolve come up with a proposed item path where the item could be stored in future (mutex with -v)
-
-        if properties is None:
-            return item
-        else:
-            return self._filtered_item(item, properties)
+        return item
 
     # Utils
     # --------------------
@@ -747,12 +772,75 @@ class ManifestModule():
             }
         return self._all_item_sets_data
 
-    def _format_item(self, item: 'dict[str, object]'):
-        extra_attrs = '\n'.join(
-            f'{key}: {value}'
-            for key, value in item.items()
-            if key not in ['ref', 'tags']
-        )
+    def _all_tags(self, item_set=None):
+        # Cache the result for all items
+
+        all_tags_data = []
+
+        if item_set is None and self._all_tags_data is not None:
+            return self._all_tags_data
+
+        # NOTE: Key/value *pairs* are unique, not keys, so return a list
+        process_items = item_set if item_set is not None else self._all_items()
+        all_tags_data = list(dict.fromkeys(
+            (tag_name, tag_value)
+            for item in process_items.values()
+            for tag_name, tag_value in item['tags'].items()
+        ))
+
+        if item_set is None:
+            self._all_tags_data = all_tags_data
+
+        return all_tags_data
+
+    def _all_extra_props(self, item_set=None):
+        # Cache the result for all items
+
+        all_extra_props_data = []
+
+        if item_set is None and self._all_extra_props_data is not None:
+            return self._all_extra_props_data
+
+        # NOTE: Key/value *pairs* are unique, not keys, so return a list
+        process_items = item_set if item_set is not None else self._all_items()
+        all_extra_props_data = list(dict.fromkeys(
+            prop_name
+            for item in process_items.values()
+            for prop_name in item.keys()
+            if prop_name not in ('ref', 'tags')
+        ))
+
+        if item_set is None:
+            self._all_extra_props_data = all_extra_props_data
+
+        return all_extra_props_data
+
+    def _filter_item(self,
+            item: 'dict[str, object]',
+            properties=None,
+            tags=None
+    ):
+        output = item
+        if properties is not None:
+            output = self._filter_obj(output, include=properties)
+        if tags is not None:
+            output = dict(output)
+            output['tags'] = self._filter_obj(
+                output['tags'],
+                include=tags
+            )
+        return output
+
+    def _format_item(self, item: 'dict[str, object]', format='object'):
+        formatters = {
+            'object': self._format_item_object,
+            'compact': self._format_item_compact,
+            'table': self._format_item_table
+        }
+        return formatters[format](item)
+
+    def _format_item_object(self, item: 'dict[str, object]'):
+        extra_props = self._filter_obj(item, exclude=('ref', 'tags'))
         return '\n'.join([
             *(
                 [f"ref: {item['ref']}"]
@@ -760,26 +848,173 @@ class ManifestModule():
             ),
             *(
                 [f"tags:", '\n'.join(
-                    '  ' + name + (': '+value if value is not None else '')
+                    '  '+name+(': '+value if value is not None else '')
                     for name, value in item['tags'].items()
                 )]
                 if 'tags' in item else []
             ),
             *(
-                [extra_attrs]
-                if extra_attrs != '' else []
+                [
+                    f'{key}: {value}'
+                    for key, value in extra_props
+                ]
+                if len(extra_props) > 0 else []
             )
         ])
 
-    def _format_item_set(self, item_set: 'dict[str, dict[str, object]]'):
-        return '\n\n'.join(
-            self._format_item(item)
-            for item in item_set.values()
+    def _format_item_compact(self, item: 'dict[str, object]'):
+        extra_props = self._filter_obj(item, exclude=('ref', 'tags'))
+        return ' '.join([
+            *(
+                [item['ref']]
+                if 'ref' in item else []
+            ),
+            *(
+                ['(' + ', '.join(
+                    name+(': '+value if value is not None else '')
+                    for name, value in item['tags'].items()
+                ) + ')']
+                if 'tags' in item else []
+            ),
+            *(
+                ['|', ', '.join(
+                    f'{key}: {value}'
+                    for key, value in extra_props.items()
+                )]
+                if len(extra_props) > 0 else []
+            )
+        ])
+
+    def _format_item_table(self,
+            item: 'dict[str, object]',
+            ref_width: int,
+            tag_cols: dict[str, int],
+            prop_cols: dict[str, int]
+    ):
+        ref_parts = (
+            [f"{item['ref']:<{ref_width}}"]
+            if 'ref' in item else []
         )
 
-    def _filtered_item(self, item, properties):
+        if 'tags' in item:
+            tag_strs = []
+            for name, width in tag_cols.items():
+                tag_str = f"{'':<{width}}"
+                if name in item['tags']:
+                    if item['tags'][name] is None:
+                        tag_str = f"{name:^{width}}"
+                    else:
+                        value = item['tags'][name]
+                        tag_str = f"{self._format_tag(name, value):<{width}}"
+                tag_strs.append(tag_str)
+
+            tag_parts = (
+                ['(' + ', '.join(tag_strs) + ')']
+                if len(tag_strs) > 0
+                else []
+            )
+        else:
+            tag_parts = []
+
+        if len(prop_cols) > 0:
+            prop_strs = []
+            for name, width in prop_cols.items():
+                prop_str = f"{'':<{width}}"
+                if name in item and item[name] is not None:
+                    value = item[name]
+                    prop_str = f"{self._format_prop(name, value):<{width}}"
+                prop_strs.append(prop_str)
+
+            prop_parts = (
+                ['|', ', '.join(prop_strs)]
+                if len(prop_strs) > 0
+                else []
+            )
+        else:
+            prop_parts = []
+
+        return ' '.join([*ref_parts, *tag_parts, *prop_parts])
+
+    def _format_item_set(self,
+            item_set: 'dict[str, dict[str, object]]',
+            format='object'
+    ):
+        formatters = {
+            'object': self._format_item_set_object,
+            'compact': self._format_item_set_compact,
+            'table': self._format_item_set_table
+        }
+        return formatters[format](item_set)
+
+    def _format_item_set_object(self, item_set: 'dict[str, dict[str, object]]'):
+        item_set = {
+            name: self._format_item(
+                item_set[name],
+                format='object'
+            )
+            for name in item_set.keys()
+        }
+        return '\n\n'.join(item_set.values())
+
+    def _format_item_set_compact(self, item_set: 'dict[str, dict[str, object]]'):
+        item_set = {
+            name: self._format_item(
+                item_set[name],
+                format='compact'
+            )
+            for name in item_set.keys()
+        }
+        return '\n'.join(item_set.values())
+
+    def _format_item_set_table(self, item_set: 'dict[str, dict[str, object]]'):
+        ref_width = max(len(item['ref']) for item in item_set.values())
+        tag_cols = {
+            name: max(
+                (
+                    len(self._format_tag(name, item['tags'][name]))
+                    if name in item['tags']
+                    else 0
+                )
+                for item in item_set.values()
+            )
+            for name, _ in self._all_tags(item_set)
+        }
+        prop_cols = {
+            name: max(
+                (
+                    len(self._format_prop(name, item[name]))
+                    if name in item
+                    else 0
+                )
+                for item in item_set.values()
+            )
+            for name in self._all_extra_props(item_set)
+        }
+
+        item_set = {
+            name: self._format_item_table(
+                item_set[name],
+                ref_width=ref_width,
+                tag_cols=tag_cols,
+                prop_cols=prop_cols
+            )
+            for name in item_set.keys()
+        }
+        return '\n'.join(item_set.values())
+
+    def _format_tag(self, name, value=None):
+        return name+(': '+value if value is not None else '')
+
+    def _format_prop(self, name, value):
+        return f'{name}: {value}'
+
+    def _filter_obj(self, item, include=None, exclude=None):
+        if include is None:
+            include = item.keys()
+        if exclude is None:
+            exclude = ()
         return {
-            property: item[property]
-            for property in properties
-            if property in item
+            prop: item[prop]
+            for prop in include
+            if prop in item and prop not in exclude
         }
