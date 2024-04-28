@@ -749,13 +749,17 @@ class ManifestModule():
             for key, value in item.items()
             if key not in ['ref', 'tags']
         )
+        tags = ', '.join(
+            name + (': '+value if value is not None else '')
+            for name, value in item['tags'].items()
+        )
         return '\n'.join([
             *(
                 [f"ref: {item['ref']}"]
                 if 'ref' in item else []
             ),
             *(
-                [f"tags: {', '.join(item['tags'].keys())}"]
+                [f"tags: {tags}"]
                 if 'tags' in item else []
             ),
             *(
