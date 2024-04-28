@@ -13,28 +13,30 @@ class UrisRemote:
 
         # Remote protocol
         try:
-            item['protocol'] = next(
+            item['tags'].add(protocol=next(
                 context['opts']['protocol']
                 for context in reversed(contexts)
                 if 'protocol' in context['opts']
-            )
+            ))
         except StopIteration:
-            raise VCSException(
-                "@uris (remote): Protocol not given in any parent context of"
-                f" item '{item['ref']}'"
+            print( # TODO: Make this use the log module
+                "WARNING: @uris (remote): Protocol not given in any parent"
+                f" context of item '{item['ref']}'. Remote interaction will not"
+                " be usable on this item."
             )
 
         # Remote host
         try:
-            item['host'] = next(
+            item['tags'].add(host=next(
                 context['opts']['host']
                 for context in reversed(contexts)
                 if 'host' in context['opts']
-            )
+            ))
         except StopIteration:
-            raise VCSException(
-                "@uris (remote): Remote host not given in any parent context"
-                f" of item '{item['ref']}'"
+            print( # TODO: Make this use the log module
+                "WARNING: @uris (remote): Remote host not given in any parent"
+                f" context of item '{item['ref']}'. Remote interaction will not"
+                " be usable on this item."
             )
 
         # Remote path
@@ -56,5 +58,5 @@ class UrisRemote:
         if remotePath is None:
             remotePath = os.path.join(prefix, ref)
 
-        # Assume the result is an absolute path if not already absolute
-        item['remotePath'] = os.path.join('/', remotePath)
+          # Assume the result is an absolute path if not already absolute
+        item['tags'].add(remotePath=os.path.join('/', remotePath))

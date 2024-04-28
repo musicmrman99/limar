@@ -29,4 +29,4 @@ class UrisLocal:
             path = os.path.join(prefix, ref)
 
         # Assume the result is an absolute path if not already absolute
-        item['path'] = os.path.join('/', path)
+        item['tags'].add(path=os.path.join('/', path))
