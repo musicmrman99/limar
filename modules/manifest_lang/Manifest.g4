@@ -19,15 +19,15 @@ later instances of a label on a single rule overwrite earlier ones.
 comment : COMMENT_OPEN text=toEndOfLine ;
 
 context : CONTEXT_OPEN typeName=NAME (SPACE? dataOpen
-             contextOpt (dataItemSeparator contextOpt)*
+            contextOpt (dataItemSeparator contextOpt)*
           dataClose)? (SPACE? blockOpen
-             statement+
-           blockClose)? ;
+            statement+
+          blockClose)? ;
 contextOpt : kvPair ;
 
 item : ref (SPACE dataOpen
-              tag (dataItemSeparator tag)*
-            dataClose)? ;
+         tag (dataItemSeparator tag)*
+       dataClose)? ;
 itemSet : ref SPACE setOpen itemSetList setClose ;
 itemSetList : ref                                     #setItemSet
             | tag                                     #setTag
