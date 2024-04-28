@@ -138,6 +138,10 @@ class ManifestBuilder:
                 del self._item_sets[tag_name]
 
     def declare_item(self, ref, tags = None):
+        # Validate
+        if ref in self._items:
+            raise VCSException(f"Manifest item already exists with ref '{ref}'")
+
         # Store
         item = {
             'ref': ref,
