@@ -10,16 +10,23 @@ class UrisLocal:
             return
 
         # Local path
-        item['path'] = item['ref']
+        prefix = ''
+        ref = item['ref']
+        path = None
         for context in reversed(contexts):
-            if 'path-exact' in context['opts']:
-                item['path'] = context['opts']['path-exact']
+            if 'path-abs' in context['opts']:
+                path = context['opts']['path-abs']
+                break
 
-            elif 'path' in context['opts']:
-                item['path'] = os.path.join(
-                    context['opts']['path'], item['path']
-                )
+            if 'path-ref' in context['opts'] and ref == item['ref']:
+                ref = context['opts']['path-ref']
 
-        if not item['path'].startswith('/'):
-            # Assume the result is an absolute path if not already absolute
-            item['path'] = '/'+item['path']
+            if 'path' in context['opts']:
+                # NOTE: A prefix that is already absolute will be unchanged
+                prefix = os.path.join(context['opts']['path'], prefix)
+
+        if path is None:
+            path = os.path.join(prefix, ref)
+
+        # Assume the result is an absolute path if not already absolute
+        item['path'] = os.path.join('/', path)

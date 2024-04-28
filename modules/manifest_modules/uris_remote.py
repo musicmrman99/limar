@@ -38,16 +38,23 @@ class UrisRemote:
             )
 
         # Remote path
-        item['remotePath'] = item['ref']
+        prefix = ''
+        ref = item['ref']
+        remotePath = None
         for context in reversed(contexts):
-            if 'remote-path-exact' in context['opts']:
-                item['remotePath'] = context['opts']['remote-path-exact']
+            if 'remote-path-abs' in context['opts']:
+                remotePath = context['opts']['remote-path-abs']
+                break
 
-            elif 'remote-path' in context['opts']:
-                item['remotePath'] = os.path.join(
-                    context['opts']['remote-path'], item['remotePath']
-                )
+            if 'remote-path-ref' in context['opts'] and ref == item['ref']:
+                ref = context['opts']['remote-path-ref']
 
-        if not item['remotePath'].startswith('/'):
-            # Assume the result is an absolute path if not already absolute
-            item['remotePath'] = '/'+item['remotePath']
+            if 'remote-path' in context['opts']:
+                # NOTE: A prefix that is already absolute will be unchanged
+                prefix = os.path.join(context['opts']['remote-path'], prefix)
+
+        if remotePath is None:
+            remotePath = os.path.join(prefix, ref)
+
+        # Assume the result is an absolute path if not already absolute
+        item['remotePath'] = os.path.join('/', remotePath)
