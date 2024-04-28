@@ -46,7 +46,7 @@ class ManifestListenerImpl(ManifestListener):
         self._manifest_builder.exit_context()
 
     def enterItem(self, ctx: ManifestParser.ItemContext):
-        ref = ctx.ref().getText()
+        ref = self._get_ref_content(ctx.ref())
         tags = {
             tag.kvPair().name.text: (
                 tag.kvPair().value.getText()
@@ -64,7 +64,7 @@ class ManifestListenerImpl(ManifestListener):
         self._set_stack = []
 
     def enterSetItemSet(self, ctx: ManifestParser.SetItemSetContext):
-        item_set_ref = ctx.ref().getText()
+        item_set_ref = self._get_ref_content(ctx.ref())
         self._set_stack.append(item_set_ref)
 
     # TODO: For now, a tag (with a value) appearning in a set is treated the
@@ -85,8 +85,15 @@ class ManifestListenerImpl(ManifestListener):
         ]
 
     def exitItemSet(self, ctx: ManifestParser.ItemSetContext):
-        item_set_ref = ctx.ref().getText()
+        item_set_ref = self._get_ref_content(ctx.ref())
         self._manifest_builder.declare_item_set(
             item_set_ref,
             self._set_stack[0] if len(self._set_stack) > 0 else None
         )
+
+    # Util
+    def _get_ref_content(self, ref):
+        if ref.refLiteral() is not None:
+            return ref.refLiteral().getText()
+        else:
+            return ref.refNormal().getText()

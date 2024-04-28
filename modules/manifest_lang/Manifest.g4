@@ -34,8 +34,10 @@ itemSetList : ref                                     #setItemSet
             | setOpen itemSetList setClose            #setOpGroup
             | itemSetList setItemOperator itemSetList #setOp
             ;
+ref : LITERAL_WRAPPER refLiteral LITERAL_WRAPPER | refNormal ;
+refLiteral : ~LITERAL_WRAPPER+ ;
+refNormal : NAME | PATH ;
 tag : kvPair ;
-ref : NAME | PATH ;
 
 /* Primitives
 -------------------- */
@@ -88,6 +90,7 @@ SET_ITEM_OPERATOR : [&|] ;
 KEY_VALUE_SEPARATOR : ':' ;
 
 // Names and values
+LITERAL_WRAPPER : '"""' ;
 NAME : NAME_CHAR+ ;
 PATH : PATH_CHAR+ ;
 
@@ -100,5 +103,7 @@ OTHER : . ;
 fragment NEWLINE_CHAR : ('\r'? '\n' | '\r') ;
 fragment SPACE_CHAR : [\t ] ;
 
-fragment NAME_CHAR : [A-Za-z0-9_-] ;
-fragment PATH_CHAR : [A-Za-z0-9_/.-] ;
+/* Other chars (like  #@()[],&:  and space) will require tripple quoting, where
+   available */
+fragment NAME_CHAR : [A-Za-z0-9_\-] ;
+fragment PATH_CHAR : [A-Za-z0-9_\-.'/] ;
