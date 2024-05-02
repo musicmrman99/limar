@@ -485,19 +485,20 @@ class ManifestModule():
             includes all tags specified.
             """)
 
-        parser.add_argument('-f', '--format', default='object',
+        parser.add_argument('-f', '--format', default='compact',
             help="""
             Specify the formatter to use. May be one of:
 
-            `object`  - Formats each item's ref on its own line (prefixed by
-            (default)   `ref: `), then the `tags:` header, then each tag (name
-                        and value) on its own line with a two-space indent.
             `compact` - Formats each item into a single line, showing the ref
-                        and all tags (in brackets, separated by commas), and
+            (default)   and all tags (in brackets, separated by commas), and
                         omits the blank line between items if formatting an item
                         set.
             `tabular` - Same as compact, but aligns the project ref and tag
                         key/value pairs into columns, as applicable.
+            `object`  - Formats each item's ref, tags, and any other properties
+                        each on their own line, or where a property's value is
+                        multiple (ie. a list), then each value on its own line
+                        with a header line for the property name.
             """)
 
         # Subcommands
@@ -833,34 +834,11 @@ class ManifestModule():
 
     def _format_item(self, item: 'dict[str, object]', format='object'):
         formatters = {
-            'object': self._format_item_object,
             'compact': self._format_item_compact,
+            'object': self._format_item_object,
             'table': self._format_item_table
         }
         return formatters[format](item)
-
-    def _format_item_object(self, item: 'dict[str, object]'):
-        extra_props = self._filter_obj(item, exclude=('ref', 'tags'))
-        return '\n'.join([
-            *(
-                [f"ref: {item['ref']}"]
-                if 'ref' in item else []
-            ),
-            *(
-                [f"tags:", '\n'.join(
-                    '  '+name+(': '+value if value is not None else '')
-                    for name, value in item['tags'].items()
-                )]
-                if 'tags' in item else []
-            ),
-            *(
-                [
-                    f'{key}: {value}'
-                    for key, value in extra_props
-                ]
-                if len(extra_props) > 0 else []
-            )
-        ])
 
     def _format_item_compact(self, item: 'dict[str, object]'):
         extra_props = self._filter_obj(item, exclude=('ref', 'tags'))
@@ -881,6 +859,29 @@ class ManifestModule():
                     f'{key}: {value}'
                     for key, value in extra_props.items()
                 )]
+                if len(extra_props) > 0 else []
+            )
+        ])
+
+    def _format_item_object(self, item: 'dict[str, object]'):
+        extra_props = self._filter_obj(item, exclude=('ref', 'tags'))
+        return '\n'.join([
+            *(
+                [f"ref: {item['ref']}"]
+                if 'ref' in item else []
+            ),
+            *(
+                [f"tags:", '\n'.join(
+                    '  '+name+(': '+value if value is not None else '')
+                    for name, value in item['tags'].items()
+                )]
+                if 'tags' in item else []
+            ),
+            *(
+                [
+                    f'{key}: {value}'
+                    for key, value in extra_props
+                ]
                 if len(extra_props) > 0 else []
             )
         ])
@@ -940,21 +941,11 @@ class ManifestModule():
             format='object'
     ):
         formatters = {
-            'object': self._format_item_set_object,
             'compact': self._format_item_set_compact,
+            'object': self._format_item_set_object,
             'table': self._format_item_set_table
         }
         return formatters[format](item_set)
-
-    def _format_item_set_object(self, item_set: 'dict[str, dict[str, object]]'):
-        item_set = {
-            name: self._format_item(
-                item_set[name],
-                format='object'
-            )
-            for name in item_set.keys()
-        }
-        return '\n\n'.join(item_set.values())
 
     def _format_item_set_compact(self, item_set: 'dict[str, dict[str, object]]'):
         item_set = {
@@ -965,6 +956,16 @@ class ManifestModule():
             for name in item_set.keys()
         }
         return '\n'.join(item_set.values())
+
+    def _format_item_set_object(self, item_set: 'dict[str, dict[str, object]]'):
+        item_set = {
+            name: self._format_item(
+                item_set[name],
+                format='object'
+            )
+            for name in item_set.keys()
+        }
+        return '\n\n'.join(item_set.values())
 
     def _format_item_set_table(self, item_set: 'dict[str, dict[str, object]]'):
         ref_width = max(len(item['ref']) for item in item_set.values())
