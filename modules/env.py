@@ -61,9 +61,10 @@ class EnvModule():
     def start(self, *, mod: ModuleManager, **_):
         # Find projects and get paths
         if self._temp_proj_pattern is not None:
+            item_set = mod.manifest().get_item_set('^project$')
             temp_proj = mod.manifest().get_item(
                 self._temp_proj_pattern,
-                item_set_pattern='^project$'
+                item_set=item_set
             )
             try:
                 self._temp_proj_path = temp_proj['tags']['path']
@@ -76,9 +77,10 @@ class EnvModule():
                 )
 
         if self._proj_pattern is not None:
+            item_set = mod.manifest().get_item_set('^project$')
             proj = mod.manifest().get_item(
                 self._proj_pattern,
-                item_set_pattern='^project$'
+                item_set=item_set
             )
             try:
                 self._proj_path = proj['tags']['path']

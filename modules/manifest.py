@@ -616,10 +616,8 @@ class ManifestModule():
         output = ''
 
         if args.manifest_command == 'item':
-            output = self.get_item(
-                args.pattern,
-                item_set_pattern=args.item_set
-            )
+            item_set = self.get_item_set(args.item_set)
+            output = self.get_item(args.pattern, item_set=item_set)
 
             output = self._filter_item(
                 output,
@@ -694,7 +692,7 @@ class ManifestModule():
     # Invokation
     # --------------------
 
-    def get_item_set(self, pattern: str = None,):
+    def get_item_set(self, pattern: str = None) -> dict[str, dict[str, object]]:
         self._mod.log().trace(
             "manifest.get_item_set("
                 +(f"{pattern}" if pattern is None else f"'{pattern}'")+
@@ -724,18 +722,16 @@ class ManifestModule():
     def get_item(self,
             pattern: str,
             *,
-            item_set_pattern: str = None,
+            item_set: dict[str, dict[str, object]] = None,
             properties: 'list[str]' = None
-    ):
+    ) -> dict[str, object]:
         self._mod.log().trace(
             "manifest.get_item("
                 +(pattern if pattern is None else f"'{pattern}'")+","
-                f" item_set_pattern={item_set_pattern},"
+                f" item_set={item_set},"
                 f" properties={properties}"
             ")"
         )
-
-        item_set = self.get_item_set(item_set_pattern)
 
         item_regex = re.compile(pattern)
         try:
