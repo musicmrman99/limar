@@ -207,6 +207,12 @@ class ManifestBuilder:
                 for item_set_name in left_item_set.keys() | right_item_set.keys()
             }
 
+        else:
+            raise VCSException(
+                f"Unsupported set operator '{ops_btree['operator']}' when"
+                " computing item set"
+            )
+
     def declare_item_set(self, ref, ops_btree):
         # Compute
         item_set = self._compute_set(ops_btree)

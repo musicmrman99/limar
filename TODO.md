@@ -17,9 +17,7 @@
 
 - ./ make default context for a manifest file be entered when parsing it
 
-- add error in case of unsupported operator (for when not being used by the manifest listener)
-
-        raise VCSException(f'Unsupported opera')
+- ./ add error in case of unsupported operator (for when not being used by the manifest listener)
 
 - remove unnecessary brackets in class names
   - search `class .*\(\):`
