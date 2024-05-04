@@ -346,79 +346,74 @@ class ManifestModule:
     MM module to parse all manifest files declared by added context modules and
     to provide information about the items they declare.
 
-    ## Manifest Files
+    # Manifest Files
 
-    Manifest files are made up of declarations, contexts, and comments. There
-    are two types of declarations: items and item sets.
+    Manifest files are made up of declarations, contexts, and comments.
+
+    ## Comments
+
+    Comments begin with a '#' and can be placed on their own lines, or after
+    most lines. Multi-line comments aren't supported (apart from by using
+    multiple single-line comments).
+
+    ## Declarations
+
+    There are two types of declarations: items and item sets.
 
     Items declare a named thing to exist. Item declarations may include a list
-    of tags (key-value pairs, where the value is optional, defaulting to True of
-    omitted) in brackets after the name. Tags are separated by a comma, a
-    newline, or both.
+    of tags (key-value pairs, where the value is optional, defaulting to None if
+    omitted) in brackets after the name and one or more spaces. Tags are
+    separated by a comma, a newline, or both.
 
     Item sets declare a named set of things to exist. Item set declarations must
     include an expression stating what other item sets this item set includes.
-    An implicit item set exists for each unique tag on any item, which includes
-    all items with that tag. Item set expressions can include the names of these
-    sets, as well as & (and/intersection) and | (or/union) operators between
-    these names. Nested item set expressions with operators between them are
-    also supported.
+    An implicit item set exists for each unique tag defined (on any item), which
+    includes all items with that tag. Item set expressions consist of the names
+    of these sets, as well as `&` (and/intersection) and `|` (or/union)
+    operators between these names to combine the sets in different ways. Nested
+    item set expressions with operators between them are also supported.
 
     ## Context Modules
 
-    You can give an indexed list (ie. a dictionary) of 'context modules' when
-    initialising this class. Context modules are used to extend the manifest
-    format by defining custom contexts. Contexts may be implicit (ie. global),
-    or may be explicitly given in the manifest. If given, contexts are declared
-    with `@context-type`, may take options, and may be scoped to a set of
-    declarations.
+    After the configuration phase, other MM modules can register 'context
+    modules' with the ManifestModule. Context modules are used to extend the
+    manifest format by defining custom contexts. Contexts are usually applied to
+    items by specifying them by type in a manifest file by using the syntax
+    `@context-type`, where `context-type` may be any valid context type name.
 
-    The declarations a context applies to can be given by placing them within a
-    pair of braces after the context type, called the 'context content'. Each
-    declaration within the context content must be on a separate line. Nested
-    contexts are supported, though how they behave depends on the context
-    module.
+    A context applies to all declarations up to the first blank line after it,
+    or to all declarations within a pair of braces after the context type. The
+    set of declarations a context applies to is called the 'context content'.
+    Each declaration within the context content must be on a separate line.
+    Nested contexts are supported. The semantics/behaviour of nested contexts
+    depends on the context modules registered for the involved context type(s).
 
-    Context options are specified by placing key-value pairs (where the value is
-    optional and defaults to 'True' if omitted) within a pair of brackets
-    between the context type and the context content. Options are separated
-    either by a comma, a newline, or both.
+    Contexts may also take options. Options are specified by placing key-value
+    pairs (where the value is optional and defaults to 'None' if omitted) within
+    a pair of brackets between the context type and the context content. Options
+    are separated either by a comma, a newline, or both.
 
-    Example of contexts:
-
-        @context-type {
-          # The 'type' tag is made up - tags are only useful if they're
-          # interpreted by something, whether a context module, or whatever is
-          # using the manifest.
-          collection/thing-a (thing, thing-type)
-        }
-
-        @context-type (someOption: /home/username/mystuff) {
-          collection/thing-b (thing, thing-type)
-        }
-
-        @context-type (
-            optionA: /home/username/directory
-            optionB: https://someurl.com/username
-        ) {
-          collection/thing-c (thing, thing-type)
-        }
+    Some contexts are also 'root' contexts, which define the names of the
+    manifest files that ManifestModule reads (usually the plural of each root
+    context module's context type). The context type of a root context is
+    applied by default when reading the manifest file it defines, and applies to
+    all declarations in the file.
 
     ## Implementing a Context Module
 
     Each context module must be a Python class. The class must define one class
-    methods:
+    method:
 
     - `context_type()`
       - Return the context type that module is for as a string.
 
-    It may define an additional class method:
+    It may also define an additional class method:
 
     - `can_be_root()`
       - Return True if the context type supports being used as a root context,
         otherwise return False. Only one context module for a context type
-        needs to return True for this for it to be applied. If this method
-        is not defined for a context module, then it is equivalent to it
+        needs to return True for this method for that context type be applied.
+        This method not being defined for a context module is equivalent to it
         returning False.
 
     It may define any of the following method-based hooks (at least one should
@@ -445,6 +440,62 @@ class ManifestModule:
       - TODO
         `items` and `item_sets` contain all items/item_sets that were declared
         in a single manifest file.
+
+    # Examples
+
+    ```text
+    example-item
+    example-item-tagged (tagA)
+    example-item-multi-tag (tagA, tagB, tagC)
+
+    # The 'example-item' item will also contain the tag `tagA` without a value
+    # and the tag `some-tag` with the value '/home/username/mystuff' if the
+    # `Tags` context module is registered. The same system applies for all the
+    # following context examples.
+    @tags (tagA, some-tag: /home/username/mystuff)
+    example-item2 (thing, thing-type)
+
+    # Contexts that are stacked like this are actually nested.
+    @projects
+    @uris (path: /home/username/Source)
+    # Refs can contain slashes, but tag names can't
+    collection/thing-a (thing, thing-typeA)
+    collection/thing-b (thing, thing-typeB)
+    collection/thing-c (thing, thing-typeC)
+    other              (other)
+    # Refs can contain anything except tripple quote if tripple quoted
+    \"\"\"!"£$%^&*()_+-=[]{};:'@#~,<.>/?\\|\"\"\" (yay)
+
+    # All items are defined in the global scope, they must all have different
+    # refs, but they can all be accessed by any item set defined *after* the
+    # items it references are defined (order matters).
+    item-set-example [thing-typeB | other]
+
+    # Items can be anything - contexts may add data to them, possibly pulling it
+    # from various sources. Other MM modules that use ManifestModule may also
+    # interpret the data that items define in their own ways.
+    @house (
+        # You can't put comments after the end of a key-value pair unless it
+        # it has a comma after it (the context option separator, meaning it's
+        # not the last context option)
+        address: 100 My Place; Riverdale; Nationale, # Like this
+        controller: https://example.com/my-house/controller
+    ) {
+        @room (kitchen)
+        chair/x (furnature, legs: 3, broken)
+        chair/y (furnature, legs: 4)
+        chair/z (furnature, legs: 4)
+        table   (furnature)
+        knife-1 (cutlery)
+        fork-1  (cutlery)
+        fork-2  (cutlery)
+        plate-1 (crockery)
+        bowl-1  (crockery)
+
+        # @room doesn't apply to these item sets
+        dinner-set [cutlery | crockery]
+    }
+    ```
     """
 
     # Lifecycle
