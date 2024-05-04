@@ -50,11 +50,6 @@ class LogModule:
         parser.add_argument('message', help='The message to log')
 
     def configure(self, *, env: Namespace = None, args: Namespace = None, **_):
-        # Verbosity
-        self._verbosity = env.VCS_LOG_VERBOSITY
-        if 'log_verbose' in args and args.log_verbose is not None:
-            self._verbosity = args.log_verbose
-
         # Output file
         self._output_file_path = env.VCS_LOG_OUTPUT_FILE
         if 'log_output_file' in args and args.log_output_file is not None:
@@ -64,6 +59,11 @@ class LogModule:
         self._error_file_path = env.VCS_LOG_ERROR_FILE
         if 'log_error_file' in args and args.log_error_file is not None:
             self._error_file_path = args.log_error_file
+
+        # Verbosity
+        self._verbosity = env.VCS_LOG_VERBOSITY
+        if 'log_verbose' in args and args.log_verbose is not None:
+            self._verbosity = args.log_verbose
 
     def start(self, *_, **__):
         # TODO: rotate log + clean up old logs

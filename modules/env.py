@@ -4,7 +4,6 @@ from core.exceptions import VCSException
 
 # Types
 from core.modulemanager import ModuleManager
-from core.envparse import EnvironmentParser
 from argparse import ArgumentParser, Namespace
 
 class EnvModule:
@@ -16,9 +15,6 @@ class EnvModule:
         self._temp_proj_pattern = None
         self._temp_proj_path = None
         self._previous_dir = None
-
-        self._proj_pattern = None
-        self._proj_path = None
 
     def dependencies(self):
         return [
@@ -53,13 +49,10 @@ class EnvModule:
             the given pattern.
             """)
 
-    def configure(self, *, args: Namespace, **_):
+    def start(self, *, mod: ModuleManager, args: Namespace, **_):
+        # Get project path (temp)
         self._temp_proj_pattern = args.in_project
-        if hasattr(args, 'project_pattern'):
-            self._proj_pattern = args.project_pattern
 
-    def start(self, *, mod: ModuleManager, **_):
-        # Find projects and get paths
         if self._temp_proj_pattern is not None:
             item_set = mod.manifest().get_item_set('^project$')
             temp_proj = mod.manifest().get_item(
@@ -76,22 +69,7 @@ class EnvModule:
                     " your manifest?"
                 )
 
-        if self._proj_pattern is not None:
-            item_set = mod.manifest().get_item_set('^project$')
-            proj = mod.manifest().get_item(
-                self._proj_pattern,
-                item_set=item_set
-            )
-            try:
-                self._proj_path = proj['tags']['path']
-            except KeyError:
-                raise VCSException(
-                    "'path' not a tag of the project resolved from"
-                    f" {self._proj_pattern}. Are you missing the"
-                    " manifest_context_uris module, or an '@uris' context in"
-                    " your manifest?"
-                )
-
+        # Change dir (temp)
         mod.log().trace(f'_temp_proj_path = {self._temp_proj_path}')
         if self._temp_proj_path is not None:
             self._previous_dir = os.getcwd()
@@ -101,12 +79,28 @@ class EnvModule:
             )
             os.chdir(self._temp_proj_path)
 
-    def __call__(self, *, mod: ModuleManager, **_):
-        mod.log().info(f'Changing directory to: {self._proj_path}')
-        mod.add_shell_command(f"cd '{self._proj_path}'")
+    def __call__(self, *, mod: ModuleManager, args: Namespace, **_):
+        # Get project path
+        proj_pattern = args.project_pattern
+
+        item_set = mod.manifest().get_item_set('^project$')
+        proj = mod.manifest().get_item(proj_pattern, item_set=item_set)
+        try:
+            proj_path = proj['tags']['path']
+        except KeyError:
+            raise VCSException(
+                f"'path' not a tag of the project resolved from {proj_pattern}."
+                " Are you missing the manifest_context_uris module, or an"
+                " '@uris' context in your manifest?"
+            )
+
+        # Change dir
+        mod.log().info(f'Changing directory to: {proj_path}')
+        mod.add_shell_command(f"cd '{proj_path}'")
         pass
 
     def stop(self, *, mod: ModuleManager, **_):
+        # Change dir back (temp)
         mod.log().trace(f'_previous_dir = {self._previous_dir}')
         if self._previous_dir is not None:
             os.chdir(self._previous_dir)
