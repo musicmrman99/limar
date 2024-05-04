@@ -180,6 +180,7 @@ class ModuleManager:
         REGISTRATION = 'registration',
         INITIALISATION = 'initialisation',
         ENVIRONMENT_CONFIGURATION = 'environment-configuration',
+        ROOT_ARGUMENT_CONFIGURATION = 'root-argument-configuration',
         ARGUMENT_CONFIGURATION = 'argument-configuration',
         CONFIGURATION = 'configuration',
         STARTING = 'starting',
@@ -196,7 +197,6 @@ class ModuleManager:
 
         self._env_parser = EnvironmentParser(app_name)
         self._arg_parser = ArgumentParser(prog=app_name)
-        self._arg_subparsers = self._arg_parser.add_subparsers(dest="module")
 
     def __enter__(self):
         # Create a separate logger to avoid infinite recursion.
@@ -419,49 +419,39 @@ class ModuleManager:
             changing directory or setting environment variables.
             """)
 
-        # Lifecycle: Configure Arguments
-        self._phase = ModuleManager.PHASES.ARGUMENT_CONFIGURATION
-        for name, module in _mods.items():
-            if hasattr(module, 'configure_args'):
-                self._logger.debug(f"Configuring arguments for module '{name}'")
-                module_arg_parser = self._arg_subparsers.add_parser(name)
-                module.configure_args(
-                    env=env,
-                    parser=module_arg_parser,
-                    root_parser=self._arg_parser
-                )
-
-        # Finalise Arguments
-        if cli_args is not None:
-            cli_args = [self._app_name, *cli_args]
-        else:
-            cli_args = list(sys.argv)
-            cli_args[0] = self._app_name
-
-        # Split Arguments into Module Invokations
         # Grammar for the command line is:
         #   app_name global_opt*
         #   module_name module_opt* module_arg*
         #   ('->' module_name module_opt* module_arg*)*
 
-        app_name = cli_args[0]
-        cli_args = cli_args[1:]
+        # Lifecycle: Configure Root Arguments
+        self._phase = ModuleManager.PHASES.ROOT_ARGUMENT_CONFIGURATION
+        for name, module in _mods.items():
+            if hasattr(module, 'configure_root_args'):
+                self._logger.debug(
+                    f"Configuring root arguments for module '{name}'"
+                )
+                module.configure_root_args(env=env, parser=self._arg_parser)
 
-        global_opts = []
-        for cli_arg in cli_args:
-            if (not cli_arg.startswith('-')):
-                break
-            global_opts.append(cli_arg)
-        cli_args = cli_args[len(global_opts):]
+        # Finalise Arguments
+        if cli_args is None:
+            cli_args = sys.argv[1:]
 
-        global_invokation_args = [app_name, *global_opts]
-        module_invokation_args_set = self._list_split(cli_args, '->')
+        # Parse Global Arguments & Split Remaining Arguments
+        global_args, remaining_args = self._arg_parser.parse_known_args(
+            cli_args
+        )
+        global_invokation_args = cli_args[:-len(remaining_args)]
+        module_invokation_args_set = self._list_split(remaining_args, '->')
 
-        # Parse Global Arguments
-        if cli_args is not None:
-            global_args = self._arg_parser.parse_args(global_invokation_args)
-        else:
-            global_args = self._arg_parser.parse_args(global_invokation_args)
+        # Lifecycle: Configure Arguments
+        self._phase = ModuleManager.PHASES.ARGUMENT_CONFIGURATION
+        arg_subparsers = self._arg_parser.add_subparsers(dest="module")
+        for name, module in _mods.items():
+            if hasattr(module, 'configure_args'):
+                self._logger.debug(f"Configuring arguments for module '{name}'")
+                module_arg_parser = arg_subparsers.add_parser(name)
+                module.configure_args(env=env, parser=module_arg_parser)
 
         # Initialise Source File Manager
         self._source_file = ShellScript(global_args.mm_source_file)

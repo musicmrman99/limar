@@ -22,21 +22,17 @@ class LogModule:
         parser.add_variable('ERROR_FILE', default_is_none=True)
         parser.add_variable('VERBOSITY', type=int, default=0)
 
-    def configure_args(self, *,
-            parser: ArgumentParser,
-            root_parser: ArgumentParser,
-            **_
-    ):
-        # Root
-        root_parser.add_argument('--log-output-file', default=None,
+    def configure_root_args(self, *, parser: ArgumentParser, **_):
+        parser.add_argument('--log-output-file', default=None,
             help="Set the file to output log messages to")
-        root_parser.add_argument('--log-error-file', default=None,
+        parser.add_argument('--log-error-file', default=None,
             help="Set the file to output error messages to")
 
-        root_parser.add_argument('-v', '--log-verbose',
+        parser.add_argument('-v', '--log-verbose',
             action='count', default=None,
             help="Can be given up to 4 times to increase the log level")
 
+    def configure_args(self, *, parser: ArgumentParser, **_):
         # Log - Options
         parser.add_argument('-e', '--error', action='store_true', default=False,
             help='Send the log message to the error log')

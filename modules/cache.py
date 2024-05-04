@@ -22,31 +22,28 @@ class CacheModule:
     def configure_env(self, *, parser: EnvironmentParser, **_):
         parser.add_variable('ROOT')
 
-    def configure_args(self, *,
-            parser: ArgumentParser,
-            root_parser: ArgumentParser,
-            **_
-    ):
-        root_parser.add_argument('--read-cache',
+    def configure_root_args(self, *, parser: ArgumentParser, **_):
+        parser.add_argument('--read-cache',
             action=BooleanOptionalAction, default=None,
             help="""Don't read from cache files if they exist.""")
 
-        root_parser.add_argument('--write-cache',
+        parser.add_argument('--write-cache',
             action=BooleanOptionalAction, default=None,
             help="""Don't persist the cache on module stop.""")
 
-        root_parser.add_argument('--cache',
+        parser.add_argument('--cache',
             action=BooleanOptionalAction, default=None,
             help="""
             Short for `--read-cache` and `--write-cache`. Those options override
             this one if they are given.
             """)
 
-        root_parser.add_argument('--cache-root', default=None,
+        parser.add_argument('--cache-root', default=None,
             help="""Override the cache root to the given value.""")
 
-        # TODO: Allow inspecting, clearing, and otherwise managing the cache via
-        #       the CLI.
+    # TODO: Allow inspecting, clearing, and otherwise managing the cache via the
+    #       CLI.
+    #def configure_args(self, *, parser: ArgumentParser, **_):
 
     def configure(self, *,
             mod: ModuleManager,

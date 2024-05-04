@@ -23,19 +23,15 @@ class EnvModule:
             'project-manifest'
         ]
 
-    def configure_args(self, *,
-            parser: ArgumentParser,
-            root_parser: ArgumentParser,
-            **_
-    ):
-        # Root Parser - Options
-        root_parser.add_argument('-cd', '--in-project',
+    def configure_root_args(self, *, parser: ArgumentParser, **_):
+        parser.add_argument('-cd', '--in-project',
             metavar="PROJECT_PATTERN",
             help="""
             Run the command in the root directory of the first project to match
             the given pattern, switching back once done.
             """)
 
+    def configure_args(self, *, parser: ArgumentParser, **_):
         # Multiple Sub-Commands
         env_subparsers = parser.add_subparsers(dest="manifest_command")
 
