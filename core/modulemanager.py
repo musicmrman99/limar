@@ -422,7 +422,7 @@ class ModuleManager:
         # Grammar for the command line is:
         #   app_name global_opt*
         #   module_name module_opt* module_arg*
-        #   ('->' module_name module_opt* module_arg*)*
+        #   ('---' module_name module_opt* module_arg*)*
 
         # Lifecycle: Configure Root Arguments
         self._phase = ModuleManager.PHASES.ROOT_ARGUMENT_CONFIGURATION
@@ -442,7 +442,7 @@ class ModuleManager:
             cli_args
         )
         global_invokation_args = cli_args[:-len(remaining_args)]
-        module_invokation_args_set = self._list_split(remaining_args, '->')
+        module_invokation_args_set = self._list_split(remaining_args, '---')
 
         # Lifecycle: Configure Arguments
         self._phase = ModuleManager.PHASES.ARGUMENT_CONFIGURATION
@@ -493,11 +493,15 @@ class ModuleManager:
             self._phase = ModuleManager.PHASES.RUNNING
 
             forward_data = None
-            for module_invokation_args in module_invokation_args_set:
+            for i, module_invk_args in enumerate(module_invokation_args_set):
                 # Parse Module Arguments
-                module_name = module_invokation_args[0]
+                module_name = module_invk_args[0]
+                mod_invk_args_ex_mod = module_invk_args[1:]
                 full_mod_invk_args = [
-                    *global_invokation_args, *module_invokation_args
+                    *global_invokation_args,
+                    module_name,
+                    *(['---'] if i+1 < len(module_invokation_args_set) else []),
+                    *mod_invk_args_ex_mod
                 ]
                 module_args = self._arg_parser.parse_args(full_mod_invk_args)
 
