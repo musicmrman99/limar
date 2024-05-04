@@ -10,31 +10,36 @@ later instances of a label on a single rule overwrite earlier ones.
 /* Expressions
 -------------------------------------------------- */
 
-manifest : ((context | declaration | comment) (NEWLINE+ | EOF))* ;
+manifest : ( ( explScopedContext
+             | implScopedContext
+             | declaration
+             | comment
+             )
+             (NEWLINE+ | EOF)
+           )* ;
 
-context : CONTEXT_OPEN typeName=NAME (SPACE? dataOpen
-            (comment NEWLINE SPACE?)*
-            contextOpt
-            (
-              dataItemSeparator
-              (comment NEWLINE SPACE?)*
-              contextOpt
-            )*
-            (NEWLINE SPACE? comment)*
-          dataClose)? (
-            SPACE? blockOpen
-              NEWLINE*
-              ( SPACE? context NEWLINE*
-              | SPACE? declaration NEWLINE+
-              | comment NEWLINE+
-              )*
-            blockClose
-          | comment? NEWLINE
-            ( SPACE? context
-            | SPACE? declaration NEWLINE
-            | comment NEWLINE
-            )*
-          ) ;
+explScopedContext : contextHeader SPACE? blockOpen
+                      NEWLINE*
+                      ( SPACE? (explScopedContext | implScopedContext) NEWLINE*
+                      | SPACE? declaration NEWLINE+
+                      | comment NEWLINE+
+                      )*
+                    blockClose ;
+implScopedContext : contextHeader comment? NEWLINE
+                    ( SPACE? explScopedContext NEWLINE
+                    | SPACE? implScopedContext
+                    | SPACE? declaration NEWLINE
+                    | comment NEWLINE
+                    )* ;
+contextHeader : CONTEXT_OPEN typeName=NAME (SPACE? dataOpen
+                  (comment NEWLINE SPACE?)*
+                  contextOpt
+                  ( dataItemSeparator
+                    (comment NEWLINE SPACE?)*
+                    contextOpt
+                  )*
+                  (NEWLINE SPACE? comment)*
+                dataClose)? ;
 contextOpt : kvPair comment? ;
 
 declaration : (item | itemSet) comment? ;

@@ -29,15 +29,22 @@ class ManifestListenerImpl(ManifestListener):
     def exitManifest(self, ctx: ManifestParser.ManifestContext):
         self._manifest_builder.exit()
 
-    def enterContext(self, ctx: ManifestParser.ContextContext):
-        context_type = ctx.typeName.text
+    def enterExplScopedContext(self, ctx: ManifestParser.ExplScopedContextContext):
+        self._enter_context(ctx.contextHeader())
+
+    def enterImplScopedContext(self, ctx: ManifestParser.ImplScopedContextContext):
+        self._enter_context(ctx.contextHeader())
+
+    # Util
+    def _enter_context(self, context_header: ManifestParser.ContextHeaderContext):
+        context_type = context_header.typeName.text
         context_opts = {
             opt.kvPair().name.text: (
                 opt.kvPair().value.getText()
                 if opt.kvPair().value is not None
                 else None
             )
-            for opt in ctx.contextOpt()
+            for opt in context_header.contextOpt()
         }
 
         self._manifest_builder.enter_context(context_type, context_opts)
