@@ -450,9 +450,8 @@ class ManifestModule:
     # Lifecycle
     # --------------------
 
-    def __init__(self, manifest_store: Store = None, cache: Store = None):
+    def __init__(self, manifest_store: Store = None):
         self._manifest_store = manifest_store
-        self._cache = cache
 
         self._ctx_mod_factories: dict[str, Callable[[], Any]] = {}
         self._manifest_names: list[str] = []
@@ -466,7 +465,7 @@ class ManifestModule:
         self._all_extra_props_data = None
 
     def dependencies(self):
-        return ['log']
+        return ['log', 'cache']
 
     def configure_env(self, *, parser: EnvironmentParser, **_):
         parser.add_variable('ROOT')
@@ -534,9 +533,6 @@ class ManifestModule:
         if self._manifest_store is None:
             self._manifest_store = Store(env.VCS_MANIFEST_ROOT)
 
-        if self._cache is None:
-            self._cache = self._manifest_store
-
         self._default_item_set = env.VCS_MANIFEST_DEFAULT_ITEM_SET
 
     def start(self, *_, **__):
@@ -554,12 +550,11 @@ class ManifestModule:
 
         # Determine cache filename for this version of the manifest file
         digest = md5(manifest_text.encode('utf-8')).hexdigest()
-        cache_name = '.'.join([name, 'manifest', digest, 'pickle'])
+        cached_name = '.'.join([name, 'manifest', digest, 'pickle'])
 
         # Try cache
         try:
-            self._cache.setattr(cache_name, 'type', 'pickle')
-            manifest = Manifest.from_raw(self._cache.get(cache_name))
+            manifest = Manifest.from_raw(self._mod.cache().get(cached_name))
 
         except KeyError:
             # Import Deps (these are slow to import, so only (re)parse the
@@ -605,11 +600,7 @@ class ManifestModule:
             )
 
             # Cache Results
-            self._cache.set(cache_name, manifest.raw())
-            self._cache.flush()
-            self._mod.log().trace(
-                f"Cached result '{cache_name}' in '{self._cache}'"
-            )
+            self._mod.cache().set(cached_name, manifest.raw())
 
         # Add Manifest
         if self._manifests is None:

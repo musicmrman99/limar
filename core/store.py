@@ -43,8 +43,8 @@ class Store:
         if key in self._marked_for_removal:
             self._marked_for_removal.remove(key)
 
-    def get(self, key):
-        if key not in self._cache:
+    def get(self, key, read_persistent=True):
+        if key not in self._cache and read_persistent:
             try:
                 key_path = self._path_for(key)
                 if self.getattr(key, 'type') == 'pickle':
