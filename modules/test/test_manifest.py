@@ -17,16 +17,26 @@ class TestManifest(TestCase):
     def _log(self, *objs, error=False, level=0):
         print(*objs)
 
-    def setUp(self) -> None:
-        logger = Mock()
-        logger.log.side_effect = self._log
+    def _get_cache(self, name):
+        raise KeyError()
+
+    def setUp(self):
+        log_module = Mock()
+        log_module.log.side_effect = self._log
+
+        cache_module = Mock()
+        cache_module.get.side_effect = self._get_cache
+        cache_module.set.side_effect = lambda name, data: None
+        cache_module.flush.side_effect = lambda: None
 
         self.mock_mod = Mock()
-        self.mock_mod.log.return_value=logger
+        self.mock_mod.log.return_value=log_module
+        self.mock_mod.cache.return_value=cache_module
 
         self.mock_env = Mock()
         self.mock_env.VCS_MANIFEST_DEFAULT_ITEM_SET = None
         self.mock_env.VCS_MANIFEST_ROOT = '/manifests'
+        self.mock_env.VCS_CACHE_ROOT = '/cache'
 
     def test_item_basic(self):
         # Input
