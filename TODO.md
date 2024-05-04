@@ -19,8 +19,8 @@
 
 - ./ add error in case of unsupported operator (for when not being used by the manifest listener)
 
-- remove unnecessary brackets in class names
-  - search `class .*\(\):`
+- ./ remove unnecessary brackets in class names
+  - ./ search `class .*\(\):`
 
 - add a way of viewing the cache, like:
 ```sh

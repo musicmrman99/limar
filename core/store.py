@@ -3,7 +3,7 @@ import pickle
 
 from core.exceptions import VCSException
 
-class Store():
+class Store:
     def __init__(self, persist_dir='/tmp'):
         self._persist_dir = Path(persist_dir).resolve()
         self._persist_dir.mkdir(parents=True, exist_ok=True)

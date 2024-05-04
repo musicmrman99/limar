@@ -11,7 +11,7 @@ from modules.manifest_modules import (
 # Types
 from core.modulemanager import ModuleManager
 
-class ProjectManifestModule():
+class ProjectManifestModule:
 
     # Lifecycle
     # --------------------
