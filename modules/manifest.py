@@ -730,6 +730,9 @@ class ManifestModule:
             ")"
         )
 
+        if item_set is None:
+            item_set = self._all_items()
+
         item_regex = re.compile(pattern)
         try:
             item = next(
