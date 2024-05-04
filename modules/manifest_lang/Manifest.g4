@@ -1,14 +1,5 @@
 grammar Manifest;
 
-/* Expressions
--------------------------------------------------- */
-
-manifest : (statement | NEWLINE)+ EOF ;
-statement : SPACE? (comment | (context | item | itemSet) (SPACE? comment)?) NEWLINE ;
-
-/* Statements
--------------------- */
-
 /*
 Note: You must use a separate rule when you have multiple instances of a
 specific case of a general rule, as you cannot use the same label more than
@@ -16,14 +7,40 @@ once. Labels are can only refer to a single rule in ANTLR-generated parsers -
 later instances of a label on a single rule overwrite earlier ones.
 */
 
-comment : COMMENT_OPEN text=toEndOfLine ;
+/* Expressions
+-------------------------------------------------- */
+
+manifest : ((context | declaration | comment) (NEWLINE+ | EOF))* ;
 
 context : CONTEXT_OPEN typeName=NAME (SPACE? dataOpen
-            contextOpt (dataItemSeparator contextOpt)*
-          dataClose)? (SPACE? blockOpen
-            statement+
-          blockClose)? ;
-contextOpt : kvPair ;
+            (comment NEWLINE SPACE?)*
+            contextOpt
+            (
+              dataItemSeparator
+              (comment NEWLINE SPACE?)*
+              contextOpt
+            )*
+            (NEWLINE SPACE? comment)*
+          dataClose)? (
+            SPACE? blockOpen
+              NEWLINE*
+              ( SPACE? context NEWLINE*
+              | SPACE? declaration NEWLINE+
+              | comment NEWLINE+
+              )*
+            blockClose
+          | comment? NEWLINE
+            ( SPACE? context
+            | SPACE? declaration NEWLINE
+            | comment NEWLINE
+            )*
+          ) ;
+contextOpt : kvPair comment? ;
+
+declaration : (item | itemSet) comment? ;
+
+/* Declarations
+-------------------- */
 
 item : ref (SPACE dataOpen
          tag (dataItemSeparator tag)*
@@ -31,7 +48,7 @@ item : ref (SPACE dataOpen
 itemSet : ref SPACE setOpen itemSetList setClose ;
 itemSetList : ref                                     #setItemSet
             | tag                                     #setTag
-            | setOpen itemSetList setClose            #setOpGroup
+            | setOpen itemSetList setClose            #setGroup
             | itemSetList setItemOperator itemSetList #setOp
             ;
 ref : LITERAL_WRAPPER refLiteral LITERAL_WRAPPER | refNormal ;
@@ -45,31 +62,41 @@ tag : kvPair ;
 kvPair : name=NAME (kvSeparator value=toEndOfItem)? ;
 kvSeparator : SPACE? KEY_VALUE_SEPARATOR SPACE? ;
 
-blockOpen : BLOCK_OPEN NEWLINE? SPACE? ;
-blockClose : NEWLINE? SPACE? BLOCK_CLOSE ;
-blockItemSeparator : NEWLINE SPACE? ;
+blockOpen : BLOCK_OPEN comment? NEWLINE? SPACE? ;
+blockClose : NEWLINE? SPACE? BLOCK_CLOSE comment? ;
+blockItemSeparator : comment? NEWLINE SPACE? ;
 
-dataOpen : DATA_OPEN NEWLINE? SPACE? ;
-dataClose : NEWLINE? SPACE? DATA_CLOSE ;
-dataItemSeparator : (DATA_ITEM_SEPARATOR | NEWLINE | DATA_ITEM_SEPARATOR NEWLINE) SPACE? ;
+dataOpen : DATA_OPEN comment? NEWLINE? SPACE? ;
+dataClose : NEWLINE? SPACE? DATA_CLOSE comment? ;
+dataItemSeparator : ( DATA_ITEM_SEPARATOR
+                    | comment? NEWLINE
+                    | DATA_ITEM_SEPARATOR comment? NEWLINE
+                    ) SPACE? ;
 
-setOpen : SET_OPEN NEWLINE? SPACE? ;
-setClose : NEWLINE? SPACE? SET_CLOSE ;
-setItemOperator : NEWLINE? SPACE? SET_ITEM_OPERATOR NEWLINE? SPACE? ;
+setOpen : SET_OPEN comment? NEWLINE? SPACE? ;
+setClose : NEWLINE? SPACE? SET_CLOSE comment? ;
+setItemOperator : (comment? NEWLINE)?
+                  SPACE? SET_ITEM_OPERATOR
+                  (comment? NEWLINE)? SPACE? ;
+
+comment : SPACE? COMMENT_OPEN text=toEndOfLine ;
+
+/* Utils
+-------------------- */
 
 toEndOfItem : ~( NEWLINE 
                | DATA_ITEM_SEPARATOR
                | SET_ITEM_OPERATOR
                | DATA_CLOSE
                | SET_CLOSE
-               )+ ;
-toEndOfLine : ~NEWLINE+ ;
+               )* ;
+toEndOfLine : ~NEWLINE* ;
 
 /* Tokens
 -------------------------------------------------- */
 
 // Whitespace
-NEWLINE : NEWLINE_CHAR+ ;
+NEWLINE : NEWLINE_CHAR ;
 SPACE : SPACE_CHAR+ ;
 
 // General
