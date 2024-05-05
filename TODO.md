@@ -85,6 +85,23 @@ Look at:
 
 ---
 
+- tmux
+  - https://hackaday.com/2020/05/01/linux-command-line-productivity-with-tmux/
+
+- github CLI & gitlab CLI (or gitlab API, because its CLI isn't great)
+  - https://hackaday.com/2020/02/15/github-goes-gui-less/
+
+- modern replacements for traditional unix tools
+  - https://hackaday.com/2018/08/29/linux-fu-modernize-your-command-line/
+  - https://hackaday.com/2023/05/24/linux-fu-making-progress/
+  - https://hackaday.com/2022/12/24/corefreq-gives-peek-at-cpu-performance-info-on-linux/
+  - https://hackaday.com/2022/10/26/cat9-and-lash-want-to-change-your-linux-command-line/
+    - https://arcan-fe.com/2022/10/15/whipping-up-a-new-shell-lashcat9/
+  - https://hackaday.com/2021/06/21/a-collection-of-linux-tools-on-steroids/
+  - https://hackaday.com/2018/10/24/linux-fu-marker-is-a-command-line-menu/
+
+---
+
 - consider the 7 Cs and SGCV
   - temporal scope/granualrity could be a useful way of categorising:
     - areas of code (eg. terraform resources)

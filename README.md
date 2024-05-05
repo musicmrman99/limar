@@ -124,6 +124,8 @@ vcs for -only -order last -at-least 5 iac git status
 
 ## Installation
 
+Requires Python 3.9+
+
 Install with:
 ```sh
 # Customise as you wish ...
