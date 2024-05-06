@@ -14,8 +14,8 @@ from typing import Any, Callable
 class ManifestBuilder:
     def __init__(self,
             logger: LogModule,
-            context_modules: dict[str, list] = None,
-            default_contexts: list[str] = None
+            context_modules: dict[str, list] | None = None,
+            default_contexts: list[str] | None = None
     ):
         """
         `context_modules` must be a dictionary of the following format:
@@ -36,16 +36,14 @@ class ManifestBuilder:
 
         self._logger = logger
 
-        self._context_modules = context_modules
-        if self._context_modules is None:
-            self._context_modules = {}
+        self._context_modules = (
+            context_modules if context_modules is not None else {}
+        )
 
         self._contexts = []
 
         self._default_context_names = (
-            default_contexts
-            if default_contexts is not None
-            else []
+            default_contexts if default_contexts is not None else []
         )
         for name in self._default_context_names:
             if name not in self._context_modules:
@@ -501,13 +499,13 @@ class ManifestModule:
     # Lifecycle
     # --------------------
 
-    def __init__(self, manifest_store: Store = None):
+    def __init__(self, manifest_store: Store | None = None):
         self._manifest_store = manifest_store
 
-        self._ctx_mod_factories: dict[str, Callable[[], Any]] = {}
+        self._ctx_mod_factories: dict[str, list[Callable[[], Any]]] = {}
         self._manifest_names: list[str] = []
 
-        self._manifests: list[Manifest] = None
+        self._manifests: list[Manifest] | None = None
 
         # Used as an internal cache of the combination of all manifests
         self._all_items_data = None
@@ -661,7 +659,7 @@ class ManifestModule:
     def __call__(self, *, mod: ModuleManager, args: Namespace, **_):
         mod.log().trace(f"manifest(args={args})")
 
-        output = ''
+        output = None
 
         if args.manifest_command == 'item':
             item_set = self.get_item_set(args.item_set)
@@ -673,7 +671,6 @@ class ManifestModule:
                 tags=args.tag
             )
             output = self._format_item(output, format=args.format)
-            print(output)
 
         if args.manifest_command == 'item-set':
             output = self.get_item_set(args.pattern)
@@ -686,7 +683,6 @@ class ManifestModule:
                 for name in output.keys()
             }
             output = self._format_item_set(output, format=args.format)
-            print(output)
 
         return output
 

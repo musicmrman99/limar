@@ -7,14 +7,14 @@ from core.exceptions import VCSException
 from typing import Any
 
 class EnvironmentParser:
-    def __init__(self, prefix: str = None):
+    def __init__(self, prefix: str | None = None):
         self._spec = {}
         self._prefix = prefix.upper() if prefix is not None else ''
         self._subparsers: list[EnvironmentParser] = []
 
     def add_variable(self,
             name: str,
-            type: type = None,
+            type: type | None = None,
             default: Any = None,
             default_is_none: bool = False
     ):
@@ -38,17 +38,20 @@ class EnvironmentParser:
         self._subparsers.append(subparser)
         return subparser
 
-    def parse_env(self):
-        return Namespace(**self._parse_env())
+    def parse_env(self, env=None):
+        return Namespace(**self._parse_env(env))
 
-    def _parse_env(self):
+    def _parse_env(self, env=None):
+        if env is None:
+            env = os.environ
+
         env_vars = {}
 
         # Parse this parser's spec
         for name, opts in self._spec.items():
             type = opts['type'] if 'type' in opts else str
             try:
-                env_vars[name] = type(os.environ[name])
+                env_vars[name] = type(env[name])
             except KeyError as e:
                 if 'default' in opts:
                     env_vars[name] = opts['default']

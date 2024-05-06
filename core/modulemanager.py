@@ -1,16 +1,711 @@
+# Types
+from __future__ import annotations
+from typing import Any, Callable
+
+# Everything else
 import sys
-from os.path import dirname, basename, isfile, join
-import glob
+from os.path import dirname, join
 import re
 import importlib
-from contextlib import contextmanager
 from graphlib import CycleError, TopologicalSorter
 from argparse import ArgumentParser, Namespace
 
 from core.envparse import EnvironmentParser
-from core.shellscript import ShellScript
-from core.modules.log import LogModule
 from core.exceptions import VCSException
+import core.modules as core_module_package
+
+class ModuleManagerRun:
+    Phase = None | str
+    PHASES: list[Phase] = [
+        None,
+        'INITIALISATION',
+        'RESOLVE_DEPENDENCIES',
+        'CREATE_MODULE_ACCESSORS',
+
+        'ENVIRONMENT_CONFIGURATION',
+        'ENVIRONMENT_PARSING',
+
+        'ROOT_ARGUMENT_CONFIGURATION',
+        'ROOT_ARGUMENT_PARSING',
+        'CONFIGURATION',
+        'STARTING',
+        'STARTED',
+
+        'ARGUMENT_CONFIGURATION',
+        'ARGUMENT_PARSING',
+        'RUNNING',
+
+        'STOPPING',
+        'STOPPED'
+    ]
+
+    # Moving from one phase to the next is allowed by default, plus these:
+    ALLOWED_PHASE_JUMPS: dict[Phase, list[Phase]] = {
+        'STARTED': ['STOPPING']
+    }
+
+    def __init__(self,
+            app_name: str,
+            mod_factories: dict[str, Callable],
+            cli_env: dict[str, str] | None = None,
+            cli_args: list[str] | None = None,
+            parent_run: ModuleManagerRun | None = None
+    ):
+        self._app_name = app_name
+        self._mod_factories = mod_factories
+        self._cli_env = cli_env
+        self._cli_args = cli_args
+        self._parent_run = parent_run
+
+        self._phase = None
+        self._mods = {}
+        self._all_mods = {}
+
+        self._start_exceptions = []
+        self._run_exception = None
+
+    # High-Level Lifecycle
+    # --------------------
+
+    def __enter__(self):
+        env_parser = EnvironmentParser(self._app_name)
+        self._arg_parser = ArgumentParser(prog=self._app_name)
+
+        inherited_mods: dict[str, Any] = (
+            self._parent_run._mods
+            if self._parent_run is not None
+            else {}
+        )
+
+        self._mods, self._all_mods = (
+            self.initialise(self._mod_factories, inherited_mods)
+        )
+        self._mods = self.resolve_dependencies(self._mods, self._all_mods)
+        self._accessor_object = (
+            self.create_module_accessor_object(self._all_mods)
+        )
+
+        self.configure_environment(self._all_mods, env_parser)
+        self._env = self.parse_environment(env_parser, self._cli_env)
+
+        self.configure_root_arguments(
+            self._all_mods,
+            self._env,
+            self._arg_parser
+        )
+        self._root_args, self._module_full_cli_args_set = (
+            self.parse_root_arguments(self._arg_parser, self._cli_args)
+        )
+
+        # Can mutate module state
+        self.configure(
+            self._mods,
+            self._env,
+            self._root_args,
+            self._accessor_object
+        )
+        self._started_modules, self._start_exceptions = self.start(
+            self._mods,
+            self._env,
+            self._root_args,
+            self._accessor_object
+        )
+
+        return self
+
+    def run(self):
+        self.configure_arguments(self._all_mods, self._env, self._arg_parser)
+        self._module_args_set = self.parse_arguments(
+            self._arg_parser,
+            self._module_full_cli_args_set
+        )
+
+        # Can mutate module state
+        self._run_exception = self.invoke_and_call(
+            self._module_args_set,
+            self._env,
+            self._start_exceptions,
+            self._accessor_object
+        )
+
+    def __exit__(self, type, value, traceback):
+        # Can mutate module state
+        stop_exceptions = self.stop(
+            self._started_modules,
+            # Update other indexes
+            self._all_mods,
+            self._mods,
+
+            self._env,
+            self._root_args,
+            self._start_exceptions,
+            self._run_exception,
+            self._accessor_object
+        )
+
+        exceptions = [
+            *self._start_exceptions,
+            *([self._run_exception] if self._run_exception is not None else []),
+            *stop_exceptions
+        ]
+        if len(exceptions) > 0:
+            raise exceptions[0]
+
+    # Low-Level Lifecycle
+    # --------------------
+
+    def initialise(self,
+            mod_factories: dict[str, Callable],
+            inherited_mods: dict[str, Any]
+    ) -> tuple[dict[str, Any], dict[str, Any]]:
+        self._proceed_to_phase('INITIALISATION')
+
+        mods: dict[str, Any] = {}
+        all_mods: dict[str, Any] = dict(inherited_mods)
+        for name, factory in mod_factories.items():
+            if name in mods or name in inherited_mods:
+                self._debug(
+                    f"Module '{name}' already initialised, skipping",
+                    mods=mods,
+                    all_mods=all_mods
+                )
+                continue
+            else:
+                self._debug(
+                    f"Initialising module '{name}'",
+                    mods=mods,
+                    all_mods=all_mods
+                )
+
+            if not callable(factory):
+                raise VCSException(
+                    f"Initialisation failed: '{name}' could not be initialised"
+                    " because it is not callable"
+                )
+
+            try:
+                all_mods[name] = mods[name] = factory()
+                self._debug(
+                    f"Initialised module '{name}' as {mods[name]}",
+                    mods=mods,
+                    all_mods=all_mods
+                )
+            except RecursionError as e:
+                raise VCSException(
+                    f"Initialisation failed: '{name}' could not be initialised:"
+                    " probable infinite recursion in __init__() of module"
+                ) from e
+
+        return mods, all_mods
+
+    def resolve_dependencies(self,
+            mods: dict[str, Any],
+            all_mods: dict[str, Any]
+    ) -> dict[str, Any]:
+        self._proceed_to_phase('RESOLVE_DEPENDENCIES')
+
+        # This function assumes that any parent Run has or will have its
+        # `resolve_dependencies()` function called to ensure that all mods that
+        # it manages are present in its dependency tree, but we can't assume
+        # that it was run before this Run's `resolve_dependencies()`, so we have
+        # to re-gather deps and re-sort all mods.
+        #
+        # If we could assume that, then we could assume that the parent Run's
+        # _mods are in order. As they necessarily don't depend on any additional
+        # mods this Run manages (or the parent Run's `resolve_dependencies()`
+        # would have failed), we could sort only this Run's mods and their deps,
+        # add that onto the parent Run's mods in-order, then verify all required
+        # mods have been initialised.
+        #
+        # This would likely give a small performance boost, but probably not
+        # much.
+
+        module_deps = {
+            name: (
+                mods[name].dependencies()
+                if hasattr(mods[name], 'dependencies')
+                else []
+            )
+            for name in mods.keys()
+        }
+
+        self._debug(
+            'Modules (dependency graph):', module_deps,
+            mods=mods,
+            all_mods=all_mods
+        )
+        sorter = TopologicalSorter(module_deps)
+        try:
+            sorted_mod_names = tuple(sorter.static_order())
+        except CycleError:
+            raise VCSException(
+                f"Resolve Dependencies failed: Modules have circular"
+                " dependencies"
+            )
+
+        sorted_mods = {}
+        for name in sorted_mod_names:
+            try:
+                # Check that all of this Run's mods and their deps are
+                # initialised, but only add a mod to sorted mods if it's managed
+                # by this Run, as sorted_mods should contain the same modules as
+                # mods.
+                mod = all_mods[name]
+                if name in mods:
+                    sorted_mods[name] = mod
+            except KeyError:
+                # Only need single-level resolution - the user should be able
+                # to figure out the problem from there.
+                missing_module_rev_deps = [
+                    check_name
+                    for check_name, check_deps in module_deps.items()
+                    if name in check_deps
+                ]
+                raise VCSException(
+                    f"Resolve Dependencies failed: Module '{name}' depended on"
+                    f" by modules {missing_module_rev_deps} not registered"
+                )
+
+        self._debug(
+            'Modules (dependencies resolved):', module_deps,
+            mods=mods,
+            all_mods=all_mods
+        )
+
+        return sorted_mods
+
+    def create_module_accessor_object(self,
+            all_mods: dict[str, Any]
+    ) -> Namespace:
+        """
+        For the convenience of modules, dynamically add methods to this Run to
+        invoke each module.
+        """
+
+        self._proceed_to_phase('CREATE_MODULE_ACCESSORS')
+
+        accessors = {
+            name: lambda name=name: self.invoke_module(name)
+            for name in all_mods
+        }
+        return Namespace(**accessors)
+
+    def configure_environment(self,
+            all_mods: dict[str, Any],
+            env_parser: EnvironmentParser
+    ) -> None:
+        self._proceed_to_phase('ENVIRONMENT_CONFIGURATION')
+
+        for name, module in all_mods.items():
+            if hasattr(module, 'configure_env'):
+                self._debug(f"Configuring environment for module '{name}'")
+                module_env_parser = env_parser.add_parser(name)
+                module.configure_env(
+                    parser=module_env_parser,
+                    root_parser=env_parser
+                )
+
+    def parse_environment(self,
+            env_parser: EnvironmentParser,
+            cli_env: dict[str, str] | None = None
+    ) -> Namespace:
+        self._proceed_to_phase('ENVIRONMENT_PARSING')
+
+        if cli_env is not None:
+            env = env_parser.parse_env(cli_env)
+        else:
+            env = env_parser.parse_env()
+
+        return env
+
+    # NOTE: Grammar for the command line is:
+    #         app_name global_opt*
+    #         module_name module_opt* module_arg*
+    #         ('---' module_name module_opt* module_arg*)*
+
+    def configure_root_arguments(self,
+            all_mods: dict[str, Any],
+            env: Namespace,
+            arg_parser: ArgumentParser
+    ) -> None:
+        self._proceed_to_phase('ROOT_ARGUMENT_CONFIGURATION')
+
+        for name, module in all_mods.items():
+            if hasattr(module, 'configure_root_args'):
+                self._debug(f"Configuring root arguments for module '{name}'")
+                module.configure_root_args(env=env, parser=arg_parser)
+
+    def parse_root_arguments(self,
+            arg_parser: ArgumentParser,
+            cli_args: list[str] | None = None
+    ) -> tuple[Namespace, dict[str, list[str]]]:
+        self._proceed_to_phase('ROOT_ARGUMENT_PARSING')
+
+        if cli_args is None:
+            cli_args = sys.argv[1:]
+
+        root_args, remaining_args = arg_parser.parse_known_args(cli_args)
+        self._trace('Result:', root_args)
+
+        # Manually parse remaining args into a set of module arguments, split
+        # on '---' and prefixed with the root arguments so that every module
+        # invokation will also have all global args available to it.
+        root_cli_args = cli_args[:-len(remaining_args)]
+        module_cli_args_set = self._list_split(remaining_args, '---')
+
+        module_full_cli_args_set = {
+            module_cli_args[0]: [ # The module name
+                *root_cli_args,
+                module_cli_args[0],
+                *(['---'] if i+1 < len(module_cli_args_set) else []),
+                *module_cli_args[1:]
+            ]
+            for i, module_cli_args in enumerate(module_cli_args_set)
+        }
+
+        return root_args, module_full_cli_args_set
+
+    def configure(self,
+            mods: dict[str, Any],
+            env: Namespace,
+            root_args: Namespace,
+            accessor_object: Any
+    ) -> None:
+        self._proceed_to_phase('CONFIGURATION')
+
+        for name, module in mods.items():
+            if hasattr(module, 'configure'):
+                self._debug(f"Configuring module '{name}'")
+                module.configure(mod=accessor_object, env=env, args=root_args)
+
+    def start(self,
+            mods: dict[str, Any],
+            env: Namespace,
+            root_args: Namespace,
+            accessor_object: Any
+    ) -> tuple[dict[str, Any], list[Exception | KeyboardInterrupt]]:
+        self._proceed_to_phase('STARTING')
+
+        # TODO: Log exception tracebacks as well as capturing exception objects
+
+        # Lifecycle: Start
+        started_modules: dict[str, Any] = {}
+        exceptions: list[Exception | KeyboardInterrupt] = []
+        for name, module in mods.items():
+            if hasattr(module, 'start'):
+                self._debug(f"Starting module '{name}'")
+                try:
+                    module.start(mod=accessor_object, env=env, args=root_args)
+                    started_modules[name] = module
+                except (Exception, KeyboardInterrupt) as e:
+                    self._error(f"Starting module '{name}' failed")
+                    self._error('Stopping all successfully started modules ...')
+                    exceptions.append(e)
+
+                    # Don't try to start any more modules if we've already got
+                    # an error.
+                    break
+
+        self._proceed_to_phase('STARTED')
+        return started_modules, exceptions
+
+    def configure_arguments(self,
+            all_mods: dict[str, Any],
+            env: Namespace,
+            arg_parser: ArgumentParser
+    ) -> None:
+        self._proceed_to_phase('ARGUMENT_CONFIGURATION')
+
+        arg_subparsers = None
+        for name, module in all_mods.items():
+            if hasattr(module, 'configure_args'):
+                if arg_subparsers is None:
+                    arg_subparsers = arg_parser.add_subparsers(dest="module")
+
+                self._debug(f"Configuring arguments for module '{name}'")
+                module_arg_parser = arg_subparsers.add_parser(name)
+                module.configure_args(env=env, parser=module_arg_parser)
+
+    def parse_arguments(self,
+            arg_parser: ArgumentParser,
+            module_full_cli_args_set: dict[str, list[str]]
+    ) -> dict[str, Namespace]:
+        self._proceed_to_phase('ARGUMENT_PARSING')
+
+        module_args_set = {}
+        for name, module_cli_args in module_full_cli_args_set.items():
+            self._debug(
+                f"Parsing arguments for module '{name}':"
+                f" {' '.join(module_cli_args)}"
+            )
+            module_args_set[name] = arg_parser.parse_args(module_cli_args)
+            self._trace('Result:', module_args_set[name])
+
+        return module_args_set
+
+    def invoke_and_call(self,
+            module_args_set: dict[str, Namespace],
+            env: Namespace,
+            start_exceptions: list[Exception | KeyboardInterrupt],
+            accessor_object: Any
+    ) -> Exception | KeyboardInterrupt | None:
+        self._proceed_to_phase('RUNNING')
+
+        if len(start_exceptions) > 0:
+            self._warning(
+                'Skipped running because exception(s) were raised during start'
+            )
+            return
+
+        forwarded_data = None
+        for name, module_args in module_args_set.items():
+            self._debug(f"Running module '{name}'")
+            try:
+                # Eww, using object state instead of args ... yes, but modules
+                # have to be able to do this anyway (probably by proxy via the
+                # accessors), so it's a precondition of this function that the
+                # state needed for `invoke_module()` is set. This asserts that
+                # precondition to be true.
+                module = self.invoke_module(name)
+                if not callable(module):
+                    raise VCSException(f"Module not callable: '{name}'")
+
+                forwarded_data = module(
+                    mod=accessor_object,
+                    env=env,
+                    args=module_args,
+                    forwarded_data=forwarded_data
+                )
+            except (Exception, KeyboardInterrupt) as e:
+                self._error(
+                    f"Run of module '{name}' failed, aborting further calls"
+                )
+                return e
+
+        if forwarded_data != None:
+            print(forwarded_data)
+
+    def stop(self,
+            started_modules: dict[str, Any],
+            all_mods: dict[str, Any],
+            mods: dict[str, Any],
+
+            env: Namespace,
+            root_args: Namespace,
+            start_exceptions: list[Exception | KeyboardInterrupt],
+            run_exception: Exception | KeyboardInterrupt | None,
+            accessor_object: Any
+    ):
+        self._proceed_to_phase('STOPPING')
+
+        stop_exceptions: list[Exception | KeyboardInterrupt] = []
+        for name, module in reversed(started_modules.items()):
+            if hasattr(module, 'stop'):
+                self._debug(f"Stopping module '{name}'")
+                try:
+                    module.stop(
+                        mod=accessor_object,
+                        env=env,
+                        args=root_args,
+                        start_exceptions=start_exceptions,
+                        run_exception=run_exception,
+                        stop_exceptions=stop_exceptions
+                    )
+                except (Exception, KeyboardInterrupt) as e:
+                    self._error(
+                        f"Stopping module '{name}' failed, SKIPPING."
+                    )
+                    self._warning(
+                        "THIS MAY HAVE LEFT YOUR SHELL, PROJECT, OR ANYTHING"
+                        " ELSE UNDER ModuleManager's MANAGEMENT IN AN UNCLEAN"
+                        " STATE! If you know what the above module does, then"
+                        " you may be able to clean up manually."
+                    )
+                    stop_exceptions.append(e)
+
+                    # Try to stop all modules, even if we've got an error.
+
+                finally:
+                    # Remove the module from the known modules set.
+                    del mods[name]
+                    del all_mods[name]
+
+        self._proceed_to_phase('STOPPED')
+        return stop_exceptions
+
+    # Module-Accessible Utils
+    # --------------------
+
+    def is_initialised(self, name: str) -> bool:
+        """
+        Return True if a module with the given name has been initialised,
+        otherwise return False.
+        """
+
+        return name in self._all_mods
+
+    def invoke_module(self, name: str) -> Any:
+        """
+        Invoke and return the instance of the module with the given name.
+
+        If the named module has not been initialised, raise a VCSException.
+        """
+
+        if not self.is_initialised(name):
+            raise VCSException(
+                f"Attempt to invoke uninitialised module '{name}'"
+            )
+
+        # Lifecycle: Invoke
+        if hasattr(self._all_mods[name], 'invoke'):
+            self._debug(f"Invoking module: {name}")
+            self._all_mods[name].invoke(
+                phase=self._phase,
+                mod=self._accessor_object
+            )
+
+        return self._all_mods[name]
+
+    # 'Friends' (ala C++) of ModuleManager
+    # --------------------
+
+    def _error(self,
+            *objs,
+            mods: dict[str, Any] | None = None,
+            all_mods: dict[str, Any] | None = None
+    ):
+        if all_mods is None:
+            all_mods = self._all_mods
+        if (
+            'log' in all_mods and
+            self._mod_has_started_phase('log', 'STARTED', mods=mods) and
+            not self._mod_has_started_phase('log', 'STOPPING', mods=mods)
+        ):
+            all_mods['log'].error(*objs)
+
+    def _warning(self,
+            *objs,
+            mods: dict[str, Any] | None = None,
+            all_mods: dict[str, Any] | None = None
+    ):
+        if all_mods is None:
+            all_mods = self._all_mods
+        if (
+            'log' in all_mods and
+            self._mod_has_started_phase('log', 'STARTED', mods=mods) and
+            not self._mod_has_started_phase('log', 'STOPPING', mods=mods)
+        ):
+            all_mods['log'].warning(*objs)
+
+    def _info(self,
+            *objs,
+            mods: dict[str, Any] | None = None,
+            all_mods: dict[str, Any] | None = None
+    ):
+        if all_mods is None:
+            all_mods = self._all_mods
+        if (
+            'log' in all_mods and
+            self._mod_has_started_phase('log', 'STARTED', mods=mods) and
+            not self._mod_has_started_phase('log', 'STOPPING', mods=mods)
+        ):
+            all_mods['log'].info(*objs)
+
+    def _debug(self,
+            *objs,
+            mods: dict[str, Any] | None = None,
+            all_mods: dict[str, Any] | None = None
+    ):
+        if all_mods is None:
+            all_mods = self._all_mods
+        if (
+            'log' in all_mods and
+            self._mod_has_started_phase('log', 'STARTED', mods=mods) and
+            not self._mod_has_started_phase('log', 'STOPPING', mods=mods)
+        ):
+            all_mods['log'].debug(*objs)
+
+    def _trace(self,
+            *objs,
+            mods: dict[str, Any] | None = None,
+            all_mods: dict[str, Any] | None = None
+    ):
+        if all_mods is None:
+            all_mods = self._all_mods
+        if (
+            'log' in all_mods and
+            self._mod_has_started_phase('log', 'STARTED', mods=mods) and
+            not self._mod_has_started_phase('log', 'STOPPING', mods=mods)
+        ):
+            all_mods['log'].trace(*objs)
+
+    # Utils
+    # --------------------
+
+    def _phase_of(self,
+            mod_name: str,
+            mods: dict[str, Any] | None = None
+    ) -> Phase:
+        if mods is None:
+            mods = self._mods
+
+        if mod_name in mods:
+            return self._phase
+        elif self._parent_run is not None:
+            return self._parent_run._phase_of(mod_name)
+        else:
+            raise VCSException(
+                f"Requested the phase of unregistered module '{mod_name}'"
+            )
+
+    def _mod_has_started_phase(self,
+            mod_name: str,
+            required_phase: Phase,
+            mods: dict[str, Any] | None = None
+    ) -> bool:
+        cur_index = self.PHASES.index(
+            self._phase_of(mod_name, mods=mods)
+        )
+        required_index = self.PHASES.index(required_phase)
+        return cur_index >= required_index # Close enough
+
+    def _proceed_to_phase(self,
+            phase: Phase,
+            mods: dict[str, Any] | None = None,
+            all_mods: dict[str, Any] | None = None
+    ) -> None:
+        cur_index = self.PHASES.index(self._phase)
+        requested_index = self.PHASES.index(phase)
+        required_cur_index = requested_index - 1
+
+        if (
+            required_cur_index == cur_index or (
+                self._phase in self.ALLOWED_PHASE_JUMPS and
+                phase in self.ALLOWED_PHASE_JUMPS[self._phase]
+            )
+        ):
+            self._phase = self.PHASES[requested_index]
+            if self._phase is not None:
+                self._info(
+                    f"{'-'*5} {self._phase} {'-'*(43-len(self._phase))}",
+                    mods=mods,
+                    all_mods=all_mods
+                )
+        else:
+            raise VCSException(
+                f"Attempt to proceed to {phase} ModuleManager run phase"
+                f" {'before' if cur_index < required_cur_index else 'after'}"
+                f" the {self.PHASES[required_cur_index]} phase"
+            )
+
+    def _list_split(self, list_, sep):
+        lists = [[]]
+        for item in list_:
+            if item == sep:
+                lists.append([])
+            else:
+                lists[-1].append(item)
+        return lists
 
 class ModuleManager:
     """
@@ -176,82 +871,88 @@ class ModuleManager:
       modules call each other or each other's methods without a base case.
     """
 
-    PHASES = Namespace(
-        REGISTRATION = 'registration',
-        INITIALISATION = 'initialisation',
-        ENVIRONMENT_CONFIGURATION = 'environment-configuration',
-        ROOT_ARGUMENT_CONFIGURATION = 'root-argument-configuration',
-        ARGUMENT_CONFIGURATION = 'argument-configuration',
-        CONFIGURATION = 'configuration',
-        STARTING = 'starting',
-        RUNNING = 'running',
-        STOPPING = 'stopping'
-    )
+    # Initialisation
+    # --------------------
 
-    def __init__(self, app_name: str):
+    def __init__(self, app_name: str, mm_cli_args: list[str] | None = None):
         self._app_name = app_name
+        self._mm_cli_args = mm_cli_args
 
-        self._phase = ModuleManager.PHASES.REGISTRATION
         self._registered_mods = {}
-        self._mods = {}
+        self._core_run = None
+        self._main_run = None
 
-        self._env_parser = EnvironmentParser(app_name)
-        self._arg_parser = ArgumentParser(prog=app_name)
+    # Core Lifecycle
+    # --------------------
 
     def __enter__(self):
-        # Create a separate logger to avoid infinite recursion.
-        # TODO: There may be a way of supporting environment variables or
-        #       command-line arguments for verbosity and output destination, but
-        #       hard-coding these will be fine for now.
-        self._logger = LogModule()
-        self._logger.configure(
-            mod=self,
-            env=Namespace(
-                VCS_LOG_OUTPUT_FILE=join(dirname(__file__), 'modulemanager.log'),
-                VCS_LOG_ERROR_FILE=None,
-                VCS_LOG_VERBOSITY=4
-            ),
-            args=Namespace()
+        """
+        Initialise Module Manager and MM's core modules for one or more runs.
+        """
+
+        self.register_package(core_module_package)
+
+        # Not a full run - only exists to delegate initialised core mods to the
+        # main run and clean them up after the main run.
+        self._core_run = ModuleManagerRun(
+            self._app_name,
+            self._registered_mods,
+            cli_env={
+                'VCS_LOG_FILE': join(dirname(__file__), 'modulemanager.log'),
+                'VCS_LOG_VERBOSITY': '4'
+            },
+            cli_args=self._mm_cli_args
         )
-        self._logger.start()
+        self._core_run.__enter__()
 
         return self
 
+    def run(self,
+            cli_env: dict[str, str] | None = None,
+            cli_args: list[str] | None = None
+    ):
+        """
+        Set off the module manager's lifecycle (see class docstring for
+        details of the lifecycle).
+
+        Must be called after all modules have been registered. Attempts to
+        register new modules after this is called will raise an exception.
+
+        ModuleManager does not support nesting runs on the same instance, so
+        modules should never call this method.
+        """
+
+        assert self._core_run is not None, 'run() run before __enter__()'
+        self._main_run = ModuleManagerRun(
+            app_name=self._app_name,
+            mod_factories=self._registered_mods,
+            cli_env=cli_env,
+            cli_args=cli_args,
+            parent_run=self._core_run
+        )
+        with self._main_run as mm_run:
+            mm_run.run()
+        self._main_run = None
+
     def __exit__(self, type, value, traceback):
-        self._logger.stop()
+        """
+        Clean up Module Manager after one or more runs.
+        """
+
+        assert self._core_run is not None, '__exit__() run before __enter__()'
+        self._core_run.__exit__(type, value, traceback)
+        self._core_run = None
 
     # Registration
     # --------------------
 
-    @staticmethod
-    def modules_adjacent_to(file):
-        """
-        Utility for getting a list of all python modules in the same directory
-        as the given python file path.
-
-        Can be used make a package support being registered with
-        `register_package()` by placing the following in the package's
-        `__init__.py`:
-        ```
-        from core.modulemanager import ModuleManager
-        __all__ = ModuleManager.modules_adjacent_to(__file__)
-        ```
-        """
-
-        # Based on: https://stackoverflow.com/a/1057534/16967315
-        modules = glob.glob(join(dirname(file), "*.py"))
-        return [
-            basename(module)[:-3]
-            for module in modules
-            if isfile(module) and not basename(module).startswith('__')
-        ]
-
     def register_package(self, *packages):
         for package in packages:
-            self._logger.debug(
-                f"Registering all modules in package '{package.__package__}'"
-                f" ({package}) with {self}"
-            )
+            if self._core_run is not None:
+                self._core_run._debug(
+                    f"Registering all modules in package"
+                    f" '{package.__package__}' ({package}) with {self}"
+                )
 
             mm_modules = []
             for py_module_name in package.__all__:
@@ -282,315 +983,20 @@ class ModuleManager:
     def register(self, *modules):
         for module_factory in modules:
             mm_mod_name = self._class_to_mm_module(module_factory.__name__)
-            if self._phase != ModuleManager.PHASES.REGISTRATION:
-                raise VCSException(
-                    f"Attempt to register module '{mm_mod_name}' after module"
-                    " initialisation"
-                )
-
-            if self.is_registered(mm_mod_name):
-                self._logger.info(
-                    "Skipping registering already-registered module"
-                    f" '{mm_mod_name}'"
-                )
+            if mm_mod_name in self._registered_mods:
+                if self._core_run is not None:
+                    self._core_run._info(
+                        "Skipping registering already-registered module"
+                        f" '{mm_mod_name}'"
+                    )
                 continue
 
-            self._logger.debug(
-                f"Registering module '{mm_mod_name}' ({module_factory}) with"
-                f" {self}"
-            )
+            if self._core_run is not None:
+                self._core_run._debug(
+                    f"Registering module '{mm_mod_name}' ({module_factory})"
+                    f" with {self}"
+                )
             self._registered_mods[mm_mod_name] = module_factory
-
-    # Core Lifecycle
-    # --------------------
-
-    def run(self,
-            cli_env: 'dict[str, str]' = None,
-            cli_args: 'list[str]' = None
-    ):
-        """
-        Set off the module manager's lifecycle (see class docstring for
-        details of the lifecycle).
-
-        Must be called after all modules have been registered. Attempts to
-        register new modules after this is called will raise an exception.
-
-        ModuleManager does not support nesting runs on the same instance, so
-        modules should never call this method.
-        """
-
-        # Lifecycle: Initialise
-        self._phase = ModuleManager.PHASES.INITIALISATION
-        for name, module_factory in self._registered_mods.items():
-            self._logger.debug(f"Initialising module '{name}'")
-
-            if not callable(module_factory):
-                raise VCSException(
-                    f"Initialisation failed: '{name}' could not be initialised"
-                    " because it is not callable"
-                )
-
-            try:
-                self._mods[name] = module_factory()
-                self._logger.debug(
-                    f"Initialised module '{name}' as {self._mods[name]}"
-                )
-            except RecursionError as e:
-                raise VCSException(
-                    f"Initialisation failed: '{name}' could not be initialised:"
-                    " probable infinite recursion in __init__() of module"
-                ) from e
-
-            # For the convenience of other modules, dynamically add a method to
-            # this object to invoke the module.
-            if name not in self.__dict__:
-                self.__dict__[name] = lambda name=name: self.invoke_module(name)
-
-        # Lifecycle: Resolve Dependencies
-        module_deps = {
-            name: (
-                self._mods[name].dependencies()
-                if hasattr(self._mods[name], 'dependencies')
-                else []
-            )
-            for name in self._mods.keys()
-        }
-
-        self._logger.debug('Modules (dependency graph):', module_deps)
-        module_sorter = TopologicalSorter(module_deps)
-        try:
-            modules_sorted = tuple(module_sorter.static_order())
-        except CycleError:
-            raise VCSException(
-                f"Resolve Dependencies failed: Modules have circular"
-                " dependencies"
-            )
-
-        _mods = {}
-        for name in modules_sorted:
-            try:
-                _mods[name] = self._mods[name]
-            except KeyError:
-                # Only need single-level resolution - the user should be able
-                # to figure out the problem from there.
-                missing_module_rev_deps = [
-                    check_name
-                    for check_name, check_deps in module_deps.items()
-                    if name in check_deps
-                ]
-                raise VCSException(
-                    f"Resolve Dependencies failed: Module '{name}' depended on"
-                    f" by modules {missing_module_rev_deps} not registered"
-                )
-        self._logger.debug('Modules (dependencies resolved):', module_deps)
-
-        # Lifecycle: Configure Environment
-        self._phase = ModuleManager.PHASES.ENVIRONMENT_CONFIGURATION
-        for name, module in _mods.items():
-            if hasattr(module, 'configure_env'):
-                self._logger.debug(
-                    f"Configuring environment for module '{name}'"
-                )
-                module_env_parser = self._env_parser.add_parser(name)
-                module.configure_env(
-                    parser=module_env_parser,
-                    root_parser=self._env_parser
-                )
-
-        # Finalise Environment (at the run level)
-        self._logger.debug(f"Parsing environment")
-        if cli_env is not None:
-            env = self._env_parser.parse_env(cli_env)
-        else:
-            env = self._env_parser.parse_env()
-
-        # Configure ModuleManager Arguments
-        self._arg_parser.add_argument('--mm-source-file',
-            default='/tmp/vcs-source',
-            help="""
-            The path to a temporary file that will be sourced in the parent
-            shell (outside of this python app). Your ModuleManager-based app
-            should use a shell wrapper (such as a bash function) that generates
-            the value for this option, passes it to the python app, then sources
-            the file it refers to.
-
-            This option allows modules managed by ModuleManager to add commands
-            to execute in the context of the calling shell process, such as
-            changing directory or setting environment variables.
-            """)
-
-        # Grammar for the command line is:
-        #   app_name global_opt*
-        #   module_name module_opt* module_arg*
-        #   ('---' module_name module_opt* module_arg*)*
-
-        # Lifecycle: Configure Root Arguments
-        self._phase = ModuleManager.PHASES.ROOT_ARGUMENT_CONFIGURATION
-        for name, module in _mods.items():
-            if hasattr(module, 'configure_root_args'):
-                self._logger.debug(
-                    f"Configuring root arguments for module '{name}'"
-                )
-                module.configure_root_args(env=env, parser=self._arg_parser)
-
-        # Finalise Arguments
-        if cli_args is None:
-            cli_args = sys.argv[1:]
-
-        # Parse Global Arguments & Split Remaining Arguments
-        global_args, remaining_args = self._arg_parser.parse_known_args(
-            cli_args
-        )
-        global_invokation_args = cli_args[:-len(remaining_args)]
-        module_invokation_args_set = self._list_split(remaining_args, '---')
-
-        # Lifecycle: Configure Arguments
-        self._phase = ModuleManager.PHASES.ARGUMENT_CONFIGURATION
-        arg_subparsers = self._arg_parser.add_subparsers(dest="module")
-        for name, module in _mods.items():
-            if hasattr(module, 'configure_args'):
-                self._logger.debug(f"Configuring arguments for module '{name}'")
-                module_arg_parser = arg_subparsers.add_parser(name)
-                module.configure_args(env=env, parser=module_arg_parser)
-
-        # Initialise Source File Manager
-        self._source_file = ShellScript(global_args.mm_source_file)
-
-        # Lifecycle: Configure
-        self._phase = ModuleManager.PHASES.CONFIGURATION
-        for name, module in _mods.items():
-            if hasattr(module, 'configure'):
-                self._logger.debug(f"Configuring module '{name}'")
-                module.configure(mod=self, env=env, args=global_args)
-
-        # Initialise Error Management
-        modules_started = {}
-        exceptions = []
-
-        # TODO: Log exception tracebacks as well as capturing exception objects
-
-        # Lifecycle: Start
-        self._phase = ModuleManager.PHASES.STARTING
-        for name, module in _mods.items():
-            if hasattr(module, 'start'):
-                self._logger.debug(f"Starting module '{name}'")
-                try:
-                    module.start(mod=self, env=env, args=global_args)
-                    modules_started[name] = module
-                except (Exception, KeyboardInterrupt) as e:
-                    self._logger.error(
-                        f"Starting module '{name}' failed, attempting to stop"
-                        " all successfully started modules ..."
-                    )
-                    exceptions.append(e)
-
-                    # Don't try to start any more modules if we've already got
-                    # an error.
-                    break
-
-        # Lifecycle: Invoke and Call (Specified Modules)
-        if len(exceptions) == 0:
-            self._phase = ModuleManager.PHASES.RUNNING
-
-            forward_data = None
-            for i, module_invk_args in enumerate(module_invokation_args_set):
-                # Parse Module Arguments
-                module_name = module_invk_args[0]
-                mod_invk_args_ex_mod = module_invk_args[1:]
-                full_mod_invk_args = [
-                    *global_invokation_args,
-                    module_name,
-                    *(['---'] if i+1 < len(module_invokation_args_set) else []),
-                    *mod_invk_args_ex_mod
-                ]
-                module_args = self._arg_parser.parse_args(full_mod_invk_args)
-
-                # Invoke and Call Module
-                self._logger.debug(f"Running module '{module_name}'")
-                try:
-                    module = self.invoke_module(module_name)
-                    if not callable(module):
-                        raise VCSException(
-                            f"Module not callable: '{module_name}'"
-                        )
-
-                    forward_data = module(
-                        mod=self,
-                        env=env,
-                        args=module_args,
-                        forward_data=forward_data
-                    )
-                except (Exception, KeyboardInterrupt) as e:
-                    self._logger.error(f"Run of module '{module_name}' failed")
-                    exceptions.append(e)
-
-        # Lifecycle: Stop
-        self._phase = ModuleManager.PHASES.STOPPING
-        for name, module in reversed(modules_started.items()):
-            if hasattr(module, 'stop'):
-                self._logger.debug(f"Stopping module '{name}'")
-                try:
-                    module.stop(mod=self, env=env, args=global_args)
-                except (Exception, KeyboardInterrupt) as e:
-                    self._logger.error(
-                        f"Stopping module '{name}' failed, SKIPPING."
-                    )
-                    self._logger.warning(
-                        "THIS MAY HAVE LEFT YOUR SHELL, PROJECT, OR ANYTHING"
-                        " ELSE UNDER ModuleManager's MANAGEMENT IN AN UNCLEAN"
-                        " STATE! If you know what the above module does, then"
-                        " you may be able to clean up manually."
-                    )
-
-        # Write Source File
-        if len(exceptions) == 0:
-            self._logger.debug("Writing added commands to source file")
-            self._source_file.write()
-        else:
-            self._logger.warning(
-                "Skipping writing commands to the source file to avoid causing"
-                " any more changes than necessary after the above error(s)."
-            )
-            raise exceptions[0]
-
-    # ModuleManager Utils
-    # --------------------
-
-    def is_registered(self, name):
-        """
-        Return True if a module with the given name has been registered with
-        this ModuleManager; otherwise return False.
-        """
-
-        return name in self._registered_mods
-
-    def is_initialised(self, name):
-        """
-        Return True if a registered module with the given name has been
-        initialised; otherwise return False.
-        """
-
-        return name in self._mods
-
-    def invoke_module(self, name):
-        """
-        Invoke and return the instance of the module with the given name.
-
-        If no module with the given name has been registered, raise a
-        VCSException.
-        """
-
-        if not self.is_initialised(name):
-            raise VCSException(f"Module not initialised: '{name}'")
-
-        # Lifecycle: Invoke
-        if hasattr(self._mods[name], 'invoke'):
-            self._mods[name].invoke(phase=self._phase, mod=self)
-
-        return self._mods[name]
-
-    def add_shell_command(self, command):
-        self._source_file.add_command(command)
 
     # Utils
     # --------------------
@@ -603,12 +1009,3 @@ class ModuleManager:
 
     def _py_module_to_class(self, name: str):
         return name.title().replace('_', '') + 'Module'
-
-    def _list_split(self, list_, sep):
-        lists = [[]]
-        for item in list_:
-            if item == sep:
-                lists.append([])
-            else:
-                lists[-1].append(item)
-        return lists

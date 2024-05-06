@@ -1,2 +1,2 @@
-from core.modulemanager import ModuleManager
-__all__ = ModuleManager.modules_adjacent_to(__file__)
+from core.utils import modules_adjacent_to
+__all__ = modules_adjacent_to(__file__)

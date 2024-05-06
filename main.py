@@ -5,7 +5,6 @@ import modules
 
 def main():
     with ModuleManager('vcs') as module_manager:
-        module_manager.register(LogModule)
         module_manager.register_package(modules)
         module_manager.run()
 
