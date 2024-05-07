@@ -7,9 +7,8 @@ class ShellModule:
     # Lifecycle
     # --------------------
 
-    # NOTE: As a core module, this module's lifecycle is not the normal MM
-    #       module lifecycle. It uses the same method names, but its lifecycle
-    #       is managed by ModuleManager directly.
+    # NOTE: As a core module, this module follows the core module lifecycle,
+    #       which 'wraps around' the main module lifecycle.
 
     def __init__(self):
         self._script = None
