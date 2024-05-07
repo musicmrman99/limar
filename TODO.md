@@ -1,5 +1,7 @@
 # Todo
 
+- fix "Attempt to proceed to STOPPING ModuleManager run phase before the RUNNING phase" when argparse throws an ArgumentError because argument parsing failed
+
 - add 'console' module
   - add console printer to MM
 
