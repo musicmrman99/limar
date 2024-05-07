@@ -1,13 +1,13 @@
 import os.path
 
-from core.exceptions import VCSException
+from core.modules.log import LogModule
 
 class UrisRemote:
     @staticmethod
     def context_type():
         return 'uris'
 
-    def on_declare_item(self, contexts, item):
+    def on_declare_item(self, contexts, item, *, logger: LogModule):
         if 'project' not in item['tags'].raw():
             return
 
@@ -19,10 +19,10 @@ class UrisRemote:
                 if 'protocol' in context['opts']
             ))
         except StopIteration:
-            print( # TODO: Make this use the log module
-                "WARNING: @uris (remote): Protocol not given in any parent"
-                f" context of item '{item['ref']}'. Remote interaction will not"
-                " be usable on this item."
+            logger.warning(
+                "@uris (remote): Protocol not given in any parent context of"
+                f" item '{item['ref']}'. Remote interaction will not be usable"
+                " on this item."
             )
 
         # Remote host
@@ -33,10 +33,10 @@ class UrisRemote:
                 if 'host' in context['opts']
             ))
         except StopIteration:
-            print( # TODO: Make this use the log module
-                "WARNING: @uris (remote): Remote host not given in any parent"
-                f" context of item '{item['ref']}'. Remote interaction will not"
-                " be usable on this item."
+            logger.warning( # TODO: Make this use the log module
+                "@uris (remote): Remote host not given in any parent context of"
+                f" item '{item['ref']}'. Remote interaction will not be usable"
+                " on this item."
             )
 
         # Remote path

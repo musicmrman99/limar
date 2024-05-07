@@ -5,7 +5,7 @@ class UrisLocal:
     def context_type():
         return 'uris'
 
-    def on_declare_item(self, contexts, item):
+    def on_declare_item(self, contexts, item, **_):
         if 'project' not in item['tags'].raw():
             return
 

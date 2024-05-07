@@ -244,7 +244,7 @@ class ManifestBuilder:
         ]
         for module in mods:
             if hasattr(module, name):
-                getattr(module, name)(*args)
+                getattr(module, name)(*args, logger=self._logger)
 
     def _run_context_lifecycle_point(self, name, args, context_type):
         try:
@@ -253,7 +253,7 @@ class ManifestBuilder:
             mods = []
         for module in mods:
             if hasattr(module, name):
-                getattr(module, name)(*args)
+                getattr(module, name)(*args, logger=self._logger)
 
     def _run_decl_lifecycle_point(self, name, args):
         active_contexts = [
@@ -279,7 +279,8 @@ class ManifestBuilder:
                             for context in active_contexts
                             if context['type'] == context_type
                         ],
-                        *args
+                        *args,
+                        logger=self._logger
                     )
 
 class Manifest:
