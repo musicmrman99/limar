@@ -1,7 +1,6 @@
 from core.store import Store
 
 # Types
-from core.modulemanager import ModuleManager
 from core.envparse import EnvironmentParser
 from argparse import ArgumentParser, BooleanOptionalAction, Namespace
 
@@ -13,7 +12,7 @@ class CacheModule:
     # Lifecycle
     # --------------------
 
-    def __init__(self, store: Store = None):
+    def __init__(self, store: Store | None = None):
         self._store = store
 
     def dependencies(self):
@@ -46,7 +45,7 @@ class CacheModule:
     #def configure_args(self, *, parser: ArgumentParser, **_):
 
     def configure(self, *,
-            mod: ModuleManager,
+            mod: Namespace,
             env: Namespace,
             args: Namespace,
             **_
@@ -81,6 +80,7 @@ class CacheModule:
 
     def stop(self, *_, **__):
         if self._write_cache:
+            assert self._store is not None, 'CacheModule.stop() called before CacheModule.configure()'
             self._store.flush()
             self._mod.log().info(f"Flushed cache in {self.get_store_str()}")
         else:
@@ -96,6 +96,7 @@ class CacheModule:
         return str(self._store)
 
     def set(self, name, data):
+        assert self._store is not None, 'CacheModule.set() called before CacheModule.configure()'
         self._store.setattr(name, 'type', 'pickle')
         self._store.set(name, data)
         self._mod.log().info(
@@ -103,6 +104,7 @@ class CacheModule:
         )
 
     def get(self, name):
+        assert self._store is not None, 'CacheModule.get() called before CacheModule.configure()'
         self._store.setattr(name, 'type', 'pickle')
         data = self._store.get(name, read_persistent=self._read_cache)
         self._mod.log().info(
@@ -114,6 +116,7 @@ class CacheModule:
         return data
 
     def delete(self, name):
+        assert self._store is not None, 'CacheModule.delete() called before CacheModule.configure()'
         self._store.delete(name)
         self._store.delattrs(name)
         self._mod.log().info(
