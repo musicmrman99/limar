@@ -64,6 +64,20 @@ class ModuleManagerRun:
         self._start_exceptions = []
         self._run_exception = None
 
+    def create_subrun(self,
+            app_name: str,
+            mod_factories: dict[str, Callable],
+            cli_env: dict[str, str] | None = None,
+            cli_args: list[str] | None = None
+    ) -> ModuleManagerRun:
+        return ModuleManagerRun(
+            app_name=app_name,
+            mod_factories=mod_factories,
+            cli_env=cli_env,
+            cli_args=cli_args,
+            parent_run=self
+        )
+
     # High-Level Lifecycle
     # --------------------
 
@@ -923,12 +937,11 @@ class ModuleManager:
         """
 
         assert self._core_run is not None, 'run() run before __enter__()'
-        self._main_run = ModuleManagerRun(
+        self._main_run = self._core_run.create_subrun(
             app_name=self._app_name,
             mod_factories=self._registered_mods,
             cli_env=cli_env,
-            cli_args=cli_args,
-            parent_run=self._core_run
+            cli_args=cli_args
         )
         with self._main_run as mm_run:
             mm_run.run()
