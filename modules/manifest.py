@@ -6,15 +6,19 @@ from core.exceptions import VCSException
 
 # Types
 from core.modules.log import LogModule
-from core.modulemanager import ModuleManager
 from core.envparse import EnvironmentParser
 from argparse import ArgumentParser, Namespace
 from typing import Any, Callable
 
+t_item = dict[str, Any]
+t_item_set = dict[str, t_item]
+t_item_set_set = dict[str, t_item_set]
+t_context_module = Any
+
 class ManifestBuilder:
     def __init__(self,
             logger: LogModule,
-            context_modules: dict[str, list] | None = None,
+            context_modules: dict[str, list[t_context_module]] | None = None,
             default_contexts: list[str] | None = None
     ):
         """
@@ -28,26 +32,25 @@ class ManifestBuilder:
         `context_modules`.
         """
 
-        self._context_modules = context_modules
-        self._default_contexts = default_contexts
-
-        self._items = {}
-        self._item_sets = {}
-
+        # Inputs
         self._logger = logger
-
         self._context_modules = (
             context_modules if context_modules is not None else {}
         )
-
-        self._contexts = []
-
+        self._default_contexts = default_contexts
         self._default_context_names = (
             default_contexts if default_contexts is not None else []
         )
         for name in self._default_context_names:
             if name not in self._context_modules:
                 raise VCSException('Default context')
+
+        # Outputs
+        self._items = {}
+        self._item_sets = {}
+
+        # Temp
+        self._contexts = []
 
     def enter(self):
         # Call - 'on_enter_manifest' on all registered context modules
@@ -284,10 +287,7 @@ class ManifestBuilder:
                     )
 
 class Manifest:
-    def __init__(self,
-            items: dict[str, dict[str, object]],
-            item_sets: dict[str, dict[str, dict[str, object]]]
-    ):
+    def __init__(self, items: t_item_set, item_sets: t_item_set_set):
         self._items = items
         self._item_sets = item_sets
 
@@ -506,6 +506,8 @@ class ManifestModule:
         self._ctx_mod_factories: dict[str, list[Callable[[], Any]]] = {}
         self._manifest_names: list[str] = []
 
+        # None is used when verifying that no attempt was made to add context
+        # modules after a manifest was parsed.
         self._manifests: list[Manifest] | None = None
 
         # Used as an internal cache of the combination of all manifests
@@ -577,7 +579,7 @@ class ManifestModule:
         resolve_parser.add_argument('pattern', metavar='PATTERN',
             help='A regex pattern to resolve to an item set')
 
-    def configure(self, *, mod: ModuleManager, env: Namespace, **_):
+    def configure(self, *, mod: Namespace, env: Namespace, **_):
         self._mod = mod # For methods that aren't directly given it
 
         if self._manifest_store is None:
@@ -590,6 +592,7 @@ class ManifestModule:
             self._load_manifest(manifest_name)
 
     def _load_manifest(self, name):
+        assert self._manifest_store is not None, 'ManifestModule._load_manifest() called before ManifestModule.configure()'
         try:
             manifest_text = self._manifest_store.get(name+'.manifest.txt')
         except KeyError:
@@ -657,7 +660,7 @@ class ManifestModule:
             self._manifests = []
         self._manifests.append(manifest)
 
-    def __call__(self, *, mod: ModuleManager, args: Namespace, **_):
+    def __call__(self, *, mod: Namespace, args: Namespace, **_):
         mod.log().trace(f"manifest(args={args})")
 
         output = None
@@ -737,7 +740,7 @@ class ManifestModule:
     # Invokation
     # --------------------
 
-    def get_item_set(self, pattern: str = None) -> dict[str, dict[str, object]]:
+    def get_item_set(self, pattern: str | None = None) -> t_item_set:
         self._mod.log().trace(
             "manifest.get_item_set("
                 +(f"{pattern}" if pattern is None else f"'{pattern}'")+
@@ -767,9 +770,9 @@ class ManifestModule:
     def get_item(self,
             pattern: str,
             *,
-            item_set: dict[str, dict[str, object]] = None,
-            properties: 'list[str]' = None
-    ) -> dict[str, object]:
+            item_set: t_item_set | None = None,
+            properties: list[str] | None = None
+    ) -> t_item:
         self._mod.log().trace(
             "manifest.get_item("
                 +(pattern if pattern is None else f"'{pattern}'")+","
@@ -800,6 +803,7 @@ class ManifestModule:
     # --------------------
 
     def _all_items(self):
+        assert self._manifests is not None, 'ManifestModule._all_items() called before ManifestModule._load_manifest()'
         if self._all_items_data is None:
             self._all_items_data = {
                 ref: item
@@ -809,6 +813,7 @@ class ManifestModule:
         return self._all_items_data
 
     def _all_item_sets(self):
+        assert self._manifests is not None, 'ManifestModule._all_item_sets() called before ManifestModule._load_manifest()'
         if self._all_item_sets_data is None:
             self._all_item_sets_data = {
                 ref: item_set
@@ -861,7 +866,7 @@ class ManifestModule:
         return all_extra_props_data
 
     def _filter_item(self,
-            item: 'dict[str, object]',
+            item: t_item,
             properties=None,
             tags=None
     ):
@@ -876,7 +881,7 @@ class ManifestModule:
             )
         return output
 
-    def _format_item(self, item: 'dict[str, object]', format='object'):
+    def _format_item(self, item: t_item, format='object') -> str:
         formatters = {
             'compact': self._format_item_compact,
             'object': self._format_item_object,
@@ -884,7 +889,7 @@ class ManifestModule:
         }
         return formatters[format](item)
 
-    def _format_item_compact(self, item: 'dict[str, object]'):
+    def _format_item_compact(self, item: t_item) -> str:
         extra_props = self._filter_obj(item, exclude=('ref', 'tags'))
         return ' '.join([
             *(
@@ -907,7 +912,7 @@ class ManifestModule:
             )
         ])
 
-    def _format_item_object(self, item: 'dict[str, object]'):
+    def _format_item_object(self, item: t_item) -> str:
         extra_props = self._filter_obj(item, exclude=('ref', 'tags'))
         return '\n'.join([
             *(
@@ -931,11 +936,11 @@ class ManifestModule:
         ])
 
     def _format_item_table(self,
-            item: 'dict[str, object]',
+            item: t_item,
             ref_width: int,
             tag_cols: dict[str, int],
             prop_cols: dict[str, int]
-    ):
+    ) -> str:
         ref_parts = (
             [f"{item['ref']:<{ref_width}}"]
             if 'ref' in item else []
@@ -981,9 +986,9 @@ class ManifestModule:
         return ' '.join([*ref_parts, *tag_parts, *prop_parts])
 
     def _format_item_set(self,
-            item_set: 'dict[str, dict[str, object]]',
+            item_set: t_item_set,
             format='object'
-    ):
+    ) -> str:
         formatters = {
             'compact': self._format_item_set_compact,
             'object': self._format_item_set_object,
@@ -991,27 +996,27 @@ class ManifestModule:
         }
         return formatters[format](item_set)
 
-    def _format_item_set_compact(self, item_set: 'dict[str, dict[str, object]]'):
-        item_set = {
+    def _format_item_set_compact(self, item_set: t_item_set) -> str:
+        item_set_str = {
             name: self._format_item(
                 item_set[name],
                 format='compact'
             )
             for name in item_set.keys()
         }
-        return '\n'.join(item_set.values())
+        return '\n'.join(item_set_str.values())
 
-    def _format_item_set_object(self, item_set: 'dict[str, dict[str, object]]'):
-        item_set = {
+    def _format_item_set_object(self, item_set: t_item_set) -> str:
+        item_set_str = {
             name: self._format_item(
                 item_set[name],
                 format='object'
             )
             for name in item_set.keys()
         }
-        return '\n\n'.join(item_set.values())
+        return '\n\n'.join(item_set_str.values())
 
-    def _format_item_set_table(self, item_set: 'dict[str, dict[str, object]]'):
+    def _format_item_set_table(self, item_set: t_item_set):
         ref_width = max(len(item['ref']) for item in item_set.values())
         tag_cols = {
             name: max(
@@ -1036,7 +1041,7 @@ class ManifestModule:
             for name in self._all_extra_props(item_set)
         }
 
-        item_set = {
+        item_set_str = {
             name: self._format_item_table(
                 item_set[name],
                 ref_width=ref_width,
@@ -1045,15 +1050,15 @@ class ManifestModule:
             )
             for name in item_set.keys()
         }
-        return '\n'.join(item_set.values())
+        return '\n'.join(item_set_str.values())
 
-    def _format_tag(self, name, value=None):
+    def _format_tag(self, name: str, value: str | None = None) -> str:
         return name+(': '+value if value is not None else '')
 
-    def _format_prop(self, name, value):
+    def _format_prop(self, name: str, value: Any) -> str:
         return f'{name}: {value}'
 
-    def _filter_obj(self, item, include=None, exclude=None):
+    def _filter_obj(self, item: dict, include=None, exclude=None) -> dict:
         if include is None:
             include = item.keys()
         if exclude is None:
