@@ -78,13 +78,13 @@ class CacheModule:
     def start(self, *_, **__):
         pass
 
-    def stop(self, *_, **__):
+    def stop(self, *_, mod: Namespace, **__):
         if self._write_cache:
             assert self._store is not None, 'CacheModule.stop() called before CacheModule.configure()'
             self._store.flush()
-            self._mod.log().info(f"Flushed cache in {self.get_store_str()}")
+            mod.log().info(f"Flushed cache in {self.get_store_str()}")
         else:
-            self._mod.log().info(
+            mod.log().info(
                 f"Did not flush cache in {self.get_store_str()} (writing to"
                 " cache is disabled)"
             )
