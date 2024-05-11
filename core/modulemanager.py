@@ -14,7 +14,7 @@ from core.envparse import EnvironmentParser
 from core.exceptions import VCSException
 import core.modules as core_module_package
 
-class ModuleManagerRun:
+class ModuleLifecycle:
     Phase = str
     PHASES_ORDERED: list[Phase] = [
         'CREATED',
@@ -53,13 +53,13 @@ class ModuleManagerRun:
             mod_factories: dict[str, Callable],
             cli_env: dict[str, str] | None = None,
             cli_args: list[str] | None = None,
-            parent_run: ModuleManagerRun | None = None
+            parent_lifecycle: ModuleLifecycle | None = None
     ):
         self._app_name = app_name
         self._mod_factories = mod_factories
         self._cli_env = cli_env
         self._cli_args = cli_args
-        self._parent_run = parent_run
+        self._parent_lifecycle = parent_lifecycle
 
         self._phase = self.PHASES.CREATED
         self._mods = {}
@@ -68,18 +68,18 @@ class ModuleManagerRun:
         self._start_exceptions = []
         self._run_exception = None
 
-    def create_subrun(self,
+    def create_sublifecycle(self,
             app_name: str,
             mod_factories: dict[str, Callable],
             cli_env: dict[str, str] | None = None,
             cli_args: list[str] | None = None
-    ) -> ModuleManagerRun:
-        return ModuleManagerRun(
+    ) -> ModuleLifecycle:
+        return ModuleLifecycle(
             app_name=app_name,
             mod_factories=mod_factories,
             cli_env=cli_env,
             cli_args=cli_args,
-            parent_run=self
+            parent_lifecycle=self
         )
 
     # High-Level Lifecycle
@@ -90,8 +90,8 @@ class ModuleManagerRun:
         self._arg_parser = ArgumentParser(prog=self._app_name)
 
         inherited_mods: dict[str, Any] = (
-            self._parent_run._mods
-            if self._parent_run is not None
+            self._parent_lifecycle._mods
+            if self._parent_lifecycle is not None
             else {}
         )
 
@@ -222,21 +222,22 @@ class ModuleManagerRun:
     ) -> dict[str, Any]:
         self._proceed_to_phase('RESOLVE_DEPENDENCIES')
 
-        # This function assumes that any parent Run has or will have its
+        # This function assumes that any parent Lifecycle has or will have its
         # `resolve_dependencies()` function called to ensure that all mods that
-        # it manages are present in its dependency tree, but we can't assume
-        # that it was run before this Run's `resolve_dependencies()`, so we have
-        # to re-gather deps and re-sort all mods.
+        # it manages are present in its dependency graph. However, we can't
+        # assume it was called before this Lifecycle's `resolve_dependencies()`,
+        # so we have to re-gather deps and re-sort all mods.
         #
-        # If we could assume that, then we could assume that the parent Run's
-        # _mods are in order. As they necessarily don't depend on any additional
-        # mods this Run manages (or the parent Run's `resolve_dependencies()`
-        # would have failed), we could sort only this Run's mods and their deps,
-        # add that onto the parent Run's mods in-order, then verify all required
-        # mods have been initialised.
+        # If we could assume that, then we could assume that the parent
+        # Lifecycle's _mods are in order. As they necessarily don't depend on
+        # any additional mods that this Lifecycle manages (or otherwise the
+        # parent Lifecycle's `resolve_dependencies()` would have failed), we
+        # could sort only this Lifecycle's mods and their deps, add that onto
+        # the parent Lifecycle's mods in-order, then verify all required mods
+        # have been initialised.
         #
-        # This would likely give a small performance boost, but probably not
-        # much.
+        # This would likely give a small performance boost, but probably less
+        # valuable than the time it took to write and maintain this comment.
 
         module_deps = {
             name: (
@@ -264,10 +265,10 @@ class ModuleManagerRun:
         sorted_mods = {}
         for name in sorted_mod_names:
             try:
-                # Check that all of this Run's mods and their deps are
+                # Check that all of this Lifecycle's mods and their deps are
                 # initialised, but only add a mod to sorted mods if it's managed
-                # by this Run, as sorted_mods should contain the same modules as
-                # mods.
+                # by this Lifecycle, as sorted_mods should contain the same
+                # modules as mods.
                 mod = all_mods[name]
                 if name in mods:
                     sorted_mods[name] = mod
@@ -296,8 +297,8 @@ class ModuleManagerRun:
             all_mods: dict[str, Any]
     ) -> Namespace:
         """
-        For the convenience of modules, dynamically add methods to this Run to
-        invoke each module.
+        For the convenience of modules, dynamically add methods to this
+        Lifecycle to invoke each module.
         """
 
         self._proceed_to_phase('CREATE_MODULE_ACCESSORS')
@@ -669,8 +670,8 @@ class ModuleManagerRun:
 
         if mod_name in mods:
             return self._phase
-        elif self._parent_run is not None:
-            return self._parent_run._phase_of(mod_name)
+        elif self._parent_lifecycle is not None:
+            return self._parent_lifecycle._phase_of(mod_name)
         else:
             raise VCSException(
                 f"Requested the phase of unregistered module '{mod_name}'"
@@ -711,7 +712,7 @@ class ModuleManagerRun:
                 )
         else:
             raise VCSException(
-                f"Attempt to proceed to {phase} ModuleManager run phase"
+                f"Attempt to proceed to {phase} ModuleLifecycle phase"
                 f" {'before' if cur_index < required_cur_index else 'after'}"
                 f" the {self.PHASES_ORDERED[required_cur_index]} phase"
             )
@@ -897,22 +898,23 @@ class ModuleManager:
         self._mm_cli_args = mm_cli_args
 
         self._registered_mods = {}
-        self._core_run = None
-        self._main_run = None
+        self._core_lifecycle = None
+        self._main_lifecycle = None
 
-    # Core Lifecycle
+    # Core and Main Lifecycles
     # --------------------
 
     def __enter__(self):
         """
-        Initialise Module Manager and MM's core modules for one or more runs.
+        Initialise Module Manager and MM's core modules for one or more nested
+        lifecycles.
         """
 
         self.register_package(core_module_package)
 
-        # Not a full run - only exists to delegate initialised core mods to the
-        # main run and clean them up after the main run.
-        self._core_run = ModuleManagerRun(
+        # Not a full lifecycle - only exists to delegate initialised core mods
+        # to the main lifecycle and clean them up after the main lifecycle.
+        self._core_lifecycle = ModuleLifecycle(
             self._app_name,
             self._registered_mods,
             cli_env={
@@ -921,7 +923,7 @@ class ModuleManager:
             },
             cli_args=self._mm_cli_args
         )
-        self._core_run.__enter__()
+        self._core_lifecycle.__enter__()
 
         return self
 
@@ -936,37 +938,37 @@ class ModuleManager:
         Must be called after all modules have been registered. Attempts to
         register new modules after this is called will raise an exception.
 
-        ModuleManager does not support nesting runs on the same instance, so
+        ModuleManager does not support nesting runs of the same instance, so
         modules should never call this method.
         """
 
-        assert self._core_run is not None, 'run() run before __enter__()'
-        self._main_run = self._core_run.create_subrun(
+        assert self._core_lifecycle is not None, 'run() run before __enter__()'
+        self._main_lifecycle = self._core_lifecycle.create_sublifecycle(
             app_name=self._app_name,
             mod_factories=self._registered_mods,
             cli_env=cli_env,
             cli_args=cli_args
         )
-        with self._main_run as mm_run:
-            mm_run.run()
-        self._main_run = None
+        with self._main_lifecycle as mm_lifecycle:
+            mm_lifecycle.run()
+        self._main_lifecycle = None
 
     def __exit__(self, type, value, traceback):
         """
-        Clean up Module Manager after one or more runs.
+        Clean up Module Manager after running.
         """
 
-        assert self._core_run is not None, '__exit__() run before __enter__()'
-        self._core_run.__exit__(type, value, traceback)
-        self._core_run = None
+        assert self._core_lifecycle is not None, '__exit__() run before __enter__()'
+        self._core_lifecycle.__exit__(type, value, traceback)
+        self._core_lifecycle = None
 
     # Registration
     # --------------------
 
     def register_package(self, *packages):
         for package in packages:
-            if self._core_run is not None:
-                self._core_run._debug(
+            if self._core_lifecycle is not None:
+                self._core_lifecycle._debug(
                     f"Registering all modules in package"
                     f" '{package.__package__}' ({package}) with {self}"
                 )
@@ -1001,15 +1003,15 @@ class ModuleManager:
         for module_factory in modules:
             mm_mod_name = self._class_to_mm_module(module_factory.__name__)
             if mm_mod_name in self._registered_mods:
-                if self._core_run is not None:
-                    self._core_run._info(
+                if self._core_lifecycle is not None:
+                    self._core_lifecycle._info(
                         "Skipping registering already-registered module"
                         f" '{mm_mod_name}'"
                     )
                 continue
 
-            if self._core_run is not None:
-                self._core_run._debug(
+            if self._core_lifecycle is not None:
+                self._core_lifecycle._debug(
                     f"Registering module '{mm_mod_name}' ({module_factory})"
                     f" with {self}"
                 )
