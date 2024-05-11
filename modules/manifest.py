@@ -10,15 +10,15 @@ from core.envparse import EnvironmentParser
 from argparse import ArgumentParser, Namespace
 from typing import Any, Callable
 
-t_item = dict[str, Any]
-t_item_set = dict[str, t_item]
-t_item_set_set = dict[str, t_item_set]
-t_context_module = Any
+Item = dict[str, Any]
+ItemSet = dict[str, Item]
+ItemSetSet = dict[str, ItemSet]
+ContextModule = Any
 
 class ManifestBuilder:
     def __init__(self,
             logger: LogModule,
-            context_modules: dict[str, list[t_context_module]] | None = None,
+            context_modules: dict[str, list[ContextModule]] | None = None,
             default_contexts: list[str] | None = None
     ):
         """
@@ -287,7 +287,7 @@ class ManifestBuilder:
                     )
 
 class Manifest:
-    def __init__(self, items: t_item_set, item_sets: t_item_set_set):
+    def __init__(self, items: ItemSet, item_sets: ItemSetSet):
         self._items = items
         self._item_sets = item_sets
 
@@ -740,7 +740,7 @@ class ManifestModule:
     # Invokation
     # --------------------
 
-    def get_item_set(self, pattern: str | None = None) -> t_item_set:
+    def get_item_set(self, pattern: str | None = None) -> ItemSet:
         self._mod.log().trace(
             "manifest.get_item_set("
                 +(f"{pattern}" if pattern is None else f"'{pattern}'")+
@@ -770,9 +770,9 @@ class ManifestModule:
     def get_item(self,
             pattern: str,
             *,
-            item_set: t_item_set | None = None,
+            item_set: ItemSet | None = None,
             properties: list[str] | None = None
-    ) -> t_item:
+    ) -> Item:
         self._mod.log().trace(
             "manifest.get_item("
                 +(pattern if pattern is None else f"'{pattern}'")+","
@@ -866,7 +866,7 @@ class ManifestModule:
         return all_extra_props_data
 
     def _filter_item(self,
-            item: t_item,
+            item: Item,
             properties=None,
             tags=None
     ):
@@ -881,7 +881,7 @@ class ManifestModule:
             )
         return output
 
-    def _format_item(self, item: t_item, format='object') -> str:
+    def _format_item(self, item: Item, format='object') -> str:
         formatters = {
             'compact': self._format_item_compact,
             'object': self._format_item_object,
@@ -889,7 +889,7 @@ class ManifestModule:
         }
         return formatters[format](item)
 
-    def _format_item_compact(self, item: t_item) -> str:
+    def _format_item_compact(self, item: Item) -> str:
         extra_props = self._filter_obj(item, exclude=('ref', 'tags'))
         return ' '.join([
             *(
@@ -912,7 +912,7 @@ class ManifestModule:
             )
         ])
 
-    def _format_item_object(self, item: t_item) -> str:
+    def _format_item_object(self, item: Item) -> str:
         extra_props = self._filter_obj(item, exclude=('ref', 'tags'))
         return '\n'.join([
             *(
@@ -936,7 +936,7 @@ class ManifestModule:
         ])
 
     def _format_item_table(self,
-            item: t_item,
+            item: Item,
             ref_width: int,
             tag_cols: dict[str, int],
             prop_cols: dict[str, int]
@@ -986,7 +986,7 @@ class ManifestModule:
         return ' '.join([*ref_parts, *tag_parts, *prop_parts])
 
     def _format_item_set(self,
-            item_set: t_item_set,
+            item_set: ItemSet,
             format='object'
     ) -> str:
         formatters = {
@@ -996,7 +996,7 @@ class ManifestModule:
         }
         return formatters[format](item_set)
 
-    def _format_item_set_compact(self, item_set: t_item_set) -> str:
+    def _format_item_set_compact(self, item_set: ItemSet) -> str:
         item_set_str = {
             name: self._format_item(
                 item_set[name],
@@ -1006,7 +1006,7 @@ class ManifestModule:
         }
         return '\n'.join(item_set_str.values())
 
-    def _format_item_set_object(self, item_set: t_item_set) -> str:
+    def _format_item_set_object(self, item_set: ItemSet) -> str:
         item_set_str = {
             name: self._format_item(
                 item_set[name],
@@ -1016,7 +1016,7 @@ class ManifestModule:
         }
         return '\n\n'.join(item_set_str.values())
 
-    def _format_item_set_table(self, item_set: t_item_set):
+    def _format_item_set_table(self, item_set: ItemSet):
         ref_width = max(len(item['ref']) for item in item_set.values())
         tag_cols = {
             name: max(
