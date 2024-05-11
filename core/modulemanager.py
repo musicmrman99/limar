@@ -15,9 +15,9 @@ from core.exceptions import VCSException
 import core.modules as core_module_package
 
 class ModuleManagerRun:
-    Phase = None | str
-    PHASES: list[Phase] = [
-        None,
+    Phase = str
+    PHASES_ORDERED: list[Phase] = [
+        'CREATED',
         'INITIALISATION',
         'RESOLVE_DEPENDENCIES',
         'CREATE_MODULE_ACCESSORS',
@@ -38,11 +38,15 @@ class ModuleManagerRun:
         'STOPPING',
         'STOPPED'
     ]
+    PHASES = Namespace(**{name: name for name in PHASES_ORDERED})
 
     # Moving from one phase to the next is allowed by default, plus these:
     ALLOWED_PHASE_JUMPS: dict[Phase, list[Phase]] = {
         'STARTED': ['STOPPING']
     }
+
+    # Constructors
+    # --------------------
 
     def __init__(self,
             app_name: str,
@@ -57,7 +61,7 @@ class ModuleManagerRun:
         self._cli_args = cli_args
         self._parent_run = parent_run
 
-        self._phase = None
+        self._phase = self.PHASES.CREATED
         self._mods = {}
         self._all_mods = {}
 
@@ -677,10 +681,10 @@ class ModuleManagerRun:
             required_phase: Phase,
             mods: dict[str, Any] | None = None
     ) -> bool:
-        cur_index = self.PHASES.index(
+        cur_index = self.PHASES_ORDERED.index(
             self._phase_of(mod_name, mods=mods)
         )
-        required_index = self.PHASES.index(required_phase)
+        required_index = self.PHASES_ORDERED.index(required_phase)
         return cur_index >= required_index # Close enough
 
     def _proceed_to_phase(self,
@@ -688,8 +692,8 @@ class ModuleManagerRun:
             mods: dict[str, Any] | None = None,
             all_mods: dict[str, Any] | None = None
     ) -> None:
-        cur_index = self.PHASES.index(self._phase)
-        requested_index = self.PHASES.index(phase)
+        cur_index = self.PHASES_ORDERED.index(self._phase)
+        requested_index = self.PHASES_ORDERED.index(phase)
         required_cur_index = requested_index - 1
 
         if (
@@ -698,8 +702,8 @@ class ModuleManagerRun:
                 phase in self.ALLOWED_PHASE_JUMPS[self._phase]
             )
         ):
-            self._phase = self.PHASES[requested_index]
-            if self._phase is not None:
+            self._phase = self.PHASES_ORDERED[requested_index]
+            if self._phase is not self.PHASES.CREATED:
                 self._info(
                     f"{'-'*5} {self._phase} {'-'*(43-len(self._phase))}",
                     mods=mods,
@@ -709,7 +713,7 @@ class ModuleManagerRun:
             raise VCSException(
                 f"Attempt to proceed to {phase} ModuleManager run phase"
                 f" {'before' if cur_index < required_cur_index else 'after'}"
-                f" the {self.PHASES[required_cur_index]} phase"
+                f" the {self.PHASES_ORDERED[required_cur_index]} phase"
             )
 
     def _list_split(self, list_, sep):
@@ -834,7 +838,7 @@ class ModuleManager:
     lifecycle method `invoke(phase, mod)` if it exists, then return that
     module's module object back to the invoking module. In the `invoke()` call,
     `mod` is as it is defined above. `phase` is one of the constants in the
-    `ModuleManager.PHASES` argparse Namespace that represents the current
+    `ModuleManagerRun.PHASES` argparse Namespace that represents the current
     lifecycle phase. `phase` allows the invoked module to change its behaviour
     depending on which phase it is being invoked in.
 
