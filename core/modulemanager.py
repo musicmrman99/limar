@@ -647,7 +647,7 @@ class ModuleLifecycle:
                 return e
 
         if forwarded_data != None:
-            print(forwarded_data)
+            self._print(forwarded_data)
 
     def stop(self,
             mods_to_stop: dict[str, Any],
@@ -703,6 +703,27 @@ class ModuleLifecycle:
 
     # 'Friends' (ala C++) of other MM classes
     # --------------------
+
+    def _print(self,
+            *objs,
+            cur_mod_name: str | None = None,
+            mods: dict[str, Any] | None = None,
+            all_mods: dict[str, Any] | None = None
+    ):
+        if all_mods is None:
+            all_mods = self._all_mods
+        if (
+            'console' in all_mods and
+            self._mod_has_started_phase(
+                'console', PHASES.STARTED,
+                cur_mod_name=cur_mod_name, mods=mods
+            ) and
+            not self._mod_has_started_phase(
+                'console', PHASES.STOPPED,
+                cur_mod_name=cur_mod_name, mods=mods
+            )
+        ):
+            all_mods['console'].print(*objs)
 
     def _log(self,
             *objs,

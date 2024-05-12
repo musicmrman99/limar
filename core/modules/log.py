@@ -17,11 +17,16 @@ class LogModule:
     ]
     LEVELS = Namespace(**{name: name for name in LEVELS_ORDERED})
 
+    LOG_CONSOLE = 'log'
+
     # Lifecycle
     # --------------------
 
     # NOTE: As a core module, this module follows the core module lifecycle,
     #       which 'wraps around' the main module lifecycle.
+
+    def dependencies(self):
+        return ['console']
 
     def configure_env(self, *, parser: EnvironmentParser, **_):
         parser.add_variable('FILE', default_is_none=True)
@@ -38,33 +43,31 @@ class LogModule:
             action='count', default=None,
             help="Can be given up to 4 times to increase the log level")
 
-    def configure(self, *, env: Namespace, args: Namespace, **_):
-        # Output file
-        self._output_file_path = env.VCS_LOG_FILE
-        if 'log_output_file' in args and args.log_file is not None:
-            self._output_file_path = args.log_file
+    def configure(self, *,
+            mod: Namespace,
+            env: Namespace,
+            args: Namespace,
+            **_
+    ):
+        # For methods that aren't given it directly
+        self._mod = mod
+
+        # Output console
+        output_file_path = env.VCS_LOG_FILE
+        if 'log_file' in args and args.log_file is not None:
+            output_file_path = args.log_file
+
+        self._out_console_name = 'out'
+        if output_file_path is not None:
+            mod.console.add_console(self.LOG_CONSOLE, output_file_path)
+            self._out_console_name = self.LOG_CONSOLE
 
         # Verbosity
         self._verbosity = env.VCS_LOG_VERBOSITY
         if 'log_verbose' in args and args.log_verbose is not None:
             self._verbosity = args.log_verbose
 
-    def start(self, *_, **__):
-        # TODO: rotate log + clean up old logs
-
-        self._output_file = sys.stdout
-        if self._output_file_path is not None:
-            self._output_file = open(self._output_file_path, 'wt')
-
-        # Say which module instance has been started
-        self.debug(f'Started LogModule {self}')
-
-    def stop(self, *_, **__):
-        # Say which module instance has been stopped
-        self.debug(f'Stopping LogModule {self}')
-
-        if self._output_file_path is not None:
-            self._output_file.close()
+    # TODO: rotate log + clean up old logs
 
     # Invokation
     # --------------------
@@ -77,9 +80,9 @@ class LogModule:
                 " LogModule.LEVELS"
             )
 
-        file = self._output_file if not error else sys.stderr
         if self._verbosity >= self.LEVELS_ORDERED.index(level):
-            print(level+':', *objs, file=file)
+            console_name = self._out_console_name if not error else 'err'
+            self._mod.console.get(console_name).print(level+':', *objs)
 
     @ModuleAccessor.invokable_as_service
     def error(self, *objs):

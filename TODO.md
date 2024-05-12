@@ -2,27 +2,17 @@
 
 - ./ fix "Attempt to proceed to STOPPING ModuleLifecycle phase before the RUNNING phase" when argparse throws an ArgumentError because argument parsing failed
 
+- ./ add 'console' module
+  - ./ add console printer to MM
+
+---
+
 - update MM docstring
 - support getting env vars without prefixing
 
 ---
 
 - do something with tag values in `manifest`
-
----
-
-- add 'console' module
-  - add console printer to MM
-
-    def _print(self, *objs, all_mods: dict[str, Any] | None = None):
-        if all_mods is None:
-            all_mods = self._all_mods
-        if (
-            'console' in all_mods and
-            self._mod_has_completed_phase('console', 'STARTING')
-        ):
-            all_mods['console'].print(*objs)
-
 
 - add a way of viewing the cache, like:
 ```sh
