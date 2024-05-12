@@ -129,6 +129,8 @@ show-cr = diff-c HEAD^..HEAD
 ---
 
 - GitLab
+  - https://github.com/python-gitlab/python-gitlab
+
 - GitHub
 - Azure
 - Concourse - CI system

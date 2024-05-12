@@ -1,6 +1,15 @@
 # Todo
 
-- fix "Attempt to proceed to STOPPING ModuleManager run phase before the RUNNING phase" when argparse throws an ArgumentError because argument parsing failed
+- ./ fix "Attempt to proceed to STOPPING ModuleLifecycle phase before the RUNNING phase" when argparse throws an ArgumentError because argument parsing failed
+
+- update MM docstring
+- support getting env vars without prefixing
+
+---
+
+- do something with tag values in `manifest`
+
+---
 
 - add 'console' module
   - add console printer to MM
@@ -27,10 +36,6 @@ data_json = json.dumps(data_py)
 print(data_json)
 '
 ```
-
----
-
-- do something with tag values
 
 ---
 
@@ -67,10 +72,6 @@ Look at:
 ---
 
 - TESTING
-
----
-
-- support getting env vars without prefixing
 
 ---
 

@@ -48,6 +48,7 @@ PHASES = Namespace(**{name: name for name in PHASES_ORDERED})
 
 # Moving from one phase to the next is allowed by default, plus these:
 ALLOWED_PHASE_JUMPS: dict[Phase, list[Phase]] = {
+    'ARGUMENT_PARSING': ['STOPPING'],
     'STARTED': ['STOPPING']
 }
 
