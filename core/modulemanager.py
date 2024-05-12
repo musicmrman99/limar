@@ -396,7 +396,7 @@ class ModuleLifecycle:
                 )
 
         self._debug(
-            'Modules (dependencies resolved):', module_deps,
+            'Modules (dependencies resolved):', sorted_mod_names,
             mods=mods, all_mods=all_mods
         )
 
