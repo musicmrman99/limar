@@ -1,5 +1,7 @@
 from core.store import Store
 
+from core.modulemanager import ModuleAccessor
+
 # Types
 from core.envparse import EnvironmentParser
 from argparse import ArgumentParser, BooleanOptionalAction, Namespace
@@ -82,9 +84,9 @@ class CacheModule:
         if self._write_cache:
             assert self._store is not None, 'CacheModule.stop() called before CacheModule.configure()'
             self._store.flush()
-            mod.log().info(f"Flushed cache in {self.get_store_str()}")
+            mod.log.info(f"Flushed cache in {self.get_store_str()}")
         else:
-            mod.log().info(
+            mod.log.info(
                 f"Did not flush cache in {self.get_store_str()} (writing to"
                 " cache is disabled)"
             )
@@ -92,22 +94,25 @@ class CacheModule:
     # Invokation
     # --------------------
 
+    @ModuleAccessor.invokable_as_service
     def get_store_str(self):
         return str(self._store)
 
+    @ModuleAccessor.invokable_as_service
     def set(self, name, data):
         assert self._store is not None, 'CacheModule.set() called before CacheModule.configure()'
         self._store.setattr(name, 'type', 'pickle')
         self._store.set(name, data)
-        self._mod.log().info(
+        self._mod.log.info(
             f"Cached '{name}' in {self.get_store_str()} (not yet persisted)"
         )
 
+    @ModuleAccessor.invokable_as_service
     def get(self, name):
         assert self._store is not None, 'CacheModule.get() called before CacheModule.configure()'
         self._store.setattr(name, 'type', 'pickle')
         data = self._store.get(name, read_persistent=self._read_cache)
-        self._mod.log().info(
+        self._mod.log.info(
             f"Retrieved cached '{name}' from {self.get_store_str()} ("+(
                 "posibly from disk" if self._read_cache
                 else "from memory"
@@ -115,11 +120,12 @@ class CacheModule:
         )
         return data
 
+    @ModuleAccessor.invokable_as_service
     def delete(self, name):
         assert self._store is not None, 'CacheModule.delete() called before CacheModule.configure()'
         self._store.delete(name)
         self._store.delattrs(name)
-        self._mod.log().info(
+        self._mod.log.info(
             f"Deleted cached '{name}' from {self.get_store_str()} (not yet"
             " persisted)"
         )

@@ -1,5 +1,7 @@
 import sys
 
+from core.modulemanager import ModuleAccessor
+
 # Types
 from core.envparse import EnvironmentParser
 from argparse import ArgumentParser, Namespace
@@ -65,6 +67,7 @@ class LogModule:
     # Invokation
     # --------------------
 
+    @ModuleAccessor.invokable_as_service
     def log(self, *objs, error=False, level=0):
         file = self._output_file if not error else sys.stderr
         if self._verbosity >= level:
@@ -74,17 +77,22 @@ class LogModule:
                 level_text = LogModule.LEVELS[-1]
             print(level_text+':', *objs, file=file)
 
+    @ModuleAccessor.invokable_as_service
     def error(self, *objs):
         self.log(*objs, error=True, level=0)
 
+    @ModuleAccessor.invokable_as_service
     def warning(self, *objs):
         self.log(*objs, error=True, level=1)
 
+    @ModuleAccessor.invokable_as_service
     def info(self, *objs):
         self.log(*objs, level=2)
 
+    @ModuleAccessor.invokable_as_service
     def debug(self, *objs):
         self.log(*objs, level=3)
 
+    @ModuleAccessor.invokable_as_service
     def trace(self, *objs):
         self.log(*objs, level=4)

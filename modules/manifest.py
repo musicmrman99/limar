@@ -2,6 +2,7 @@ from hashlib import md5
 import re
 
 from core.store import Store
+from core.modulemanager import ModuleAccessor
 from core.exceptions import VCSException
 
 # Types
@@ -596,7 +597,7 @@ class ManifestModule:
         try:
             manifest_text = self._manifest_store.get(name+'.manifest.txt')
         except KeyError:
-            self._mod.log().trace(
+            self._mod.log.trace(
                 f"Manifest '{name}' not found. Skipping."
             )
             return
@@ -607,7 +608,7 @@ class ManifestModule:
 
         # Try cache
         try:
-            manifest = Manifest.from_raw(self._mod.cache().get(cached_name))
+            manifest = Manifest.from_raw(self._mod.cache.get(cached_name))
 
         except KeyError:
             # Import Deps (these are slow to import, so only (re)parse the
@@ -636,24 +637,24 @@ class ManifestModule:
 
             # Start Builder
             manifest_builder = ManifestBuilder(
-                self._mod.log(),
+                self._mod.log,
                 context_modules,
                 [name]
             )
 
             # Parse
-            listener = ManifestListenerImpl(self._mod.log(), manifest_builder)
+            listener = ManifestListenerImpl(self._mod.log, manifest_builder)
             walker = ParseTreeWalker()
             walker.walk(listener, tree)
 
             # Finalise
             manifest = manifest_builder.finalise()
-            self._mod.log().info(
+            self._mod.log.info(
                 f"Loaded manifest '{name}' from '{self._manifest_store}'"
             )
 
             # Cache Results
-            self._mod.cache().set(cached_name, manifest.raw())
+            self._mod.cache.set(cached_name, manifest.raw())
 
         # Add Manifest
         if self._manifests is None:
@@ -661,9 +662,7 @@ class ManifestModule:
         self._manifests.append(manifest)
 
     def __call__(self, *, mod: Namespace, args: Namespace, **_):
-        mod.log().trace(f"manifest(args={args})")
-
-        output = None
+        mod.log.trace(f"manifest(args={args})")
 
         if args.manifest_command == 'item':
             item_set = self.get_item_set(args.item_set)
@@ -702,7 +701,8 @@ class ManifestModule:
     # Configuration
     # --------------------
 
-    def add_context_modules(self, *modules):
+    @ModuleAccessor.invokable_as_config
+    def add_context_modules(self, *modules: Any) -> None:
         """
         Allows other modules to extend the manifest format with new contexts.
         """
@@ -715,7 +715,7 @@ class ManifestModule:
             raise VCSException(
                 f"Attempted registration of context module '{modules[0]}' after"
                 " manifest has been parsed. This was probably caused by"
-                " inappropriate use of mod.manifest().add_context_modules() by"
+                " inappropriate use of mod.manifest.add_context_modules() by"
                 " the last ModuleManager module to be invoked (either directly"
                 " or by another MM module)."
             )
@@ -740,8 +740,9 @@ class ManifestModule:
     # Invokation
     # --------------------
 
+    @ModuleAccessor.invokable_as_service
     def get_item_set(self, pattern: str | None = None) -> ItemSet:
-        self._mod.log().trace(
+        self._mod.log.trace(
             "manifest.get_item_set("
                 +(f"{pattern}" if pattern is None else f"'{pattern}'")+
             ")"
@@ -767,13 +768,14 @@ class ManifestModule:
 
         return item_set
 
+    @ModuleAccessor.invokable_as_service
     def get_item(self,
             pattern: str,
             *,
             item_set: ItemSet | None = None,
             properties: list[str] | None = None
     ) -> Item:
-        self._mod.log().trace(
+        self._mod.log.trace(
             "manifest.get_item("
                 +(pattern if pattern is None else f"'{pattern}'")+","
                 f" item_set={item_set},"
@@ -791,7 +793,7 @@ class ManifestModule:
                 for item in item_set.values()
                 if item_regex.search(item['ref'])
             )
-            self._mod.log().debug('found:', item)
+            self._mod.log.debug('found:', item)
         except StopIteration:
             raise VCSException(
                 f"item not found from pattern '{pattern}'"

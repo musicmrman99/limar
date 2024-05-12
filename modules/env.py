@@ -47,8 +47,8 @@ class EnvModule:
         self._temp_proj_pattern = args.in_project
 
         if self._temp_proj_pattern is not None:
-            item_set = mod.manifest().get_item_set('^project$')
-            temp_proj = mod.manifest().get_item(
+            item_set = mod.manifest.get_item_set('^project$')
+            temp_proj = mod.manifest.get_item(
                 self._temp_proj_pattern,
                 item_set=item_set
             )
@@ -63,11 +63,11 @@ class EnvModule:
                 )
 
         # Change dir (temp)
-        mod.log().trace(f'_temp_proj_path = {self._temp_proj_path}')
+        mod.log.trace(f'_temp_proj_path = {self._temp_proj_path}')
         if self._temp_proj_path is not None:
             self._previous_dir = os.getcwd()
 
-            mod.log().info(
+            mod.log.info(
                 f'Temporarily changing directory to: {self._temp_proj_path}'
             )
             os.chdir(self._temp_proj_path)
@@ -77,8 +77,8 @@ class EnvModule:
             # Get project path
             proj_pattern = args.project_pattern
 
-            item_set = mod.manifest().get_item_set('^project$')
-            proj = mod.manifest().get_item(proj_pattern, item_set=item_set)
+            item_set = mod.manifest.get_item_set('^project$')
+            proj = mod.manifest.get_item(proj_pattern, item_set=item_set)
             try:
                 proj_path = proj['tags']['path']
             except KeyError:
@@ -90,12 +90,12 @@ class EnvModule:
                 )
 
             # Change dir
-            mod.log().info(f'Changing directory to: {proj_path}')
-            mod.shell().add_command(f"cd '{proj_path}'")
+            mod.log.info(f'Changing directory to: {proj_path}')
+            mod.shell.add_command(f"cd '{proj_path}'")
 
     def stop(self, *, mod: Namespace, **_):
         # Change dir back (temp)
-        mod.log().trace(f'_previous_dir = {self._previous_dir}')
+        mod.log.trace(f'_previous_dir = {self._previous_dir}')
         if self._previous_dir is not None:
             os.chdir(self._previous_dir)
-            mod.log().info(f'Changing directory back to: {self._previous_dir}')
+            mod.log.info(f'Changing directory back to: {self._previous_dir}')

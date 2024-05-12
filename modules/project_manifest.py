@@ -1,3 +1,4 @@
+from argparse import Namespace
 from modules.manifest_modules import (
     # Generic
     tags,
@@ -8,9 +9,6 @@ from modules.manifest_modules import (
     uris_remote
 )
 
-# Types
-from core.modulemanager import ModuleManager
-
 class ProjectManifestModule:
 
     # Lifecycle
@@ -19,11 +17,10 @@ class ProjectManifestModule:
     def dependencies(self):
         return ['manifest']
 
-    def configure(self, *, mod: ModuleManager, **_):
-        mod.manifest().add_context_modules(
+    def configure(self, *, mod: Namespace, **_):
+        mod.manifest.add_context_modules(
             tags.Tags,
             projects.Projects,
             uris_local.UrisLocal,
             uris_remote.UrisRemote
         )
-        mod.manifest().add_context_modules()

@@ -1,6 +1,12 @@
 # Types
 from __future__ import annotations
-from typing import Any, Callable
+from typing import (
+    Any,
+    Callable,
+    Concatenate,
+    ParamSpec,
+    TypeVar
+)
 
 # Everything else
 import sys
@@ -14,37 +20,121 @@ from core.envparse import EnvironmentParser
 from core.exceptions import VCSException
 import core.modules as core_module_package
 
+Phase = str
+PHASES_ORDERED: list[Phase] = [
+    'CREATED',
+    'INITIALISATION',
+    'RESOLVE_DEPENDENCIES',
+    'CREATE_MODULE_ACCESSORS',
+
+    'ENVIRONMENT_CONFIGURATION',
+    'ENVIRONMENT_PARSING',
+
+    'ROOT_ARGUMENT_CONFIGURATION',
+    'ROOT_ARGUMENT_PARSING',
+    'CONFIGURATION',
+    'CONFIGURED',
+    'STARTING',
+    'STARTED',
+
+    'ARGUMENT_CONFIGURATION',
+    'ARGUMENT_PARSING',
+    'RUNNING',
+
+    'STOPPING',
+    'STOPPED'
+]
+PHASES = Namespace(**{name: name for name in PHASES_ORDERED})
+
+# Moving from one phase to the next is allowed by default, plus these:
+ALLOWED_PHASE_JUMPS: dict[Phase, list[Phase]] = {
+    'STARTED': ['STOPPING']
+}
+
+Params = ParamSpec("Params")
+RetType = TypeVar("RetType")
+
+class ModuleAccessor:
+    ACCESS_TYPES = Namespace(
+        CONFIG='CONFIG',
+        SERVICE='SERVICE'
+    )
+
+    def __init__(self,
+            lifecycle: ModuleLifecycle,
+            module_name: str
+    ):
+        self._lifecycle = lifecycle
+        self._module_name = module_name
+
+    def __getattr__(self, name):
+        return self._get_invoker(name)
+
+    def __getitem__(self, name):
+        return self._get_invoker(name)
+
+    def _get_invoker(self, name):
+        module = self._lifecycle._invoke_module(self._module_name)
+        invokation_target: Callable = getattr(module, name)
+
+        # You MUST decorate all invokable methods with one of the accessor
+        # static methods below that adds the needed metadata. Any methods that
+        # aren't decorated aren't invokable.
+        if not hasattr(invokation_target, '_access_type'):
+            raise VCSException(
+                f"Attempt to retreive inaccessible method '{name}' from module"
+                f" '{self._module_name}'"
+            )
+
+        def _invoker(*args, **kwargs):
+            cur_phase = self._lifecycle._phase_of(self._module_name)
+
+            valid_phases_for = {
+                self.ACCESS_TYPES.CONFIG: (
+                    PHASES.CONFIGURED
+                ),
+                self.ACCESS_TYPES.SERVICE: (
+                    PHASES.STARTED,
+                    PHASES.RUNNING,
+                    PHASES.STOPPING
+                )
+            }
+
+            valid_phases = valid_phases_for[invokation_target._access_type]
+            if (cur_phase not in valid_phases):
+                raise VCSException(
+                    "A module attempted to invoke"
+                    f" {invokation_target._access_type} method '{name}' of"
+                    f" module '{self._module_name}' outside of valid invokation"
+                    f" target phase (one of {valid_phases}; was in {cur_phase}"
+                    " phase)."
+                    " Ignoring invokation."
+                    " This is an issue with the implementation of one of your"
+                    " installed modules, not your command or configuration."
+                )
+
+            return invokation_target(*args, **kwargs)
+
+        return _invoker
+
+    # Utils
+    # --------------------
+
+    @staticmethod
+    def invokable_as_config(
+            func: Callable[Concatenate[Any, Params], RetType]
+    ) -> Callable[Concatenate[Any, Params], RetType]:
+        func._access_type = ModuleAccessor.ACCESS_TYPES.CONFIG # type: ignore
+        return func # type: ignore
+
+    @staticmethod
+    def invokable_as_service(
+            func: Callable[Concatenate[Any, Params], RetType]
+    ) -> Callable[Concatenate[Any, Params], RetType]:
+        func._access_type = ModuleAccessor.ACCESS_TYPES.SERVICE # type: ignore
+        return func # type: ignore
+
 class ModuleLifecycle:
-    Phase = str
-    PHASES_ORDERED: list[Phase] = [
-        'CREATED',
-        'INITIALISATION',
-        'RESOLVE_DEPENDENCIES',
-        'CREATE_MODULE_ACCESSORS',
-
-        'ENVIRONMENT_CONFIGURATION',
-        'ENVIRONMENT_PARSING',
-
-        'ROOT_ARGUMENT_CONFIGURATION',
-        'ROOT_ARGUMENT_PARSING',
-        'CONFIGURATION',
-        'STARTING',
-        'STARTED',
-
-        'ARGUMENT_CONFIGURATION',
-        'ARGUMENT_PARSING',
-        'RUNNING',
-
-        'STOPPING',
-        'STOPPED'
-    ]
-    PHASES = Namespace(**{name: name for name in PHASES_ORDERED})
-
-    # Moving from one phase to the next is allowed by default, plus these:
-    ALLOWED_PHASE_JUMPS: dict[Phase, list[Phase]] = {
-        'STARTED': ['STOPPING']
-    }
-
     # Constructors
     # --------------------
 
@@ -61,7 +151,8 @@ class ModuleLifecycle:
         self._cli_args = cli_args
         self._parent_lifecycle = parent_lifecycle
 
-        self._phase = self.PHASES.CREATED
+        self._phase = PHASES.CREATED
+        self._cur_mod_name = None
         self._mods = {}
         self._all_mods = {}
 
@@ -122,7 +213,7 @@ class ModuleLifecycle:
             self._root_args,
             self._accessor_object
         )
-        self._started_modules, self._start_exceptions = self.start(
+        self._started_mods, self._start_exceptions = self.start(
             self._mods,
             self._env,
             self._root_args,
@@ -147,12 +238,26 @@ class ModuleLifecycle:
         )
 
     def __exit__(self, type, value, traceback):
+        # Stop modules in reverse order of starting them. Also reverse the
+        # mods state to reverse the order they are considered to have reached
+        # the 'STOPPED' phase. See _phase_of(). Don't need to do this to
+        # all_mods because all_mods is only used for lookup.
+        mods_to_stop = {
+            name: module
+            for name, module in reversed(self._started_mods.items())
+        }
+        self._mods = {
+            name: module
+            for name, module in reversed(self._mods.items())
+        }
+
         # Can mutate module state
         stop_exceptions = self.stop(
-            self._started_modules,
+            mods_to_stop,
+
             # Update other indexes
-            self._all_mods,
             self._mods,
+            self._all_mods,
 
             self._env,
             self._root_args,
@@ -181,6 +286,8 @@ class ModuleLifecycle:
         mods: dict[str, Any] = {}
         all_mods: dict[str, Any] = dict(inherited_mods)
         for name, factory in mod_factories.items():
+            self._proceed_to_module(name)
+
             if name in mods or name in inherited_mods:
                 self._debug(
                     f"Module '{name}' already initialised, skipping",
@@ -304,11 +411,10 @@ class ModuleLifecycle:
 
         self._proceed_to_phase('CREATE_MODULE_ACCESSORS')
 
-        accessors = {
-            name: lambda name=name: self.invoke_module(name)
+        return Namespace(**{
+            name: ModuleAccessor(self, name)
             for name in all_mods
-        }
-        return Namespace(**accessors)
+        })
 
     def configure_environment(self,
             all_mods: dict[str, Any],
@@ -317,6 +423,8 @@ class ModuleLifecycle:
         self._proceed_to_phase('ENVIRONMENT_CONFIGURATION')
 
         for name, module in all_mods.items():
+            self._proceed_to_module(name)
+
             if hasattr(module, 'configure_env'):
                 self._debug(
                     f"Configuring environment for module '{name}'",
@@ -354,6 +462,8 @@ class ModuleLifecycle:
         self._proceed_to_phase('ROOT_ARGUMENT_CONFIGURATION')
 
         for name, module in all_mods.items():
+            self._proceed_to_module(name)
+
             if hasattr(module, 'configure_root_args'):
                 self._debug(
                     f"Configuring root arguments for module '{name}'",
@@ -400,9 +510,13 @@ class ModuleLifecycle:
         self._proceed_to_phase('CONFIGURATION')
 
         for name, module in mods.items():
+            self._proceed_to_module(name)
+
             if hasattr(module, 'configure'):
                 self._debug(f"Configuring module '{name}'", cur_mod_name=name)
                 module.configure(mod=accessor_object, env=env, args=root_args)
+
+        self._proceed_to_phase('CONFIGURED')
 
     def start(self,
             mods: dict[str, Any],
@@ -418,6 +532,8 @@ class ModuleLifecycle:
         started_modules: dict[str, Any] = {}
         exceptions: list[Exception | KeyboardInterrupt] = []
         for name, module in mods.items():
+            self._proceed_to_module(name)
+
             if hasattr(module, 'start'):
                 self._debug(f"Starting module '{name}'", cur_mod_name=name)
                 try:
@@ -450,6 +566,8 @@ class ModuleLifecycle:
 
         arg_subparsers = None
         for name, module in all_mods.items():
+            self._proceed_to_module(name)
+
             if hasattr(module, 'configure_args'):
                 if arg_subparsers is None:
                     arg_subparsers = arg_parser.add_subparsers(dest="module")
@@ -469,6 +587,10 @@ class ModuleLifecycle:
 
         module_args_set = {}
         for name, module_cli_args in module_full_cli_args_set.items():
+            # Don't _set_cur_module here, as module_full_cli_args_set may be in
+            # any order and may have duplicates, which breaks the purpose of
+            # that method. See _phase_of().
+
             self._debug(
                 f"Parsing arguments for module '{name}':"
                 f" {' '.join(module_cli_args)}",
@@ -495,14 +617,18 @@ class ModuleLifecycle:
 
         forwarded_data = None
         for name, module_args in module_args_set.items():
+            # Don't _set_cur_module here, as module_args_set may be in any order
+            # and may have duplicates, which breaks the purpose of that method.
+            # See _phase_of().
+
             self._debug(f"Running module '{name}'", cur_mod_name=name)
             try:
                 # Eww, using object state instead of args ... yes, but modules
-                # have to be able to do this anyway (probably by proxy via the
-                # accessors), so it's a precondition of this function that the
-                # state needed for `invoke_module()` is set. This asserts that
-                # precondition to be true.
-                module = self.invoke_module(name)
+                # have to be able to do this anyway (via the accessors), so it's
+                # a precondition of this function that the state needed for
+                # `invoke_module()` is set. This asserts that precondition to be
+                # true.
+                module = self._invoke_module(name)
                 if not callable(module):
                     raise VCSException(f"Module not callable: '{name}'")
 
@@ -523,9 +649,9 @@ class ModuleLifecycle:
             print(forwarded_data)
 
     def stop(self,
-            started_modules: dict[str, Any],
-            all_mods: dict[str, Any],
+            mods_to_stop: dict[str, Any],
             mods: dict[str, Any],
+            all_mods: dict[str, Any],
 
             env: Namespace,
             root_args: Namespace,
@@ -536,7 +662,9 @@ class ModuleLifecycle:
         self._proceed_to_phase('STOPPING')
 
         stop_exceptions: list[Exception | KeyboardInterrupt] = []
-        for name, module in reversed(started_modules.items()):
+        for name, module in mods_to_stop.items():
+            self._proceed_to_module(name)
+
             if hasattr(module, 'stop'):
                 self._debug(f"Stopping module '{name}'", cur_mod_name=name)
                 try:
@@ -572,40 +700,7 @@ class ModuleLifecycle:
         self._proceed_to_phase('STOPPED')
         return stop_exceptions
 
-    # Module-Accessible Utils
-    # --------------------
-
-    def is_initialised(self, name: str) -> bool:
-        """
-        Return True if a module with the given name has been initialised,
-        otherwise return False.
-        """
-
-        return name in self._all_mods
-
-    def invoke_module(self, name: str) -> Any:
-        """
-        Invoke and return the instance of the module with the given name.
-
-        If the named module has not been initialised, raise a VCSException.
-        """
-
-        if not self.is_initialised(name):
-            raise VCSException(
-                f"Attempt to invoke uninitialised module '{name}'"
-            )
-
-        # Lifecycle: Invoke
-        if hasattr(self._all_mods[name], 'invoke'):
-            self._debug(f"Invoking module: {name}", cur_mod_name=name)
-            self._all_mods[name].invoke(
-                phase=self._phase,
-                mod=self._accessor_object
-            )
-
-        return self._all_mods[name]
-
-    # 'Friends' (ala C++) of ModuleManager
+    # 'Friends' (ala C++) of other MM classes
     # --------------------
 
     def _log(self,
@@ -624,7 +719,7 @@ class ModuleLifecycle:
                 cur_mod_name=cur_mod_name, mods=mods
             ) and
             not self._mod_has_started_phase(
-                'log', 'STOPPING',
+                'log', 'STOPPED',
                 cur_mod_name=cur_mod_name, mods=mods
             )
         ):
@@ -700,9 +795,6 @@ class ModuleLifecycle:
             all_mods=all_mods
         )
 
-    # Utils
-    # --------------------
-
     def _phase_of(self,
             mod_name: str,
             cur_mod_name: str | None = None,
@@ -710,6 +802,8 @@ class ModuleLifecycle:
     ) -> Phase:
         if mods is None:
             mods = self._mods
+        if cur_mod_name is None:
+            cur_mod_name = self._cur_mod_name
 
         if mod_name in mods:
             mod_list = list(mods.keys())
@@ -737,32 +831,55 @@ class ModuleLifecycle:
             cur_mod_name: str | None = None,
             mods: dict[str, Any] | None = None
     ) -> bool:
-        cur_index = self.PHASES_ORDERED.index(
+        cur_index = PHASES_ORDERED.index(
             self._phase_of(mod_name, cur_mod_name=cur_mod_name, mods=mods)
         )
-        required_index = self.PHASES_ORDERED.index(required_phase)
+        required_index = PHASES_ORDERED.index(required_phase)
         return cur_index >= required_index # Close enough
 
-    def _phase_after(self, phase):
-        return self.PHASES_ORDERED[self.PHASES_ORDERED.index(phase) + 1]
+    def _invoke_module(self, name: str) -> Any:
+        """
+        Invoke and return the instance of the module with the given name.
+
+        If the named module has not been initialised, raise a VCSException.
+        """
+
+        if not self._is_initialised(name):
+            raise VCSException(
+                f"Attempt to invoke uninitialised module '{name}'"
+            )
+
+        # Lifecycle: Invoke
+        if hasattr(self._all_mods[name], 'invoke'):
+            self._debug(f"Invoking module: {name}", cur_mod_name=name)
+            self._all_mods[name].invoke(
+                phase=self._phase,
+                mod=self._accessor_object
+            )
+
+        return self._all_mods[name]
+
+    # Utils
+    # --------------------
 
     def _proceed_to_phase(self,
             phase: Phase,
             mods: dict[str, Any] | None = None,
             all_mods: dict[str, Any] | None = None
     ) -> None:
-        cur_index = self.PHASES_ORDERED.index(self._phase)
-        requested_index = self.PHASES_ORDERED.index(phase)
+        cur_index = PHASES_ORDERED.index(self._phase)
+        requested_index = PHASES_ORDERED.index(phase)
         required_cur_index = requested_index - 1
 
         if (
             required_cur_index == cur_index or (
-                self._phase in self.ALLOWED_PHASE_JUMPS and
-                phase in self.ALLOWED_PHASE_JUMPS[self._phase]
+                self._phase in ALLOWED_PHASE_JUMPS and
+                phase in ALLOWED_PHASE_JUMPS[self._phase]
             )
         ):
-            self._phase = self.PHASES_ORDERED[requested_index]
-            if self._phase is not self.PHASES.CREATED:
+            self._phase = PHASES_ORDERED[requested_index]
+            self._proceed_to_module(None)
+            if self._phase is not PHASES.CREATED:
                 self._info(
                     f"{'-'*5} {self._phase} {'-'*(43-len(self._phase))}",
                     mods=mods,
@@ -772,8 +889,22 @@ class ModuleLifecycle:
             raise VCSException(
                 f"Attempt to proceed to {phase} ModuleLifecycle phase"
                 f" {'before' if cur_index < required_cur_index else 'after'}"
-                f" the {self.PHASES_ORDERED[required_cur_index]} phase"
+                f" the {PHASES_ORDERED[required_cur_index]} phase"
             )
+
+    def _proceed_to_module(self, module_name: str | None):
+        self._cur_mod_name = module_name
+
+    def _phase_after(self, phase):
+        return PHASES_ORDERED[PHASES_ORDERED.index(phase) + 1]
+
+    def _is_initialised(self, name: str) -> bool:
+        """
+        Return True if a module with the given name has been initialised,
+        otherwise return False.
+        """
+
+        return name in self._all_mods
 
     def _list_split(self, list_, sep):
         lists = [[]]

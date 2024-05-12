@@ -1,3 +1,4 @@
+from core.modulemanager import ModuleAccessor
 from core.shellscript import ShellScript
 
 # Types
@@ -42,10 +43,10 @@ class ShellModule:
     ):
         assert self._script is not None, 'stop() run before start()'
         if len(start_exceptions) == 0 and run_exception is None:
-            mod.log().debug("Writing added commands to the shell script")
+            mod.log.debug("Writing added commands to the shell script")
             self._script.write()
         else:
-            mod.log().warning(
+            mod.log.warning(
                 "Skipping writing commands to the shell script to avoid causing"
                 " any more changes than necessary after the above error(s)."
             )
@@ -53,9 +54,10 @@ class ShellModule:
     # Invokation
     # --------------------
 
+    @ModuleAccessor.invokable_as_service
     def add_command(self, command: str) -> None:
         assert self._script is not None, 'add_shell_command() run before start()'
-        self._mod.log().debug(
+        self._mod.log.debug(
             f"Adding shell command to shell script: {command}"
         )
         self._script.add_command(command)
