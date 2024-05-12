@@ -48,8 +48,8 @@ PHASES = Namespace(**{name: name for name in PHASES_ORDERED})
 
 # Moving from one phase to the next is allowed by default, plus these:
 ALLOWED_PHASE_JUMPS: dict[Phase, list[Phase]] = {
-    'ARGUMENT_PARSING': ['STOPPING'],
-    'STARTED': ['STOPPING']
+    PHASES.ARGUMENT_PARSING: [PHASES.STOPPING],
+    PHASES.STARTED: [PHASES.STOPPING]
 }
 
 Params = ParamSpec("Params")
@@ -282,7 +282,7 @@ class ModuleLifecycle:
             mod_factories: dict[str, Callable],
             inherited_mods: dict[str, Any]
     ) -> tuple[dict[str, Any], dict[str, Any]]:
-        self._proceed_to_phase('INITIALISATION')
+        self._proceed_to_phase(PHASES.INITIALISATION)
 
         mods: dict[str, Any] = {}
         all_mods: dict[str, Any] = dict(inherited_mods)
@@ -331,7 +331,7 @@ class ModuleLifecycle:
             mods: dict[str, Any],
             all_mods: dict[str, Any]
     ) -> dict[str, Any]:
-        self._proceed_to_phase('RESOLVE_DEPENDENCIES')
+        self._proceed_to_phase(PHASES.RESOLVE_DEPENDENCIES)
 
         # This function assumes that any parent Lifecycle has or will have its
         # `resolve_dependencies()` function called to ensure that all mods that
@@ -410,7 +410,7 @@ class ModuleLifecycle:
         Lifecycle to invoke each module.
         """
 
-        self._proceed_to_phase('CREATE_MODULE_ACCESSORS')
+        self._proceed_to_phase(PHASES.CREATE_MODULE_ACCESSORS)
 
         return Namespace(**{
             name: ModuleAccessor(self, name)
@@ -421,7 +421,7 @@ class ModuleLifecycle:
             all_mods: dict[str, Any],
             env_parser: EnvironmentParser
     ) -> None:
-        self._proceed_to_phase('ENVIRONMENT_CONFIGURATION')
+        self._proceed_to_phase(PHASES.ENVIRONMENT_CONFIGURATION)
 
         for name, module in all_mods.items():
             self._proceed_to_module(name)
@@ -441,7 +441,7 @@ class ModuleLifecycle:
             env_parser: EnvironmentParser,
             cli_env: dict[str, str] | None = None
     ) -> Namespace:
-        self._proceed_to_phase('ENVIRONMENT_PARSING')
+        self._proceed_to_phase(PHASES.ENVIRONMENT_PARSING)
 
         if cli_env is not None:
             env = env_parser.parse_env(cli_env)
@@ -460,7 +460,7 @@ class ModuleLifecycle:
             env: Namespace,
             arg_parser: ArgumentParser
     ) -> None:
-        self._proceed_to_phase('ROOT_ARGUMENT_CONFIGURATION')
+        self._proceed_to_phase(PHASES.ROOT_ARGUMENT_CONFIGURATION)
 
         for name, module in all_mods.items():
             self._proceed_to_module(name)
@@ -476,7 +476,7 @@ class ModuleLifecycle:
             arg_parser: ArgumentParser,
             cli_args: list[str] | None = None
     ) -> tuple[Namespace, dict[str, list[str]]]:
-        self._proceed_to_phase('ROOT_ARGUMENT_PARSING')
+        self._proceed_to_phase(PHASES.ROOT_ARGUMENT_PARSING)
 
         if cli_args is None:
             cli_args = sys.argv[1:]
@@ -508,7 +508,7 @@ class ModuleLifecycle:
             root_args: Namespace,
             accessor_object: Any
     ) -> None:
-        self._proceed_to_phase('CONFIGURATION')
+        self._proceed_to_phase(PHASES.CONFIGURATION)
 
         for name, module in mods.items():
             self._proceed_to_module(name)
@@ -517,7 +517,7 @@ class ModuleLifecycle:
                 self._debug(f"Configuring module '{name}'", cur_mod_name=name)
                 module.configure(mod=accessor_object, env=env, args=root_args)
 
-        self._proceed_to_phase('CONFIGURED')
+        self._proceed_to_phase(PHASES.CONFIGURED)
 
     def start(self,
             mods: dict[str, Any],
@@ -525,7 +525,7 @@ class ModuleLifecycle:
             root_args: Namespace,
             accessor_object: Any
     ) -> tuple[dict[str, Any], list[Exception | KeyboardInterrupt]]:
-        self._proceed_to_phase('STARTING')
+        self._proceed_to_phase(PHASES.STARTING)
 
         # TODO: Log exception tracebacks as well as capturing exception objects
 
@@ -555,7 +555,7 @@ class ModuleLifecycle:
                     # an error.
                     break
 
-        self._proceed_to_phase('STARTED')
+        self._proceed_to_phase(PHASES.STARTED)
         return started_modules, exceptions
 
     def configure_arguments(self,
@@ -563,7 +563,7 @@ class ModuleLifecycle:
             env: Namespace,
             arg_parser: ArgumentParser
     ) -> None:
-        self._proceed_to_phase('ARGUMENT_CONFIGURATION')
+        self._proceed_to_phase(PHASES.ARGUMENT_CONFIGURATION)
 
         arg_subparsers = None
         for name, module in all_mods.items():
@@ -584,7 +584,7 @@ class ModuleLifecycle:
             arg_parser: ArgumentParser,
             module_full_cli_args_set: dict[str, list[str]]
     ) -> dict[str, Namespace]:
-        self._proceed_to_phase('ARGUMENT_PARSING')
+        self._proceed_to_phase(PHASES.ARGUMENT_PARSING)
 
         module_args_set = {}
         for name, module_cli_args in module_full_cli_args_set.items():
@@ -608,7 +608,7 @@ class ModuleLifecycle:
             start_exceptions: list[Exception | KeyboardInterrupt],
             accessor_object: Any
     ) -> Exception | KeyboardInterrupt | None:
-        self._proceed_to_phase('RUNNING')
+        self._proceed_to_phase(PHASES.RUNNING)
 
         if len(start_exceptions) > 0:
             self._warning(
@@ -660,7 +660,7 @@ class ModuleLifecycle:
             run_exception: Exception | KeyboardInterrupt | None,
             accessor_object: Any
     ):
-        self._proceed_to_phase('STOPPING')
+        self._proceed_to_phase(PHASES.STOPPING)
 
         stop_exceptions: list[Exception | KeyboardInterrupt] = []
         for name, module in mods_to_stop.items():
@@ -698,7 +698,7 @@ class ModuleLifecycle:
                     del mods[name]
                     del all_mods[name]
 
-        self._proceed_to_phase('STOPPED')
+        self._proceed_to_phase(PHASES.STOPPED)
         return stop_exceptions
 
     # 'Friends' (ala C++) of other MM classes
@@ -716,11 +716,11 @@ class ModuleLifecycle:
         if (
             'log' in all_mods and
             self._mod_has_started_phase(
-                'log', 'STARTED',
+                'log', PHASES.STARTED,
                 cur_mod_name=cur_mod_name, mods=mods
             ) and
             not self._mod_has_started_phase(
-                'log', 'STOPPED',
+                'log', PHASES.STOPPED,
                 cur_mod_name=cur_mod_name, mods=mods
             )
         ):

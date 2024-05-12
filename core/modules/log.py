@@ -1,19 +1,21 @@
 import sys
 
 from core.modulemanager import ModuleAccessor
+from core.exceptions import VCSException
 
 # Types
 from core.envparse import EnvironmentParser
 from argparse import ArgumentParser, Namespace
 
 class LogModule:
-    LEVELS = [
+    LEVELS_ORDERED = [
         'ERROR',
         'WARNING',
         'INFO',
         'DEBUG',
         'TRACE'
     ]
+    LEVELS = Namespace(**{name: name for name in LEVELS_ORDERED})
 
     # Lifecycle
     # --------------------
@@ -68,31 +70,33 @@ class LogModule:
     # --------------------
 
     @ModuleAccessor.invokable_as_service
-    def log(self, *objs, error=False, level=0):
+    def log(self, *objs, error=False, level=LEVELS.INFO):
+        if level not in self.LEVELS_ORDERED:
+            raise VCSException(
+                f"Log level '{level}' not recognised. Should be a level from"
+                " LogModule.LEVELS"
+            )
+
         file = self._output_file if not error else sys.stderr
-        if self._verbosity >= level:
-            try:
-                level_text = LogModule.LEVELS[level]
-            except IndexError:
-                level_text = LogModule.LEVELS[-1]
-            print(level_text+':', *objs, file=file)
+        if self._verbosity >= self.LEVELS_ORDERED.index(level):
+            print(level+':', *objs, file=file)
 
     @ModuleAccessor.invokable_as_service
     def error(self, *objs):
-        self.log(*objs, error=True, level=0)
+        self.log(*objs, error=True, level=self.LEVELS.ERROR)
 
     @ModuleAccessor.invokable_as_service
     def warning(self, *objs):
-        self.log(*objs, error=True, level=1)
+        self.log(*objs, error=True, level=self.LEVELS.WARNING)
 
     @ModuleAccessor.invokable_as_service
     def info(self, *objs):
-        self.log(*objs, level=2)
+        self.log(*objs, level=self.LEVELS.INFO)
 
     @ModuleAccessor.invokable_as_service
     def debug(self, *objs):
-        self.log(*objs, level=3)
+        self.log(*objs, level=self.LEVELS.DEBUG)
 
     @ModuleAccessor.invokable_as_service
     def trace(self, *objs):
-        self.log(*objs, level=4)
+        self.log(*objs, level=self.LEVELS.TRACE)
