@@ -184,6 +184,7 @@ class ModuleLifecycle:
             if name in mods or name in inherited_mods:
                 self._debug(
                     f"Module '{name}' already initialised, skipping",
+                    cur_mod_name=name,
                     mods=mods,
                     all_mods=all_mods
                 )
@@ -191,6 +192,7 @@ class ModuleLifecycle:
             else:
                 self._debug(
                     f"Initialising module '{name}'",
+                    cur_mod_name=name,
                     mods=mods,
                     all_mods=all_mods
                 )
@@ -205,6 +207,7 @@ class ModuleLifecycle:
                 all_mods[name] = mods[name] = factory()
                 self._debug(
                     f"Initialised module '{name}' as {mods[name]}",
+                    cur_mod_name=name,
                     mods=mods,
                     all_mods=all_mods
                 )
@@ -250,8 +253,7 @@ class ModuleLifecycle:
 
         self._debug(
             'Modules (dependency graph):', module_deps,
-            mods=mods,
-            all_mods=all_mods
+            mods=mods, all_mods=all_mods
         )
         sorter = TopologicalSorter(module_deps)
         try:
@@ -287,8 +289,7 @@ class ModuleLifecycle:
 
         self._debug(
             'Modules (dependencies resolved):', module_deps,
-            mods=mods,
-            all_mods=all_mods
+            mods=mods, all_mods=all_mods
         )
 
         return sorted_mods
@@ -317,7 +318,10 @@ class ModuleLifecycle:
 
         for name, module in all_mods.items():
             if hasattr(module, 'configure_env'):
-                self._debug(f"Configuring environment for module '{name}'")
+                self._debug(
+                    f"Configuring environment for module '{name}'",
+                    cur_mod_name=name
+                )
                 module_env_parser = env_parser.add_parser(name)
                 module.configure_env(
                     parser=module_env_parser,
@@ -351,7 +355,10 @@ class ModuleLifecycle:
 
         for name, module in all_mods.items():
             if hasattr(module, 'configure_root_args'):
-                self._debug(f"Configuring root arguments for module '{name}'")
+                self._debug(
+                    f"Configuring root arguments for module '{name}'",
+                    cur_mod_name=name
+                )
                 module.configure_root_args(env=env, parser=arg_parser)
 
     def parse_root_arguments(self,
@@ -394,7 +401,7 @@ class ModuleLifecycle:
 
         for name, module in mods.items():
             if hasattr(module, 'configure'):
-                self._debug(f"Configuring module '{name}'")
+                self._debug(f"Configuring module '{name}'", cur_mod_name=name)
                 module.configure(mod=accessor_object, env=env, args=root_args)
 
     def start(self,
@@ -412,13 +419,19 @@ class ModuleLifecycle:
         exceptions: list[Exception | KeyboardInterrupt] = []
         for name, module in mods.items():
             if hasattr(module, 'start'):
-                self._debug(f"Starting module '{name}'")
+                self._debug(f"Starting module '{name}'", cur_mod_name=name)
                 try:
                     module.start(mod=accessor_object, env=env, args=root_args)
                     started_modules[name] = module
                 except (Exception, KeyboardInterrupt) as e:
-                    self._error(f"Starting module '{name}' failed")
-                    self._error('Stopping all successfully started modules ...')
+                    self._error(
+                        f"Starting module '{name}' failed",
+                        cur_mod_name=name
+                    )
+                    self._error(
+                        'Stopping all successfully started modules ...',
+                        cur_mod_name=name
+                    )
                     exceptions.append(e)
 
                     # Don't try to start any more modules if we've already got
@@ -441,7 +454,10 @@ class ModuleLifecycle:
                 if arg_subparsers is None:
                     arg_subparsers = arg_parser.add_subparsers(dest="module")
 
-                self._debug(f"Configuring arguments for module '{name}'")
+                self._debug(
+                    f"Configuring arguments for module '{name}'",
+                    cur_mod_name=name
+                )
                 module_arg_parser = arg_subparsers.add_parser(name)
                 module.configure_args(env=env, parser=module_arg_parser)
 
@@ -455,10 +471,11 @@ class ModuleLifecycle:
         for name, module_cli_args in module_full_cli_args_set.items():
             self._debug(
                 f"Parsing arguments for module '{name}':"
-                f" {' '.join(module_cli_args)}"
+                f" {' '.join(module_cli_args)}",
+                cur_mod_name=name
             )
             module_args_set[name] = arg_parser.parse_args(module_cli_args)
-            self._trace('Result:', module_args_set[name])
+            self._trace('Result:', module_args_set[name], cur_mod_name=name)
 
         return module_args_set
 
@@ -478,7 +495,7 @@ class ModuleLifecycle:
 
         forwarded_data = None
         for name, module_args in module_args_set.items():
-            self._debug(f"Running module '{name}'")
+            self._debug(f"Running module '{name}'", cur_mod_name=name)
             try:
                 # Eww, using object state instead of args ... yes, but modules
                 # have to be able to do this anyway (probably by proxy via the
@@ -497,7 +514,8 @@ class ModuleLifecycle:
                 )
             except (Exception, KeyboardInterrupt) as e:
                 self._error(
-                    f"Run of module '{name}' failed, aborting further calls"
+                    f"Run of module '{name}' failed, aborting further calls",
+                    cur_mod_name=name
                 )
                 return e
 
@@ -520,7 +538,7 @@ class ModuleLifecycle:
         stop_exceptions: list[Exception | KeyboardInterrupt] = []
         for name, module in reversed(started_modules.items()):
             if hasattr(module, 'stop'):
-                self._debug(f"Stopping module '{name}'")
+                self._debug(f"Stopping module '{name}'", cur_mod_name=name)
                 try:
                     module.stop(
                         mod=accessor_object,
@@ -532,13 +550,15 @@ class ModuleLifecycle:
                     )
                 except (Exception, KeyboardInterrupt) as e:
                     self._error(
-                        f"Stopping module '{name}' failed, SKIPPING."
+                        f"Stopping module '{name}' failed, SKIPPING.",
+                        cur_mod_name=name
                     )
                     self._warning(
                         "THIS MAY HAVE LEFT YOUR SHELL, PROJECT, OR ANYTHING"
                         " ELSE UNDER ModuleManager's MANAGEMENT IN AN UNCLEAN"
                         " STATE! If you know what the above module does, then"
-                        " you may be able to clean up manually."
+                        " you may be able to clean up manually.",
+                        cur_mod_name=name
                     )
                     stop_exceptions.append(e)
 
@@ -577,7 +597,7 @@ class ModuleLifecycle:
 
         # Lifecycle: Invoke
         if hasattr(self._all_mods[name], 'invoke'):
-            self._debug(f"Invoking module: {name}")
+            self._debug(f"Invoking module: {name}", cur_mod_name=name)
             self._all_mods[name].invoke(
                 phase=self._phase,
                 mod=self._accessor_object
@@ -588,8 +608,10 @@ class ModuleLifecycle:
     # 'Friends' (ala C++) of ModuleManager
     # --------------------
 
-    def _error(self,
+    def _log(self,
             *objs,
+            log_type: str,
+            cur_mod_name: str | None = None,
             mods: dict[str, Any] | None = None,
             all_mods: dict[str, Any] | None = None
     ):
@@ -597,81 +619,113 @@ class ModuleLifecycle:
             all_mods = self._all_mods
         if (
             'log' in all_mods and
-            self._mod_has_started_phase('log', 'STARTED', mods=mods) and
-            not self._mod_has_started_phase('log', 'STOPPING', mods=mods)
+            self._mod_has_started_phase(
+                'log', 'STARTED',
+                cur_mod_name=cur_mod_name, mods=mods
+            ) and
+            not self._mod_has_started_phase(
+                'log', 'STOPPING',
+                cur_mod_name=cur_mod_name, mods=mods
+            )
         ):
-            all_mods['log'].error(*objs)
+            getattr(all_mods['log'], log_type)(*objs)
+
+    def _error(self,
+            *objs,
+            cur_mod_name: str | None = None,
+            mods: dict[str, Any] | None = None,
+            all_mods: dict[str, Any] | None = None
+    ):
+        self._log(
+            *objs,
+            log_type='error',
+            cur_mod_name=cur_mod_name,
+            mods=mods,
+            all_mods=all_mods
+        )
 
     def _warning(self,
             *objs,
+            cur_mod_name: str | None = None,
             mods: dict[str, Any] | None = None,
             all_mods: dict[str, Any] | None = None
     ):
-        if all_mods is None:
-            all_mods = self._all_mods
-        if (
-            'log' in all_mods and
-            self._mod_has_started_phase('log', 'STARTED', mods=mods) and
-            not self._mod_has_started_phase('log', 'STOPPING', mods=mods)
-        ):
-            all_mods['log'].warning(*objs)
+        self._log(
+            *objs,
+            log_type='warning',
+            cur_mod_name=cur_mod_name,
+            mods=mods,
+            all_mods=all_mods
+        )
 
     def _info(self,
             *objs,
+            cur_mod_name: str | None = None,
             mods: dict[str, Any] | None = None,
             all_mods: dict[str, Any] | None = None
     ):
-        if all_mods is None:
-            all_mods = self._all_mods
-        if (
-            'log' in all_mods and
-            self._mod_has_started_phase('log', 'STARTED', mods=mods) and
-            not self._mod_has_started_phase('log', 'STOPPING', mods=mods)
-        ):
-            all_mods['log'].info(*objs)
+        self._log(
+            *objs,
+            log_type='info',
+            cur_mod_name=cur_mod_name,
+            mods=mods,
+            all_mods=all_mods
+        )
 
     def _debug(self,
             *objs,
+            cur_mod_name: str | None = None,
             mods: dict[str, Any] | None = None,
             all_mods: dict[str, Any] | None = None
     ):
-        if all_mods is None:
-            all_mods = self._all_mods
-        if (
-            'log' in all_mods and
-            self._mod_has_started_phase('log', 'STARTED', mods=mods) and
-            not self._mod_has_started_phase('log', 'STOPPING', mods=mods)
-        ):
-            all_mods['log'].debug(*objs)
+        self._log(
+            *objs,
+            log_type='debug',
+            cur_mod_name=cur_mod_name,
+            mods=mods,
+            all_mods=all_mods
+        )
 
     def _trace(self,
             *objs,
+            cur_mod_name: str | None = None,
             mods: dict[str, Any] | None = None,
             all_mods: dict[str, Any] | None = None
     ):
-        if all_mods is None:
-            all_mods = self._all_mods
-        if (
-            'log' in all_mods and
-            self._mod_has_started_phase('log', 'STARTED', mods=mods) and
-            not self._mod_has_started_phase('log', 'STOPPING', mods=mods)
-        ):
-            all_mods['log'].trace(*objs)
+        self._log(
+            *objs,
+            log_type='trace',
+            cur_mod_name=cur_mod_name,
+            mods=mods,
+            all_mods=all_mods
+        )
 
     # Utils
     # --------------------
 
     def _phase_of(self,
             mod_name: str,
+            cur_mod_name: str | None = None,
             mods: dict[str, Any] | None = None
     ) -> Phase:
         if mods is None:
             mods = self._mods
 
         if mod_name in mods:
-            return self._phase
+            mod_list = list(mods.keys())
+            if (
+                cur_mod_name is not None and
+                mod_name in mod_list and cur_mod_name in mod_list and
+                mod_list.index(mod_name) < mod_list.index(cur_mod_name)
+            ):
+                return self._phase_after(self._phase)
+            else:
+                return self._phase
         elif self._parent_lifecycle is not None:
-            return self._parent_lifecycle._phase_of(mod_name)
+            return self._parent_lifecycle._phase_of(
+                mod_name,
+                cur_mod_name=cur_mod_name
+            )
         else:
             raise VCSException(
                 f"Requested the phase of unregistered module '{mod_name}'"
@@ -680,13 +734,17 @@ class ModuleLifecycle:
     def _mod_has_started_phase(self,
             mod_name: str,
             required_phase: Phase,
+            cur_mod_name: str | None = None,
             mods: dict[str, Any] | None = None
     ) -> bool:
         cur_index = self.PHASES_ORDERED.index(
-            self._phase_of(mod_name, mods=mods)
+            self._phase_of(mod_name, cur_mod_name=cur_mod_name, mods=mods)
         )
         required_index = self.PHASES_ORDERED.index(required_phase)
         return cur_index >= required_index # Close enough
+
+    def _phase_after(self, phase):
+        return self.PHASES_ORDERED[self.PHASES_ORDERED.index(phase) + 1]
 
     def _proceed_to_phase(self,
             phase: Phase,
