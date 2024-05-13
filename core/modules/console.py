@@ -21,10 +21,10 @@ class ConsoleModule:
         self._open_console('err', stderr=True)
 
     def configure_root_args(self, *, parser: ArgumentParser, **_):
-        parser.add_argument('--out', default=None,
+        parser.add_argument('--out', metavar="FILE", default=None,
             help="Redirect stdout to the given file")
 
-        parser.add_argument('--err', default=None,
+        parser.add_argument('--err', metavar="FILE", default=None,
             help="Redirect stderr to the given file")
 
     def start(self, *, args: Namespace, **_):
