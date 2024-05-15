@@ -1,4 +1,5 @@
 import jq
+import json
 from rich.table import Table
 
 from core.modulemanager import ModuleAccessor
@@ -60,8 +61,17 @@ class TrModule:
         output = forwarded_data
 
         if args.query is not None:
-            output = self.apply(args.query, output, first=args.first)
-        
+            output = self.query(args.query, output, first=args.first)
+
+            if (
+                # Don't format if there's further processing to do
+                not args.tabulate and
+
+                not args.output_is_forward and
+                not args.raw_output
+            ):
+                output = self.render_query(output)
+
         if args.tabulate:
             output = self.tabulate(
                 output,
@@ -79,9 +89,21 @@ class TrModule:
         return output
 
     @ModuleAccessor.invokable_as_service
-    def apply(self, query: str, data: Any, first=False):
+    def query(self, query: str, data: Any, first=False):
+        # If it's actually just a string, you probably wouldn't be trying to
+        # `jq` it, so assume that it's stringified JSON.
+        if isinstance(data, str):
+            data = json.loads(data)
+
         transformer = jq.first if first is True else jq.all
         return transformer(query, data)
+
+    @ModuleAccessor.invokable_as_service
+    def render_query(self, data: list | Any):
+        if isinstance(data, list):
+            return '\n'.join(data)
+
+        return data
 
     @ModuleAccessor.invokable_as_service
     def tabulate(self,
