@@ -2,3 +2,4 @@ pygit2
 antlr4-tools
 antlr4-python3-runtime
 rich
+jq

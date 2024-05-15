@@ -475,7 +475,7 @@ class ModuleLifecycle:
     def parse_root_arguments(self,
             arg_parser: ArgumentParser,
             cli_args: list[str] | None = None
-    ) -> tuple[Namespace, dict[str, list[str]]]:
+    ) -> tuple[Namespace, list[tuple[str, list[str]]]]:
         self._proceed_to_phase(PHASES.ROOT_ARGUMENT_PARSING)
 
         if cli_args is None:
@@ -490,15 +490,18 @@ class ModuleLifecycle:
         root_cli_args = cli_args[:-len(remaining_args)]
         module_cli_args_set = self._list_split(remaining_args, '---')
 
-        module_full_cli_args_set = {
-            module_cli_args[0]: [ # The module name
-                *root_cli_args,
-                module_cli_args[0],
-                *(['---'] if i+1 < len(module_cli_args_set) else []),
-                *module_cli_args[1:]
-            ]
+        module_full_cli_args_set = [
+            (
+                module_cli_args[0], # The module name
+                [
+                    *root_cli_args,
+                    *module_cli_args,
+                    *(['---'] if i+1 < len(module_cli_args_set) else [])
+                ]
+            )
             for i, module_cli_args in enumerate(module_cli_args_set)
-        }
+        ]
+        self._trace('Module CLI args set:', module_full_cli_args_set)
 
         return root_args, module_full_cli_args_set
 
@@ -582,28 +585,29 @@ class ModuleLifecycle:
 
     def parse_arguments(self,
             arg_parser: ArgumentParser,
-            module_full_cli_args_set: dict[str, list[str]]
-    ) -> dict[str, Namespace]:
+            module_full_cli_args_set: list[tuple[str, list[str]]]
+    ) -> list[tuple[str, Namespace]]:
         self._proceed_to_phase(PHASES.ARGUMENT_PARSING)
 
-        module_args_set = {}
-        for name, module_cli_args in module_full_cli_args_set.items():
+        module_args_set = []
+        for name, module_cli_args in module_full_cli_args_set:
             # Don't _set_cur_module here, as module_full_cli_args_set may be in
             # any order and may have duplicates, which breaks the purpose of
             # that method. See _phase_of().
 
             self._debug(
-                f"Parsing arguments for module '{name}':"
-                f" {' '.join(module_cli_args)}",
+                f"Parsing arguments for module '{name}':", module_cli_args,
                 cur_mod_name=name
             )
-            module_args_set[name] = arg_parser.parse_args(module_cli_args)
-            self._trace('Result:', module_args_set[name], cur_mod_name=name)
+            module_args_set.append(
+                (name, arg_parser.parse_args(module_cli_args))
+            )
+            self._trace('Result:', module_args_set[-1], cur_mod_name=name)
 
         return module_args_set
 
     def invoke_and_call(self,
-            module_args_set: dict[str, Namespace],
+            module_args_set: list[tuple[str, Namespace]],
             env: Namespace,
             start_exceptions: list[Exception | KeyboardInterrupt],
             accessor_object: Any
@@ -616,8 +620,11 @@ class ModuleLifecycle:
             )
             return
 
-        forwarded_data = None
-        for name, module_args in module_args_set.items():
+        forwarded_data: Any = None
+        if not sys.stdin.isatty():
+            forwarded_data = sys.stdin.read()
+
+        for name, module_args in module_args_set:
             # Don't _set_cur_module here, as module_args_set may be in any order
             # and may have duplicates, which breaks the purpose of that method.
             # See _phase_of().
@@ -633,7 +640,11 @@ class ModuleLifecycle:
                 if not callable(module):
                     raise VCSException(f"Module not callable: '{name}'")
 
-                forwarded_data = module(
+                self._debug(
+                    f"Forwarded data:", forwarded_data,
+                    cur_mod_name=name
+                )
+                forwarded_data: Any = module(
                     mod=accessor_object,
                     env=env,
                     args=module_args,
