@@ -549,7 +549,7 @@ class ManifestModule:
         item_parser = manifest_subparsers.add_parser('item')
 
         item_parser.add_argument('pattern', metavar='PATTERN',
-            help='A regex pattern to resolve to an item reference')
+            help='A regex pattern to resolve to an item')
 
         item_parser.add_argument('--item-set',
             metavar='ITEM_SET_PATTERN',
@@ -558,12 +558,6 @@ class ManifestModule:
             """)
 
         # Subcommands / Resolve Item Set - Permit data forwarding
-        item_parser.add_argument('---',
-            action='store_true', default=False, dest='output_is_forward',
-            help="""
-            Specifies that the result of this module call should be forwarded to
-            another module. This option terminates this module call.
-            """)
         item_parser.add_argument('-L', '--lower-stage', default=None,
             help="""
             Specifies that all stages of processing up to the given stage should
@@ -574,6 +568,12 @@ class ManifestModule:
             Specifies that no stages of processing after the given stage should
             be performed, even if the result isn't being forwarded.
             """)
+        item_parser.add_argument('---',
+            action='store_true', default=False, dest='output_is_forward',
+            help="""
+            Specifies that the result of this module call should be forwarded to
+            another module. This option terminates this module call.
+            """)
 
         # Subcommands / Resolve Item Set
         item_set_parser = manifest_subparsers.add_parser('item-set')
@@ -582,12 +582,6 @@ class ManifestModule:
             help='A regex pattern to resolve to an item set')
 
         # Subcommands / Resolve Item Set - Permit data forwarding
-        item_set_parser.add_argument('---',
-            action='store_true', default=False, dest='output_is_forward',
-            help="""
-            Specifies that the result of this module call should be forwarded to
-            another module. This option terminates this module call.
-            """)
         item_set_parser.add_argument('-L', '--lower-stage', default=None,
             help="""
             Specifies that all stages of processing up to the given stage should
@@ -597,6 +591,12 @@ class ManifestModule:
             help="""
             Specifies that no stages of processing after the given stage should
             be performed, even if the result isn't being forwarded.
+            """)
+        item_set_parser.add_argument('---',
+            action='store_true', default=False, dest='output_is_forward',
+            help="""
+            Specifies that the result of this module call should be forwarded to
+            another module. This option terminates this module call.
             """)
 
     def configure(self, *, mod: Namespace, env: Namespace, **_):
