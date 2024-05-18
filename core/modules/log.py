@@ -53,7 +53,7 @@ class LogModule:
         self._mod = mod
 
         # Output console
-        output_file_path = env.VCS_LOG_FILE
+        output_file_path = env.FILE
         if 'log_file' in args and args.log_file is not None:
             output_file_path = args.log_file
 
@@ -63,7 +63,7 @@ class LogModule:
             self._out_console_name = self.LOG_CONSOLE
 
         # Verbosity
-        self._verbosity = env.VCS_LOG_VERBOSITY
+        self._verbosity = env.VERBOSITY
         if 'log_verbose' in args and args.log_verbose is not None:
             self._verbosity = args.log_verbose
 

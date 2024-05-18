@@ -584,9 +584,9 @@ class ManifestModule:
         self._mod = mod # For methods that aren't directly given it
 
         if self._manifest_store is None:
-            self._manifest_store = Store(env.VCS_MANIFEST_ROOT)
+            self._manifest_store = Store(env.ROOT)
 
-        self._default_item_set = env.VCS_MANIFEST_DEFAULT_ITEM_SET
+        self._default_item_set = env.DEFAULT_ITEM_SET
 
     def start(self, *_, **__):
         for manifest_name in self._manifest_names:

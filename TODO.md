@@ -5,10 +5,11 @@
 - ./ add 'console' module
   - ./ add console printer to MM
 
+- ./ support getting env vars without prefixing
+
 ---
 
 - update MM docstring
-- support getting env vars without prefixing
 
 ---
 

@@ -59,7 +59,7 @@ class CacheModule:
             if args.cache_root is not None:
                 self._store = Store(args.cache_root)
             else:
-                self._store = Store(env.VCS_CACHE_ROOT)
+                self._store = Store(env.ROOT)
 
         # Enable/disable caching
         self._read_cache = (

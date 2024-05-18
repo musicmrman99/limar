@@ -10,6 +10,7 @@ from typing import (
 
 # Everything else
 import sys
+import os
 from os.path import dirname, join
 import re
 import importlib
@@ -196,7 +197,9 @@ class ModuleLifecycle:
         )
 
         self.configure_environment(self._all_mods, env_parser)
-        self._env = self.parse_environment(env_parser, self._cli_env)
+        self._env = (
+            self.parse_environment(env_parser, self._all_mods, self._cli_env)
+        )
 
         self.configure_root_arguments(
             self._all_mods,
@@ -439,16 +442,32 @@ class ModuleLifecycle:
 
     def parse_environment(self,
             env_parser: EnvironmentParser,
+            all_mods: dict[str, Any],
             cli_env: dict[str, str] | None = None
-    ) -> Namespace:
+    ) -> dict[str, Namespace]:
         self._proceed_to_phase(PHASES.ENVIRONMENT_PARSING)
 
-        if cli_env is not None:
-            env = env_parser.parse_env(cli_env)
-        else:
-            env = env_parser.parse_env()
+        if cli_env is None:
+            cli_env = {
+                name: value
+                for name, value in os.environ.items()
+                if name.startswith(self._app_name.upper())
+            }
 
-        return env
+        self._debug(f"Parsing environment:", cli_env)
+
+        envs = {}
+        for name in all_mods:
+            self._proceed_to_module(name)
+            envs[name] = env_parser.parse_env(
+                cli_env,
+                subparsers_to_use=[name],
+                collapse_prefixes=True
+            )
+
+        self._trace(f"Result:", envs, cur_mod_name=name)
+
+        return envs
 
     # NOTE: Grammar for the command line is:
     #         app_name global_opt*
@@ -457,7 +476,7 @@ class ModuleLifecycle:
 
     def configure_root_arguments(self,
             all_mods: dict[str, Any],
-            env: Namespace,
+            envs: dict[str, Namespace],
             arg_parser: ArgumentParser
     ) -> None:
         self._proceed_to_phase(PHASES.ROOT_ARGUMENT_CONFIGURATION)
@@ -470,7 +489,7 @@ class ModuleLifecycle:
                     f"Configuring root arguments for module '{name}'",
                     cur_mod_name=name
                 )
-                module.configure_root_args(env=env, parser=arg_parser)
+                module.configure_root_args(env=envs[name], parser=arg_parser)
 
     def parse_root_arguments(self,
             arg_parser: ArgumentParser,
@@ -507,7 +526,7 @@ class ModuleLifecycle:
 
     def configure(self,
             mods: dict[str, Any],
-            env: Namespace,
+            envs: dict[str, Namespace],
             root_args: Namespace,
             accessor_object: Any
     ) -> None:
@@ -518,13 +537,17 @@ class ModuleLifecycle:
 
             if hasattr(module, 'configure'):
                 self._debug(f"Configuring module '{name}'", cur_mod_name=name)
-                module.configure(mod=accessor_object, env=env, args=root_args)
+                module.configure(
+                    mod=accessor_object,
+                    env=envs[name],
+                    args=root_args
+                )
 
         self._proceed_to_phase(PHASES.CONFIGURED)
 
     def start(self,
             mods: dict[str, Any],
-            env: Namespace,
+            envs: dict[str, Namespace],
             root_args: Namespace,
             accessor_object: Any
     ) -> tuple[dict[str, Any], list[Exception | KeyboardInterrupt]]:
@@ -541,7 +564,11 @@ class ModuleLifecycle:
             if hasattr(module, 'start'):
                 self._debug(f"Starting module '{name}'", cur_mod_name=name)
                 try:
-                    module.start(mod=accessor_object, env=env, args=root_args)
+                    module.start(
+                        mod=accessor_object,
+                        env=envs[name],
+                        args=root_args
+                    )
                     started_modules[name] = module
                 except (Exception, KeyboardInterrupt) as e:
                     self._error(
@@ -563,7 +590,7 @@ class ModuleLifecycle:
 
     def configure_arguments(self,
             all_mods: dict[str, Any],
-            env: Namespace,
+            envs: dict[str, Namespace],
             arg_parser: ArgumentParser
     ) -> None:
         self._proceed_to_phase(PHASES.ARGUMENT_CONFIGURATION)
@@ -581,7 +608,7 @@ class ModuleLifecycle:
                     cur_mod_name=name
                 )
                 module_arg_parser = arg_subparsers.add_parser(name)
-                module.configure_args(env=env, parser=module_arg_parser)
+                module.configure_args(env=envs[name], parser=module_arg_parser)
 
     def parse_arguments(self,
             arg_parser: ArgumentParser,
@@ -608,7 +635,7 @@ class ModuleLifecycle:
 
     def invoke_and_call(self,
             module_args_set: list[tuple[str, Namespace]],
-            env: Namespace,
+            envs: dict[str, Namespace],
             start_exceptions: list[Exception | KeyboardInterrupt],
             accessor_object: Any
     ) -> Exception | KeyboardInterrupt | None:
@@ -646,7 +673,7 @@ class ModuleLifecycle:
                 )
                 forwarded_data: Any = module(
                     mod=accessor_object,
-                    env=env,
+                    env=envs[name],
                     args=module_args,
                     forwarded_data=forwarded_data
                 )
@@ -665,7 +692,7 @@ class ModuleLifecycle:
             mods: dict[str, Any],
             all_mods: dict[str, Any],
 
-            env: Namespace,
+            envs: dict[str, Namespace],
             root_args: Namespace,
             start_exceptions: list[Exception | KeyboardInterrupt],
             run_exception: Exception | KeyboardInterrupt | None,
@@ -682,7 +709,7 @@ class ModuleLifecycle:
                 try:
                     module.stop(
                         mod=accessor_object,
-                        env=env,
+                        env=envs[name],
                         args=root_args,
                         start_exceptions=start_exceptions,
                         run_exception=run_exception,
@@ -1139,10 +1166,6 @@ class ModuleManager:
         self._core_lifecycle = ModuleLifecycle(
             self._app_name,
             self._registered_mods,
-            cli_env={
-                'VCS_LOG_FILE': join(dirname(__file__), 'modulemanager.log'),
-                'VCS_LOG_VERBOSITY': '4'
-            },
             cli_args=self._mm_cli_args
         )
         self._core_lifecycle.__enter__()
