@@ -179,7 +179,7 @@ class ModuleLifecycle:
 
     def __enter__(self):
         env_parser = EnvironmentParser(self._app_name)
-        self._arg_parser = ArgumentParser(prog=self._app_name)
+        self._arg_parser = ArgumentParser(prog=self._app_name, add_help=False)
 
         inherited_mods: dict[str, Any] = (
             self._parent_lifecycle._mods
@@ -499,8 +499,16 @@ class ModuleLifecycle:
         if cli_args is None:
             cli_args = sys.argv[1:]
 
+        self._debug(f"Parsing root arguments:", cli_args)
         root_args, remaining_args = arg_parser.parse_known_args(cli_args)
         self._trace('Result:', root_args)
+
+        # Only add the help options to the root parser *after* we've parsed the
+        # root arguments. For some reason, `parse_known_arguments()` will
+        # interpret and action the help options even if they're after an
+        # unknown argument.
+        arg_parser.add_argument('-h', '--help', action='help',
+            help='Show this help message and exit')
 
         # Manually parse remaining args into a set of module arguments, split
         # on '---' and prefixed with the root arguments so that every module

@@ -18,14 +18,14 @@
 
   - ./ No, I think it's best to keep them separate
 
+- ./ fix help text after splitting into two ModuleLifecycles
+
 # Todo
 
 - TESTING
 
 Develop ModuleManager
 --------------------------------------------------
-
-- fix help text after splitting into two ModuleLifecycles
 
 - define appropriate custom exceptions for the different abstraction boundaries within VCS:
   - ModuleError
