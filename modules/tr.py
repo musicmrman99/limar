@@ -41,8 +41,23 @@ class TrModule:
             Delimiter for tabulation (for when input is a list of strings).
             """)
 
-        parser.add_argument('-a', '--align', default=None,
-            help="Alignment for tabulation ('left' or 'right').")
+        parser.add_argument('-o', '--object-mapping',
+            choices=('values', 'all'), default=None,
+            help="""
+            Object mapping mode for tabulation.
+
+            'values' maps a `list[dict[str, Any]]` (ie. a list of
+            JSON-compmatible objects) to a `list[list[Any]]` (ie. a table).
+            'all' does the same, but adds the list of property names as a header
+            row.
+
+            If 'all' is given and the result is not being forwarded, then '-H'
+            is assumed.
+            """)
+
+        parser.add_argument('-a', '--align',
+            choices=('left', 'right'), default=None,
+            help="Alignment for tabulation")
 
           # Formatting
         parser.add_argument('-H', '--has-headers',
@@ -63,27 +78,22 @@ class TrModule:
         if args.query is not None:
             output = self.query(args.query, output, first=args.first)
 
-            if (
-                # Don't format if there's further processing to do
-                not args.tabulate and
-
-                not args.output_is_forward and
-                not args.raw_output
-            ):
-                output = self.render_query(output)
-
         if args.tabulate:
             output = self.tabulate(
                 output,
                 delim=args.delimiter,
+                obj_mapping=args.object_mapping,
                 align=args.align
             )
 
+            has_headers_assumed = (
+                args.object_mapping == 'all' and not args.output_is_forward
+            )
             if not args.output_is_forward and not args.raw_output:
                 output = self.render_table(
                     output,
                     has_metadata=args.has_metadata,
-                    has_headers=args.has_headers
+                    has_headers=args.has_headers or has_headers_assumed
                 )
 
         return output
@@ -99,23 +109,24 @@ class TrModule:
         return transformer(query, data)
 
     @ModuleAccessor.invokable_as_service
-    def render_query(self, data: list | Any):
-        if isinstance(data, list):
-            return '\n'.join(data)
-
-        return data
-
-    @ModuleAccessor.invokable_as_service
     def tabulate(self,
             data: Any,
             delim: str | None = None,
-            align = None
+            obj_mapping: str | None = None,
+            align: str | None = None
     ):
         """
         If data is a string, then first split it on newline into an array,
         otherwise assumed it's an array. If delim is given, then interpret data
-        as a list[str] and split on delim into a list[list[str]], otherwise
-        interpret it as a as list[list[Any]].
+        as a list[str] and split on delim into a list[list[str]].
+
+        If obj_mapping is 'values', then interpret data as a
+        list[dict[str, Any]] and convert it into a list[list[Any]] based on
+        object keys. Dictionary order is preserved. If obj_mapping is 'all',
+        then do the same, but also insert the object keys as a header row.
+
+        If none of the above transformations are applied, data is assumed to
+        already be a list[list[Any]].
 
         If align is 'left', then align the data to the left by padding the
         end of all rows with blank items to make all rows the same length. If
@@ -123,11 +134,17 @@ class TrModule:
         rows.
         """
 
+        # str or list[str] -> list[list[str]]
         if isinstance(data, str):
             data = data.splitlines()
         if delim is not None:
             data = [item.split(delim) for item in data]
 
+        # list[dict[str, Any]] -> list[list[Any]] (with optional header)
+        if obj_mapping is not None:
+            data = self._objs_to_table(data, obj_mapping == 'all')
+
+        # Make all inner lists the same length, padding as specified
         if align is not None:
             if align == 'left':
                 pad = lambda row, to_len: (
@@ -176,3 +193,27 @@ class TrModule:
                 table.add_row(*row)
 
         return table
+
+    # Utils
+    # --------------------------------------------------
+
+    def _objs_to_table(self,
+            objs: list[dict[str, Any]],
+            include_header: bool = False
+    ) -> list[list[Any]]:
+        all_props = list(dict.fromkeys(
+            prop_name
+            for item in objs
+            for prop_name in item.keys()
+        ))
+
+        return [
+            *[all_props if include_header else []],
+            *[
+                [
+                    (obj[prop] if prop in obj else None)
+                    for prop in all_props
+                ]
+                for obj in objs
+            ]
+        ]

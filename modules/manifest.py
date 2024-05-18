@@ -518,7 +518,7 @@ class ManifestModule:
         self._all_extra_props_data = None
 
     def dependencies(self):
-        return ['log', 'cache']
+        return ['log', 'cache', 'tr']
 
     def configure_env(self, *, parser: EnvironmentParser, **_):
         parser.add_variable('ROOT')
@@ -526,23 +526,6 @@ class ManifestModule:
 
     def configure_args(self, *, parser: ArgumentParser, **_):
         # Options
-        parser.add_argument('-p', '--property',
-            action='append',
-            help="""
-            Specify a property to include for each output item. If given one or
-            more times, excludes all properties not given. If given more than
-            once, includes all properties specified. Supported properties
-            include 'ref', 'tags', and any properties added by context modules.
-            """)
-
-        parser.add_argument('-t', '--tag',
-            action='append',
-            help="""
-            Specify a tag to include for each output item. If given one or more
-            times, excludes all tags not given. If given more than once,
-            includes all tags specified.
-            """)
-
         parser.add_argument('-f', '--format', default='compact',
             help="""
             Specify the formatter to use. May be one of:
@@ -563,22 +546,58 @@ class ManifestModule:
         manifest_subparsers = parser.add_subparsers(dest="manifest_command")
 
         # Subcommands / Resolve Item
-        resolve_parser = manifest_subparsers.add_parser('item')
+        item_parser = manifest_subparsers.add_parser('item')
 
-        resolve_parser.add_argument('pattern', metavar='PATTERN',
+        item_parser.add_argument('pattern', metavar='PATTERN',
             help='A regex pattern to resolve to an item reference')
 
-        resolve_parser.add_argument('--item-set',
+        item_parser.add_argument('--item-set',
             metavar='ITEM_SET_PATTERN',
             help="""
             A pattern that matches the item set to use to resolve the item
             """)
 
-        # Subcommands / Resolve Item Set
-        resolve_parser = manifest_subparsers.add_parser('item-set')
+        # Subcommands / Resolve Item Set - Permit data forwarding
+        item_parser.add_argument('---',
+            action='store_true', default=False, dest='output_is_forward',
+            help="""
+            Specifies that the result of this module call should be forwarded to
+            another module. This option terminates this module call.
+            """)
+        item_parser.add_argument('-L', '--lower-stage', default=None,
+            help="""
+            Specifies that all stages of processing up to the given stage should
+            be performed, even if the result is being forwarded.
+            """)
+        item_parser.add_argument('-U', '--upper-stage', default=None,
+            help="""
+            Specifies that no stages of processing after the given stage should
+            be performed, even if the result isn't being forwarded.
+            """)
 
-        resolve_parser.add_argument('pattern', metavar='PATTERN',
+        # Subcommands / Resolve Item Set
+        item_set_parser = manifest_subparsers.add_parser('item-set')
+
+        item_set_parser.add_argument('pattern', metavar='PATTERN',
             help='A regex pattern to resolve to an item set')
+
+        # Subcommands / Resolve Item Set - Permit data forwarding
+        item_set_parser.add_argument('---',
+            action='store_true', default=False, dest='output_is_forward',
+            help="""
+            Specifies that the result of this module call should be forwarded to
+            another module. This option terminates this module call.
+            """)
+        item_set_parser.add_argument('-L', '--lower-stage', default=None,
+            help="""
+            Specifies that all stages of processing up to the given stage should
+            be performed, even if the result is being forwarded.
+            """)
+        item_set_parser.add_argument('-U', '--upper-stage', default=None,
+            help="""
+            Specifies that no stages of processing after the given stage should
+            be performed, even if the result isn't being forwarded.
+            """)
 
     def configure(self, *, mod: Namespace, env: Namespace, **_):
         self._mod = mod # For methods that aren't directly given it
@@ -661,6 +680,13 @@ class ManifestModule:
             self._manifests = []
         self._manifests.append(manifest)
 
+    STAGES = [
+        'get',
+        'flatten',
+        'tabulate',
+        'render'
+    ]
+
     def __call__(self, *, mod: Namespace, args: Namespace, **_):
         mod.log.trace(f"manifest(args={args})")
 
@@ -668,24 +694,38 @@ class ManifestModule:
             item_set = self.get_item_set(args.item_set)
             output = self.get_item(args.pattern, item_set=item_set)
 
-            output = self._filter_item(
-                output,
-                properties=args.property,
-                tags=args.tag
-            )
-            output = self._format_item(output, format=args.format)
+            if self._should_run_stage('flatten',
+                args.output_is_forward, args.lower_stage, args.upper_stage
+            ):
+                output = self._list_flattened_items({'': output})
+
+            if self._should_run_stage('tabulate',
+                args.output_is_forward, args.lower_stage, args.upper_stage
+            ):
+                output = mod.tr.tabulate(output, obj_mapping='all')
+
+            if self._should_run_stage('render',
+                args.output_is_forward, args.lower_stage, args.upper_stage
+            ):
+                output = mod.tr.render_table(output, has_headers=True)
 
         if args.manifest_command == 'item-set':
             output = self.get_item_set(args.pattern)
-            output = {
-                name: self._filter_item(
-                    output[name],
-                    properties=args.property,
-                    tags=args.tag
-                )
-                for name in output.keys()
-            }
-            output = self._format_item_set(output, format=args.format)
+
+            if self._should_run_stage('flatten',
+                args.output_is_forward, args.lower_stage, args.upper_stage
+            ):
+                output = self._list_flattened_items(output)
+
+            if self._should_run_stage('tabulate',
+                args.output_is_forward, args.lower_stage, args.upper_stage
+            ):
+                output = mod.tr.tabulate(output, obj_mapping='all')
+
+            if self._should_run_stage('render',
+                args.output_is_forward, args.lower_stage, args.upper_stage
+            ):
+                output = mod.tr.render_table(output, has_headers=True)
 
         return output
 
@@ -804,6 +844,8 @@ class ManifestModule:
     # Utils
     # --------------------
 
+    # Collators
+
     def _all_items(self):
         assert self._manifests is not None, 'ManifestModule._all_items() called before ManifestModule._load_manifest()'
         if self._all_items_data is None:
@@ -824,7 +866,10 @@ class ManifestModule:
             }
         return self._all_item_sets_data
 
-    def _all_tags(self, item_set=None):
+    def _all_tags(self,
+            item_set=None,
+            with_values=False
+    ) -> list[Any]:
         # Cache the result for all items
 
         all_tags_data = []
@@ -835,7 +880,7 @@ class ManifestModule:
         # NOTE: Key/value *pairs* are unique, not keys, so return a list
         process_items = item_set if item_set is not None else self._all_items()
         all_tags_data = list(dict.fromkeys(
-            (tag_name, tag_value)
+            (tag_name, tag_value) if with_values else tag_name
             for item in process_items.values()
             for tag_name, tag_value in item['tags'].items()
         ))
@@ -867,206 +912,82 @@ class ManifestModule:
 
         return all_extra_props_data
 
-    def _filter_item(self,
-            item: Item,
-            properties=None,
-            tags=None
+    # Stage Management
+
+    def _stage_is_at_or_before(self, target: str, upper: str | None):
+        if upper is None:
+            return True
+        return self.STAGES.index(target) <= self.STAGES.index(upper)
+
+    def _should_run_stage(self,
+            stage: str,
+            forwarded: bool,
+            lower_stage: str | None = None,
+            upper_stage: str | None = None
     ):
-        output = item
-        if properties is not None:
-            output = self._filter_obj(output, include=properties)
-        if tags is not None:
-            output = dict(output)
-            output['tags'] = self._filter_obj(
-                output['tags'],
-                include=tags
-            )
-        return output
-
-    def _format_item(self, item: Item, format='object') -> str:
-        formatters = {
-            'compact': self._format_item_compact,
-            'object': self._format_item_object,
-            'table': self._format_item_table
-        }
-        return formatters[format](item)
-
-    def _format_item_compact(self, item: Item) -> str:
-        extra_props = self._filter_obj(item, exclude=('ref', 'tags'))
-        return ' '.join([
-            *(
-                [item['ref']]
-                if 'ref' in item else []
-            ),
-            *(
-                ['(' + ', '.join(
-                    name+(': '+value if value is not None else '')
-                    for name, value in item['tags'].items()
-                ) + ')']
-                if 'tags' in item else []
-            ),
-            *(
-                ['|', ', '.join(
-                    f'{key}: {value}'
-                    for key, value in extra_props.items()
-                )]
-                if len(extra_props) > 0 else []
-            )
-        ])
-
-    def _format_item_object(self, item: Item) -> str:
-        extra_props = self._filter_obj(item, exclude=('ref', 'tags'))
-        return '\n'.join([
-            *(
-                [f"ref: {item['ref']}"]
-                if 'ref' in item else []
-            ),
-            *(
-                [f"tags:", '\n'.join(
-                    '  '+name+(': '+value if value is not None else '')
-                    for name, value in item['tags'].items()
-                )]
-                if 'tags' in item else []
-            ),
-            *(
-                [
-                    f'{key}: {value}'
-                    for key, value in extra_props
-                ]
-                if len(extra_props) > 0 else []
-            )
-        ])
-
-    def _format_item_table(self,
-            item: Item,
-            ref_width: int,
-            tag_cols: dict[str, int],
-            prop_cols: dict[str, int]
-    ) -> str:
-        ref_parts = (
-            [f"{item['ref']:<{ref_width}}"]
-            if 'ref' in item else []
+        include_if_not_reached_lower_stage = (
+            lower_stage is not None and
+            self._stage_is_at_or_before(stage, lower_stage)
+        )
+        include_if_not_reached_upper_stage = (
+            self._stage_is_at_or_before(stage, upper_stage)
         )
 
-        if 'tags' in item:
-            tag_strs = []
-            for name, width in tag_cols.items():
-                tag_str = f"{'':<{width}}"
-                if name in item['tags']:
-                    if item['tags'][name] is None:
-                        tag_str = f"{name:^{width}}"
-                    else:
-                        value = item['tags'][name]
-                        tag_str = f"{self._format_tag(name, value):<{width}}"
-                tag_strs.append(tag_str)
+        return (
+            (
+                not forwarded or
+                include_if_not_reached_lower_stage
+            ) and
+            include_if_not_reached_upper_stage
+        )
 
-            tag_parts = (
-                ['(' + ', '.join(tag_strs) + ')']
-                if len(tag_strs) > 0
-                else []
+    # Transformation Stage
+
+    def _list_flattened_items(self, item_set: ItemSet) -> list[dict[str, Any]]:
+        return [
+            self._flatten_item(
+                item,
+                self._all_tags(item_set),
+                self._all_extra_props(item_set)
             )
-        else:
-            tag_parts = []
+            for item in item_set.values()
+        ]
 
-        if len(prop_cols) > 0:
-            prop_strs = []
-            for name, width in prop_cols.items():
-                prop_str = f"{'':<{width}}"
-                if name in item and item[name] is not None:
-                    value = item[name]
-                    prop_str = f"{self._format_prop(name, value):<{width}}"
-                prop_strs.append(prop_str)
+    def _flatten_item(self,
+            item: Item,
+            all_tags: list[str] | None = None,
+            all_extra_props: list[str] | None = None
+    ) -> dict[str, Any]:
+        all_tags_computed: list[str] = []
+        if all_tags is not None:
+            all_tags_computed = all_tags
+        elif 'tags' in item:
+            all_tags_computed = item['tags']
 
-            prop_parts = (
-                ['|', ', '.join(prop_strs)]
-                if len(prop_strs) > 0
-                else []
-            )
-        else:
-            prop_parts = []
+        all_extra_props_computed: list[str] = []
+        if all_extra_props is not None:
+            all_extra_props_computed = all_extra_props
 
-        return ' '.join([*ref_parts, *tag_parts, *prop_parts])
-
-    def _format_item_set(self,
-            item_set: ItemSet,
-            format='object'
-    ) -> str:
-        formatters = {
-            'compact': self._format_item_set_compact,
-            'object': self._format_item_set_object,
-            'table': self._format_item_set_table
-        }
-        return formatters[format](item_set)
-
-    def _format_item_set_compact(self, item_set: ItemSet) -> str:
-        item_set_str = {
-            name: self._format_item(
-                item_set[name],
-                format='compact'
-            )
-            for name in item_set.keys()
-        }
-        return '\n'.join(item_set_str.values())
-
-    def _format_item_set_object(self, item_set: ItemSet) -> str:
-        item_set_str = {
-            name: self._format_item(
-                item_set[name],
-                format='object'
-            )
-            for name in item_set.keys()
-        }
-        return '\n\n'.join(item_set_str.values())
-
-    def _format_item_set_table(self, item_set: ItemSet):
-        ref_width = max(len(item['ref']) for item in item_set.values())
-        tag_cols = {
-            name: max(
-                (
-                    len(self._format_tag(name, item['tags'][name]))
-                    if name in item['tags']
-                    else 0
-                )
-                for item in item_set.values()
-            )
-            for name, _ in self._all_tags(item_set)
-        }
-        prop_cols = {
-            name: max(
-                (
-                    len(self._format_prop(name, item[name]))
-                    if name in item
-                    else 0
-                )
-                for item in item_set.values()
-            )
-            for name in self._all_extra_props(item_set)
-        }
-
-        item_set_str = {
-            name: self._format_item_table(
-                item_set[name],
-                ref_width=ref_width,
-                tag_cols=tag_cols,
-                prop_cols=prop_cols
-            )
-            for name in item_set.keys()
-        }
-        return '\n'.join(item_set_str.values())
-
-    def _format_tag(self, name: str, value: str | None = None) -> str:
-        return name+(': '+value if value is not None else '')
-
-    def _format_prop(self, name: str, value: Any) -> str:
-        return f'{name}: {value}'
-
-    def _filter_obj(self, item: dict, include=None, exclude=None) -> dict:
-        if include is None:
-            include = item.keys()
-        if exclude is None:
-            exclude = ()
         return {
-            prop: item[prop]
-            for prop in include
-            if prop in item and prop not in exclude
+            'ref': item['ref'],
+            **{
+                f':{tag}': self._format_item_tag(item, tag)
+                for tag in all_tags_computed
+            },
+            **{
+                f'.{prop}': self._format_item_prop(item, prop)
+                for prop in all_extra_props_computed
+            }
         }
+
+    def _format_item_tag(self, item, tag):
+        if 'tags' in item and tag in item['tags']:
+            if item['tags'][tag] is not None:
+                return item['tags'][tag]
+            return 'O'
+        return None
+
+    def _format_item_prop(self, item, prop):
+        if prop in item:
+            return item[prop]
+        return None
