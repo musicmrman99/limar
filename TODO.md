@@ -1,4 +1,4 @@
-# Todo
+# Done
 
 - ./ fix "Attempt to proceed to STOPPING ModuleLifecycle phase before the RUNNING phase" when argparse throws an ArgumentError because argument parsing failed
 
@@ -9,7 +9,23 @@
 
 - ./ update MM docstring
 
----
+- X add `manifest [(--format|-f) FORMAT] <command> ...`
+  - ./ moved formatting to `tr` module instead
+
+- X maybe merge env and arg namespaces?
+    def _merge_namespaces(self, ns1, ns2):
+        return Namespace(**{**vars(ns1), **vars(ns2)})
+
+  - ./ No, I think it's best to keep them separate
+
+# Todo
+
+- TESTING
+
+Develop ModuleManager
+--------------------------------------------------
+
+- fix help text after splitting into two ModuleLifecycles
 
 - define appropriate custom exceptions for the different abstraction boundaries within VCS:
   - ModuleError
@@ -17,6 +33,18 @@
   - etc.
 
 ---
+
+- only load modules depended on (directly or indirectly) by the directly-called module
+
+Develop Core Modules
+--------------------------------------------------
+
+- make log module include timestamp in message output
+- rotate log + clean up old logs
+- add logging to module invokation and all other relevant points
+
+Develop Existing Modules
+--------------------------------------------------
 
 - do something with tag values in `manifest`
 
@@ -33,13 +61,15 @@ print(data_json)
 '
 ```
 
----
-
-- only load modules depended on (directly or indirectly) by the directly-called module
-
-- add `manifest [(--format|-f) FORMAT] <command> ...`
+Add More Modules
+--------------------------------------------------
 
 - add command to open the remote url of a project, or any sub-url of it, in a browser
+
+- execute management commands against multiple projects, eg. `vcs for ...`
+  - how is it best to do this? `jq`-style using FP-like branching perhaps?
+
+- Add an `alias` module
 
 ---
 
@@ -50,28 +80,10 @@ print(data_json)
 - categorise and summarise them
 
 Look at:
-- ST
+- ST ('simple terminal', presumably)
 - zsh
 - PS1/PS2 (and 3 & 4 in some shells)
   - show if dirty git tree
-
----
-
-- maybe merge env and arg namespaces?
-    def _merge_namespaces(self, ns1, ns2):
-        return Namespace(**{**vars(ns1), **vars(ns2)})
-
-- make log module include timestamp in message output
-- rotate log + clean up old logs
-- add logging to module invokation and all other relevant points
-
----
-
-- TESTING
-
----
-
-- Execute management commands against multiple projects, eg. `vcs for ...`
 
 ---
 
@@ -112,7 +124,8 @@ Look at:
   - https://hackaday.com/2021/06/21/a-collection-of-linux-tools-on-steroids/
   - https://hackaday.com/2018/10/24/linux-fu-marker-is-a-command-line-menu/
 
----
+Consider How Modules are Structured and Used
+--------------------------------------------------
 
 - consider the 7 Cs and SGCV
   - temporal scope/granualrity could be a useful way of categorising:
