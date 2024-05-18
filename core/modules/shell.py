@@ -5,6 +5,28 @@ from core.shellscript import ShellScript
 from argparse import ArgumentParser, Namespace
 
 class ShellModule:
+    """
+    Allows making modifications to the parent shell, such as setting environment
+    variables or changing the current directory.
+
+    Add commands to be run after this script by using
+
+    ```
+    mod.shell.add_command('some-command -a --argument')
+    ```
+
+    Module authors are responsible for word splitting, escaping, etc.
+
+    This module requires passing the `--shell-script` option, whose value must
+    be the path to a temporary script file that is sourced after the application
+    ends. This will usually be done by defining a wrapper script, function, etc.
+    in your shell that generates a temporary script file, passes it for the
+    `--shell-script` option to the app and forwards all other arguments, then
+    sources the file after the app exits. This module handles whether to write
+    to the file depending on errors, so the wrapper doesn't have to check for
+    errors before sourcing the file.
+    """
+
     # Lifecycle
     # --------------------
 

@@ -7,9 +7,14 @@
 
 - ./ support getting env vars without prefixing
 
+- ./ update MM docstring
+
 ---
 
-- update MM docstring
+- define appropriate custom exceptions for the different abstraction boundaries within VCS:
+  - ModuleError
+  - VCSError
+  - etc.
 
 ---
 
