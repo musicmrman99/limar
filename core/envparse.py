@@ -9,8 +9,17 @@ from typing import Any
 class EnvironmentParser:
     def __init__(self, prefix: str | None = None):
         self._spec: dict[str, dict[str, Any]] = {}
-        self._prefix = prefix.upper() if prefix is not None else ''
+        self._prefix = (
+            self._in_env_case(prefix+'_')
+            if prefix is not None and prefix != ''
+            else ''
+        )
         self._subparsers: list[tuple[str, EnvironmentParser]] = []
+
+    def add_parser(self, prefix):
+        subparser = EnvironmentParser(self._prefix + prefix)
+        self._subparsers.append((prefix, subparser))
+        return subparser
 
     def add_variable(self,
             name: str,
@@ -18,7 +27,7 @@ class EnvironmentParser:
             default: Any = None,
             default_is_none: bool = False
     ):
-        full_name = self._with_prefix(name.upper())
+        full_name = self._prefix + self._in_env_case(name)
 
         if full_name in self._spec:
             raise VCSException(
@@ -32,11 +41,6 @@ class EnvironmentParser:
                if default is not None or default_is_none
                else {})
         }
-
-    def add_parser(self, prefix):
-        subparser = EnvironmentParser(self._with_prefix(prefix))
-        self._subparsers.append((prefix, subparser))
-        return subparser
 
     def parse_env(self,
             env: dict[str, str] | None = None,
@@ -75,7 +79,7 @@ class EnvironmentParser:
 
             collapsed_name = name
             if collapse_prefixes:
-                collapsed_name = name.removeprefix(self._prefix.upper()+'_')
+                collapsed_name = name.removeprefix(self._prefix)
 
             try:
                 env_vars[collapsed_name] = type(env[name])
@@ -107,6 +111,5 @@ class EnvironmentParser:
 
         return env_vars
 
-    def _with_prefix(self, name):
-        prefix_list = [self._prefix] if self._prefix != '' else []
-        return '_'.join([*prefix_list, name])
+    def _in_env_case(self, name: str):
+        return name.replace('-', '_').upper()
