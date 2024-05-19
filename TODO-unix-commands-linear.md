@@ -23,6 +23,9 @@ process-data (store? path?) {
   /config (package? installation (optional)?)
 }
 
+/environment (alias: env)
+/command
+
 proccess (host? install? config?) {
   /kernel
   /service (kernel? operations?)
@@ -83,14 +86,35 @@ Hosts, Kernels, and Processes
 - poweroff    /kernel          - power off the system; alias for `systemctl poweroff`
 - reboot      /kernel          - reboot the system; alias for `systemctl reboot`
 
-### services and operations
+### processes (services and operations)
+
+#### show metadata
 - ps          /process         - list info about processes
 - ptree       /process         - show processes as a hierarchy [solaris only; `ps` can do this in linux]
 - top         /process, interactive - interactive view of info about processes
 - htop        /process, interactive - interactive view of info about processes
+- pgrep       /process         - search for processes by name or other attributes
 
+#### show resources
+- fuser   /process, /file      - show info about (or kill) processes using files, filesystems, or ports/sockets
+- lsof    /process, /file      - show open files of process(es) (by name, user, etc.) [mac, linux, bsd, and solaris only]
+- pfiles  /process, /file      - show open files of a process (by name, user, etc.) [solaris only]
+- pmap    /process             - show process memory data
+
+#### signal
 - kill        /process         - send SIGTERM or another signal to a given process
 - killall     /process         - send SIGTERM or another signal to process(es) (by name, path, or other criteria)
+- pkill       /process         - send signal to process (by name or other attributes)
+
+#### create
+- env         /process         - create process with modified environment (vars, cur dir, signals, etc.), or show environment
+- nice        /process         - create process with modified scheduling priority
+
+#### set attrs
+- renice      /process         - set the scheduling priority of a running process
+
+#### wait
+- pidwait     /process         - wait on process searched for by name or other attributes
 
 Identity and Trust
 ====================
@@ -119,9 +143,20 @@ Storage, Filesystems, Directories, and Files
 
 ### filesystem
 - df          /filesystem      - show filesystem storage space, mounts, etc. info (stands for 'disk filesystem')
-- mount       /filesystem      - show and modify mounted filesystems
-- umount      /filesystem      - unmount a mounted filesystem
 - fstyp       /filesystem      - show filesystem types [only available on some systems; can usually use `mount` for this]
+
+- mkfs        /filesystem      - create a filesystem of the given type
+- cryptsetup  /filesystem      - create and set up a LUKS encrypted filesystem
+
+- growfs      /filesystem      - enlarge a ufs filesystem [bsd only]
+- tune2fs     /filesystem      - adjust filesystem parameters [ext2/3/4]
+
+- fsck        /filesystem      - check filesystem for errors and other issues, and attempt to fix them
+
+- sync        /filesystem      - flush filesystem buffers
+
+- mount       /filesystem      - show info about mounts of, mount, or unmount a filesystems
+- umount      /filesystem      - unmount a filesystem
 
 ### storage space
 - du          /file            - show file/dir storage space info (stands for 'disk usage')
@@ -132,10 +167,13 @@ Storage, Filesystems, Directories, and Files
 - find        /file, /dir      - search for files by name/pattern, attributes, etc. or list files with filters
 - ff          /file, /dir      - search for files by name (and others? anywhere on the system; stands for 'find files')
 
-### list
-- ls          /file, /dir      - list files
+### show metadata
+- ls          /file, /dir      - show file files in a directory and show file attributes
+- file        /file, /dir      - show file/dir type
+- stat        /file, /dir      - show inode metadata
 
-### show
+### show content
+- readlink    /file            - show symbolic link content
 - cat         /file            - concatenate files and output results
 - tac         /file            - cat, then reverses the order of the output [GNU only]
 - zcat        /file            - show contents of gzip compressed file
@@ -147,14 +185,24 @@ Storage, Filesystems, Directories, and Files
 ### compare
 - diff        /file, /dir      - compare files
 - cmp         /file            - compare files byte-by-byte
-- comm        /file            - compare sorted files
+- comm        /file            - compare sorted files for common/uncommon lines
 
 ### create
+- mknod       /file            - create char/block device files & other special files
 - mkdir       /dir             - create dir
-- ln          /file            - create symlink file
 - touch       /file            - create file (and set timestamps)
+- ln          /file            - create symbolic link file
+- mkfifo      /file            - create named pipe file
+
 - ar          /file            - create an archive
 - tar         /file            - create a tar archive
+- compress    /file, /dir      - compress (gzip?) file or all files in dir recursively (`-r`), adding `.Z` extension
+- uncompress  /file            - uncompress (gzip?) file or all files in dir recursively (`-r`), removing `.Z` extension
+
+### modify
+- truncate    /file            - shrink or extend size of file (`-s [+-<>/%]INT([K,M,G,T,P,E,Z,Y][B])`)
+- patch       /file            - apply a diff to a file
+- tee         /file            - both write (overwrite or append) input to a file, and output the input unchanged
 
 ### copy
 - cp          /file, /dir      - copy a file/dir (file-level)
@@ -172,6 +220,7 @@ Storage, Filesystems, Directories, and Files
 - rm          /file, /dir      - delete file/dir
 - unlink      /file, /dir      - delete file/dir (lower-level version of `rm`) [use `rm` instead]
 - rmdir       /dir             - delete an empty dir [use `rm` instead]
+- shred       /file, /dir      - overwrite a file several times to hide its contents
 
 ### synchronise
 - rsync       /file, /dir      - sync files/dirs (optionally over the network)
@@ -298,16 +347,51 @@ text manipulation
 - vi / vim
 - emacs
 
+installation
+====================
+
+### installations
+- whereis     /installation - searches for binary, source, and man pages for a command
+- which       /installation, /environment - show where a command's program is, based on the current $PATH
+
 environment
 ====================
 
-## info
-- pwd - print working directory
-- history - output shell command history
-- which - show where a command's program is
-- whereis - searches for binary, source, and man pages for a command
-- whatis - shows the one-line summary of a command
-- type - show how a command would be interpreted
+### terminal
+- tty         /environment - return terminal name, eg. '/dev/tty4' (run on WSL)
+- stty        /environment - get or set terminal options
+- clear       /environment - clear the screen
+- reset       /environment - reset terminal (see `tput`)
+- tput        /environment - terminal-specific capabilities
+  - [most of the user-level uses of this are covered by ncurses or ANSI codes]
+
+### shell
+- bg - put a process into the background of a shell
+- fg - put a process into the foreground of a shell
+
+### current directory
+- pwd         /environment - print working directory
+- cd          /environment - change directory
+
+### environment variables
+- export      /environment - make environment variable available to programs [sh and dirivatives]
+- setenv      /environment - csh-style equivalent of the bash-style `export` [csh and dirivatives]
+- [see /process - env]
+
+### history
+- history     /environment - output shell command history
+
+### user
+- whoami      /environment, /user         - show the username of the currently logged in user
+- su          /environment, /user         - become root or another user (stands for 'super user')
+- sudo        /environment, /user         - become root or another user to run a given command (stands for 'super user do')
+
+command
+====================
+
+### show
+- whatis      /command               - shows the one-line summary of a command
+- type        /command, /environment - show how a command would be interpreted in the current environment
   - X is a shell keyword
   - X is a shell builtin
   - X is aliased to `Y'
@@ -316,84 +400,37 @@ environment
   - X is /path/to/X
   - -bash: type: X: not found
 
-- whoami      (env/user: info)              - show the username of the currently logged in user
-- su          (env/user: set)               - become the superuser or another user
-- sudo        (env/user: set)               - become the superuser or another user temporarily while executing a given command
+### create
+- alias       /command, /environment - create an alias, or show aliases
+- function    /command, /environment - create a shell function
 
-## modify
-- cd - change directory
-  - options?
-- clear - clear the screen
-- export - make environment variable available to programs
-  - setenv (csh, unused) - csh-style equivalent of the bash-style `export`
-- alias - show aliases (without args) or define an alias
-- unalias - remove an alias
-- function - define a shell function
+### delete
+- unalias     /command, /environment - remove an alias
 
 misc
 ====================
 
-- lynx - a CLI browser
-- elm - a CLI email system
-- webster - a CLI dictionary lookup (uses the webster dictionary)
+- lynx    ?, interactive - a CLI browser
+- elm     ?, interactive - a CLI email system [not on WSL]
+- webster ?       - a CLI dictionary lookup (uses the webster dictionary)
 
 Temp
 ==================================================
 
-### processes
-nice - process priority
-renice
-pmap - process mem usage
-pfiles (solaris only) - process open files
-lsof - list open files
-
-### filesystems
-fsck
-growfs
-tune2fs [ext2/3]
-mkfs
-cryptsetup - LUKS encrypted FS setup
-sync - flush FS buffers
-
-### files
-readlink
-
-mkfifo - create named pipe file
-mknod - create char/block device files & other special files
-tee
-
-file - determine file type
-stat - print data about an inode
-
-comm - show common/uncommon lines from two sorted files
-
-compress / uncompress
-patch
-truncate [-s size] - shrink or extend size of file
-  - size : [+-<>/%]INT([K,M,G,T,P,E,Z,Y][B])
-shred - overwrite a file several times to hide its contents
-
 ### environment
-read
-env
-bg / fg - background/foreground a process
-tput / reset - terminal-specific capabilities
-  - Note: most of the user-level uses of this are covered by ncurses or ANSI codes
+read - [not really environment, but eh]
 umask
 tmux
 chroot
-
-tty - return terminal name, eg. '/dev/tty4' (run on WSL)
-stty - get or set terminal options
 
 ### scheduling
 batch - batch schedule commands
 crontab - schedule command
 
 ### utils
-test / [ - evaluate an expression and returns 0 if true or 1 if false
-bc - calculator (arbitrary precision)
-expr - limited arithmetic and string expression evaluator [best to use bc]
+test   - evaluate an expression and returns 0 if true or 1 if false (alias: `[`)
+bc     - calculator (arbitrary precision)
+expr   - limited arithmetic and string expression evaluator [best to use bc]
 factor - factor numbers
 
 ### programming
@@ -410,36 +447,35 @@ git - version control system
 svn - version control system
 
 ### text processing
-cut
-expand / unexpand - convert tabs to spaces and vice versa
-fold - line folding (wrapping) program
-join - joins lines of files on a common field (like SQL JOIN)
-fmt - formats text
+cut      /operation - extract fields separated by a delimiter from each line of input
+expand   /operation - convert tabs to spaces
+unexpand /operation - convert spaces to tabs
+fold     /operation - line folding (wrapping) program
+join     /operation - joins lines of files on a common field (like SQL JOIN)
+fmt      /operation - formats text
 
 ### running standard actions based on file type
 - run-mailcap (and its aliases: view, see, edit, compose, print)
 
-### user-to-file/fs/blk relationships
-fuser [--mount] - show users using given files, filesystems, or block devices
-
 ### misc
-false / true - commands that do nothing, but return non-zero and zero, respectively
+- true  - return zero exit code
+- false - return non-zero exit code
 fc - fix command (shell builtin), used to quickly correct a previously entered command
 
-### hashing
-md5sum
-sha1sum
-sha224sum
-sha256sum
-sha384sum
-sha512sum
-cksum - generate checksum of and count bytes in a file
+### hashing/checksums
+- md5sum    /operation - create checksum of a file or stdin using md5
+- sha1sum   /operation - create checksum of a file or stdin using sha1
+- sha224sum /operation - create checksum of a file or stdin using sha224
+- sha256sum /operation - create checksum of a file or stdin using sha256
+- sha384sum /operation - create checksum of a file or stdin using sha384
+- sha512sum /operation - create checksum of a file or stdin using sha512
+- cksum     /operation - create checksum of and count bytes in a file
 
 ### SELinux [?]
-- sestatus    (system/security: ?)          - get status of SELinux
-- semanage    (system/security: ?)          - manage various things in SELinux
-- getenforce  (system/security: ?)          - print the current enforcement status of SELinux
-- setenforce  (system/security: ?)          - set the enforcement status of SELinux
+- sestatus    /config/security [?]           - get status of SELinux
+- semanage    /config/security [?], /service - manage various things in SELinux
+- getenforce  /config/security [?]           - print the current enforcement status of SELinux
+- setenforce  /config/security [?]           - set the enforcement status of SELinux
 
 Archaic and Unknown
 ==================================================
