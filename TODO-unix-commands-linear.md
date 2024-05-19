@@ -1,30 +1,47 @@
 # Todo - Unix
 Mainly Linux/Mac
 
-Notes
-==================================================
-
-aliases:
-- boot = kernel/run
-- process = command/run
-
-technically:
-- `kernel` is a type of `service` is a type of `program`
-- but also, `program` depends on `service` depends on `kernel`
-
 Tag Info (static for now)
 ==================================================
 
-object:
-- hardware (the system's hardware)
-- kernel (the system's kernel)
-- boot (an instance of the system's kernel)
-- service (a process that provides functionality while active)
+/hardware
 
-actions:
-- data      - info, set, add, remove
-- processes - start, restart, stop
-- messages  - send, receive
+/store (hardware? alias: data)
+  > store-host/attachment
+/host (hardware? alias: proccess or proc)
+
+data (store? path (optional)?) {
+  /filesystem (alias: fs)
+  /directory (alias: dir)
+  /file
+}
+
+process-data (store? path?) {
+  /project
+  /package (project? version?)
+  /install (package?)
+  /config (package? installation (optional)?)
+}
+
+proccess (host? install? config?) {
+  /kernel
+  /service (kernel? operations?)
+  /operation (kernel? service (optional)?)
+
+  content {
+    /in/param
+    /out/log
+
+    /module (parent process?)
+  }
+}
+
+idt (alias: identity-and-trust, iam, identity-and-access) {
+  /user
+  /group
+}
+
+/time
 
 meta:
 - DUP (duplicate)
@@ -33,197 +50,184 @@ meta:
 Commands
 ==================================================
 
+Hardware
+====================
+
 ### hardware
-- `biosdecode`  (hardware: info)              - description of system's bios/uefi
-- `dmidecode`   (hardware: info)              - description of system's hardware components
-- `lspci`       (hardware: info)              - list PCI devices
-- `lsusb`       (hardware: info)              - list USB devices
+- biosdecode  /host            - description of system's bios/uefi
+- dmidecode   /host            - description of system's hardware components
+- lspci       /host            - list PCI devices
+- lsusb       /host            - list USB devices
+
+Hosts, Kernels, and Processes
+====================
 
 ### kernel
-- `uname`       (kernel/package: info)        - show system information
-- `arch`        (kernel/package: info, DUP)   - equivalent to `uname -m`
-- `lsb_release` (kernel/package: info)        - release info for 'standard linux base' (LSB)
-- `dmesg`       (kernel/run/log: info)        - show the contents of the kernel message buffer
-- `sysctl`      (kernel/run/parameter: info,
-                 kernel/run/parameter: set)   - show and modify linux kernel parameters while the kernel is running
-- `modprobe`    (kernel/run/module: info,
-                 kernel/run/module: add,
-                 kernel/run/module: remove)   - add or remove (-r) modules from the linux kernel
-- `lsmod`       (kernel/run/module: info)     - list active modules in the running linux kernel
-- `insmod`      (kernel/run/module: add)      - insert a module into the running linux kernel
-- `rmmod`       (kernel/run/module: remove)   - remove a module from the running linux kernel
+- uname       /kernal/package  - show system information
+- arch        /kernel/package  - equivalent to `uname -m`
+- lsb_release /kernal/package  - release info for 'standard linux base' (LSB)
+- modprobe    /kernel/module   - add or remove (`-r`) modules from the linux kernel
+- lsmod       /kernel/module   - list active modules in the running linux kernel
+- insmod      /kernel/module   - insert a module into the running linux kernel
+- rmmod       /kernel/module   - remove a module from the running linux kernel
+- sysctl      /kernel/in/param - show and modify linux kernel parameters while the kernel is running
+- dmesg       /kernel/out/log  - show the contents of the kernel message buffer
 
 ### boot and service
-- `service`     (service/run: info,
-                 service/run: start,
-                 service/run: restart,
-                 service/run: stop,
-                 OLD)                         - manage the system and services (don't use on systemd systems)
-- `journalctl`  (kernel/run: log,
-                 service/run: log)            - manage the systemd journal
-- `uptime`      (kernel/run: info)            - show how long the system has been running
-- `systemctl`   (kernel/run: ?,
-                 service: ?,
-                 service/run: ?)              - manage the system and services (see: `systemctl --help`)
-- `shutdown`    (kernel/run: stop)            - shut down the system; alias for `systemctl shutdown`
-- `halt`        (kernel/run: stop)            - halt the system; alias for `systemctl halt`
-- `poweroff`    (kernel/run: stop)            - power off the system; alias for `systemctl poweroff`
-- `reboot`      (kernel/run: restart)         - reboot the system; alias for `systemctl reboot`
+- service     /kernal, /service, /service/config, OLD - manage the system and services (don't use on systemd systems)
+- systemctl   /kernel, /service, /service/config - manage the system and services (see: `systemctl --help`)
+- journalctl  /kernel/log, /service/log - manage the systemd journal
+- uptime      /kernel          - show how long the system has been running
+- shutdown    /kernel          - shut down the system; alias for `systemctl shutdown`
+- halt        /kernel          - halt the system; alias for `systemctl halt`
+- poweroff    /kernel          - power off the system; alias for `systemctl poweroff`
+- reboot      /kernel          - reboot the system; alias for `systemctl reboot`
 
-### SELinux [?]
-- `sestatus`    (system/security: ?)          - get status of SELinux
-- `semanage`    (system/security: ?)          - manage various things in SELinux
-- `getenforce`  (system/security: ?)          - print the current enforcement status of SELinux
-- `setenforce`  (system/security: ?)          - set the enforcement status of SELinux
+### services and operations
+- ps          /process         - list info about processes
+- ptree       /process         - show processes as a hierarchy [solaris only; `ps` can do this in linux]
+- top         /process, interactive - interactive view of info about processes
+- htop        /process, interactive - interactive view of info about processes
 
-### users and groups
-- `finger`      (user: info, OLD)             - show info about a given user (reads `.plan` files where available)
-- `pinky`       (user: info)                  - show info about a given user (reads `.plan` files where available ??)
-- `groups`      (user: info,
-                 group: info)                 - show groups that the current or a specified user is a member of
-- `id`          (user: info,
-                 group: info)                 - show UID of a user and GIDs of all groups that user is a member of)
+- kill        /process         - send SIGTERM or another signal to a given process
+- killall     /process         - send SIGTERM or another signal to process(es) (by name, path, or other criteria)
 
-- `last`        (user{dyn}: info)             - show last login time of a user, eg. `last --fullnames --fulltimes --system --dns`
-- `users`       (user{dyn}: info)             - show names of users currently logged on (on that host)
-- `who`         (user{dyn}: info)             - show info about who's logged on, including the connection source address
-- `w`           (user{dyn}: info)             - show info about who's logged on, including what they're currently running
-
-- `groupadd`    (group: create)               - ?
-- `useradd`     (user: create)                - ?
-- `adduser`     (user: create)                - ?
-- `passwd`      (user/password: set)          - change a user's password (usually your own)
-
-- `visudo`      (user/perms: set,
-                 file: edit)                  - safely modify the sudoers file
-
-## program runs (ie. processes)
-- `ps`          (program/run: info)           - list info about processes
-- `ptree`       (program/run: info,
-                 DUP)                         - show processes as a hierarchy (solaris only - `ps` can do this in linux)
-- `top`         (program/run: info,
-                 interactive)                 - interactive view of info about processes
-- `htop`        (program/run: info,
-                 interactive)                 - interactive view of info about processes
-
-- `kill`        (program/run: send)           - send SIGTERM, or another signal, to a given process
-- `killall`     (program/run: send)           - send SIGTERM, or another signal, to zero or more processes (by name, path, or other criteria)
-
-filesystems
+Identity and Trust
 ====================
 
-## info
+### basic info
+- finger      /user, OLD       - show info about a given user (reads `.plan` files where available)
+- pinky       /user            - show info about a given user (reads `.plan` files where available ??)
+- groups      /user, /group    - show groups that the current or a specified user is a member of
+- id          /user, /group    - show UID of a user and GIDs of all groups that user is a member of)
 
-### general
-- `du` - show disk usage info (can filter by file or directory)
-- `df` - show filesystem usage info (can filter by file or directory)
+### temporal info
+- last        /user            - show last login time of a user, eg. `last --fullnames --fulltimes --system --dns`
+- users       /user            - show names of users currently logged on (on that host)
+- who         /user            - show info about who's logged on, including the connection source address
+- w           /user            - show info about who's logged on, including what they're currently running
 
-### specific
-- `ls` - list files
-- `find` (search) - find file
-- `ff` (search) - 'find files' (anywhere on the system)
+### management
+- groupadd    /group           - create a group
+- useradd     /user            - create a user
+- adduser     /user            - create a user
+- passwd      /user            - set a user's password (usually your own)
+- visudo      /user, /operation/config - safely modify the sudoers file
 
-## modify
-
-### general
-- `mount` - show and modify mounted filesystems
-  - `fstyp` - show filesystem types (only available on some systems, can usually use `mount` for this too)
-- `umount` - unmount a mounted filesystem
-
-### specific
-- mkdir - create directory
-- chown - set ownership of file or directory
-  - chgrp (unused) - change group ownership [an use `chown`]
-- chmod - set mode (permissions) of file or directory
-
-files
+Storage, Filesystems, Directories, and Files
 ====================
 
-## info
+### filesystem
+- df          /filesystem      - show filesystem storage space, mounts, etc. info (stands for 'disk filesystem')
+- mount       /filesystem      - show and modify mounted filesystems
+- umount      /filesystem      - unmount a mounted filesystem
+- fstyp       /filesystem      - show filesystem types [only available on some systems; can usually use `mount` for this]
 
-### show
-- cat - concatenate files and output results
-- tac (GNU) - cat, then reverses the order of the output
-- zcat - show contents of gzip compressed file
-- xzcat - show contents of xz compressed file
-- bzcat - show contents of bzip compressed file
-- zzcat - show contents of zip compressed file
-- ... and a number of others
+### storage space
+- du          /file            - show file/dir storage space info (stands for 'disk usage')
 
 ### search
-- grep
-- egrep
+- grep        /file            - search for files containing patterns
+- egrep       /file            - search for files containing patterns
+- find        /file, /dir      - search for files by name/pattern, attributes, etc. or list files with filters
+- ff          /file, /dir      - search for files by name (and others? anywhere on the system; stands for 'find files')
+
+### list
+- ls          /file, /dir      - list files
+
+### show
+- cat         /file            - concatenate files and output results
+- tac         /file            - cat, then reverses the order of the output [GNU only]
+- zcat        /file            - show contents of gzip compressed file
+- xzcat       /file            - show contents of xz compressed file
+- bzcat       /file            - show contents of bzip compressed file
+- zzcat       /file            - show contents of zip compressed file
+  - [and a number of others]
 
 ### compare
-- diff - compare files
-- cmp - compare files byte-by-byte
-- comm - compare sorted files
+- diff        /file, /dir      - compare files
+- cmp         /file            - compare files byte-by-byte
+- comm        /file            - compare sorted files
 
-## modify
-- ln
-- touch
-- cp - copy a file (file-level)
-- dd - convert and copy a file (stream-level)
-- mv
-- rm - remove file or directory
-  - unlink (unused) - lower-level version of `rm`
-  - rmdir (unused) - remove an empty directory (can use `rm` instead)
-- ar - create an archive
-- tar - create a tar archive
-- rsync (network) - synchronise directories (optionally over the network)
+### create
+- mkdir       /dir             - create dir
+- ln          /file            - create symlink file
+- touch       /file            - create file (and set timestamps)
+- ar          /file            - create an archive
+- tar         /file            - create a tar archive
+
+### copy
+- cp          /file, /dir      - copy a file/dir (file-level)
+- dd          /file, /dir      - copy (and convert) a file (or dir??) (stream-level)
+
+### move
+- mv          /file, /dir      - move a file/dir
+
+### set
+- chown       /file, /dir      - set ownership of file/dir
+- chgrp       /file, /dir      - set group ownership [use `chown` instead]
+- chmod       /file, /dir      - set mode (ie. permissions) of file/dir
+
+### delete
+- rm          /file, /dir      - delete file/dir
+- unlink      /file, /dir      - delete file/dir (lower-level version of `rm`) [use `rm` instead]
+- rmdir       /dir             - delete an empty dir [use `rm` instead]
+
+### synchronise
+- rsync       /file, /dir      - sync files/dirs (optionally over the network)
 
 shells and commands
 ====================
 
-## info
 - man - show usage manual for a given command
 
-### shells
-- sh - the Bourne Shell (and other shells)
+- sh   - the Bourne Shell (and other shells)
 - bash - Bourne Again Shell
-- zsh - Z Shell
-- ash - Almquist Shell
+- zsh  - Z Shell
+- ash  - Almquist Shell
 - dash - Debian Almquist Shell
-- ksh - Korn Shell
+- ksh  - Korn Shell
 - fish - Friendly Interactive Shell
-- csh - C Shell
+- csh  - C Shell
 - tcsh - TENEX C Shell
-- ... etc.
+  - [and many others ...]
 
-### wrapper commands
 - xargs
+- watch
+- strace
 
 networking
 ====================
 
 ## info
 - hostname
+- host
 - netstat - show network connections, routing tables, interface statistics, masquerade connections, and multicast memberships
 
 ## configure
 - ifconfig - show and modify network interface configuration
-- ip - show and modify network interface configuration (the newer version of `ifconfig`)
+- ip       - show and modify network interface configuration (the newer version of `ifconfig`)
 - iptables - configure firewall, routing, and NAT
-- ufw - uncomplicated firewall (show info and configure firewall)
+- ufw      - uncomplicated firewall (show info and configure firewall)
 
 ## human-to-human communication
-- talk - single-system text chat
+- talk  - single-system text chat
 - write - single-system text chat (one line per message)
 
 ## test tools
-- ping - repeatedly send ICMP packets to a give host and output responses
+- ping       - repeatedly send ICMP packets to a give host and output responses
 - traceroute - try to find the sequence of hosts, including routers, that a packet goes through on its round trip to/from a given host
 
 ## remote shell
 - ssh (alias: slogin) - secure shell
 - rsh (alias: rlogin) - remote shell
-- telnet - remote shell
+- telnet              - remote shell
 
 ## file transfer
-- ftp - transfer files and directories using FTP
+- ftp  - transfer files and directories using FTP
 - sftp - transfer files and directories using SFTP (FTP + SSL/TLS)
-- rcp - remote file copy over RSH
-- scp - secure remote file copy over SSH
+- rcp  - remote file copy over RSH
+- scp  - secure remote file copy over SSH
 - wget - fetch a file from a remote resource over HTTP or HTTPS
 - curl - fetch a file from a remote resource over HTTP or HTTPS
 
@@ -231,9 +235,9 @@ package management
 ====================
 
 ## packaging
-- zip - package and compress files and directories into zip (`.zip`) file
-- unzip - decompress and unpackage zip file
-- gzip - package and compress files and directories into gzip (`.gz`) file
+- zip    - package and compress files and directories into zip (`.zip`) file
+- unzip  - decompress and unpackage zip file
+- gzip   - package and compress files and directories into gzip (`.gz`) file
 - gunzip - decompress and unpackage gzip file
 
 ## managers
@@ -250,39 +254,39 @@ time and scheduling
 
 ## info
 - date - show time and date, and do calculations with them
-- cal - show a calendar (arguments determine month/year, and other things)
+- cal  - show a calendar (arguments determine month/year, and other things)
 
 ## operations
-- sleep - wait for a given duration
-- wait - wait for process to exit
-- time - time a command's duration
+- sleep   - wait for a given duration
+- wait    - wait for process to exit
+- time    - time a command's duration
 - timeout - run command with a time limit
 
 text manipulation
 ====================
 
 ## producers
-- echo - print a given string
+- echo   - print a given string
 - printf - format and print a given string
-- yes - print a given string (or the word `yes` by default) repeatedly
-- seq - print a sequence of numbers
+- yes    - print a given string (or the word `yes` by default) repeatedly
+- seq    - print a sequence of numbers
 
 ## processors
 
 ### specific
-- tr - translate all occurances of a given character to another character
-- head - output only the first N lines or characters of a file or stdin
-- tail - output only the last N lines or characters of a file or stdin
-- sort - sort the lines of the given file or stdin by various metrics
-- tsort - topological sort (ie. ordering nodes of a graph based on their deps)
-- uniq [-u] - filter out duplicate lines of the given file or stdin, or only output unique lines (with -u)
-- wc - count characters, words, or lines in the given file or stdin
-- dirname - output only the path leading up to the file or directory a path refers to
+- tr       - translate all occurances of a given character to another character
+- head     - output only the first N lines or characters of a file or stdin
+- tail     - output only the last N lines or characters of a file or stdin
+- sort     - sort the lines of the given file or stdin by various metrics
+- tsort    - topological sort (ie. ordering nodes of a graph based on their deps)
+- uniq     - filter out duplicate lines of the given file or stdin, or only output duplicate (-d) or unique (-u) lines
+- wc       - count characters, words, or lines in the given file or stdin
+- dirname  - output only the path leading up to the file or directory a path refers to
 - basename - output only the name of the file or directory a path refers to
 
-### general
-- sed
-- awk
+### languages
+- sed - text processing language (stands for 'stream editor')
+- awk - text processing language
 
 ## viewers
 - less
@@ -312,9 +316,9 @@ environment
   - X is /path/to/X
   - -bash: type: X: not found
 
-- `whoami`      (env/user: info)              - show the username of the currently logged in user
-- `su`          (env/user: set)               - become the superuser or another user
-- `sudo`        (env/user: set)               - become the superuser or another user temporarily while executing a given command
+- whoami      (env/user: info)              - show the username of the currently logged in user
+- su          (env/user: set)               - become the superuser or another user
+- sudo        (env/user: set)               - become the superuser or another user temporarily while executing a given command
 
 ## modify
 - cd - change directory
@@ -423,13 +427,19 @@ false / true - commands that do nothing, but return non-zero and zero, respectiv
 fc - fix command (shell builtin), used to quickly correct a previously entered command
 
 ### hashing
-`md5sum`
-`sha1sum`
-`sha224sum`
-`sha256sum`
-`sha384sum`
-`sha512sum`
-`cksum` - generate checksum of and count bytes in a file
+md5sum
+sha1sum
+sha224sum
+sha256sum
+sha384sum
+sha512sum
+cksum - generate checksum of and count bytes in a file
+
+### SELinux [?]
+- sestatus    (system/security: ?)          - get status of SELinux
+- semanage    (system/security: ?)          - manage various things in SELinux
+- getenforce  (system/security: ?)          - print the current enforcement status of SELinux
+- setenforce  (system/security: ?)          - set the enforcement status of SELinux
 
 Archaic and Unknown
 ==================================================
