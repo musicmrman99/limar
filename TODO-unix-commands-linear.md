@@ -2,7 +2,7 @@
 Mainly Linux/Mac
 
 Tag Info (static for now)
-==================================================
+================================================================================
 
 /hardware
 
@@ -51,7 +51,7 @@ meta:
 - OLD (should no longer be used)
 
 Commands
-==================================================
+================================================================================
 
 Hardware
 ====================
@@ -109,6 +109,7 @@ Hosts, Kernels, and Processes
 #### create
 - env         /process         - create process with modified environment (vars, cur dir, signals, etc.), or show environment
 - nice        /process         - create process with modified scheduling priority
+- chroot      /process, /environment - start a process with a special root directory
 
 #### set attrs
 - renice      /process         - set the scheduling priority of a running process
@@ -225,6 +226,85 @@ Storage, Filesystems, Directories, and Files
 ### synchronise
 - rsync       /file, /dir      - sync files/dirs (optionally over the network)
 
+installation
+====================
+
+### installations
+- whereis     /installation - searches for binary, source, and man pages for a command
+- which       /installation, /environment - show where a command's program is, based on the current $PATH
+
+environment
+====================
+
+### terminal
+- tty         /environment - return terminal name, eg. '/dev/tty4' (run on WSL)
+- stty        /environment - get or set terminal options
+- clear       /environment - clear the screen
+- reset       /environment - reset terminal (see `tput`)
+- tput        /environment - terminal-specific capabilities
+  - [most of the user-level uses of this are covered by ncurses or ANSI codes]
+
+### shell
+- bg - put a process into the background of a shell
+- fg - put a process into the foreground of a shell
+
+### files and filesystem
+- pwd         /environment - print working directory
+- cd          /environment - change directory
+- umask       /environment - set the file permissions mask (ie. excluded perms) for creating files
+
+### environment variables
+- export      /environment - make environment variable available to programs [sh and dirivatives]
+- setenv      /environment - csh-style equivalent of the bash-style `export` [csh and dirivatives]
+- [see /process - env]
+
+### history
+- history     /environment - output shell command history
+
+### user
+- whoami      /environment, /user         - show the username of the currently logged in user
+- su          /environment, /user         - become root or another user (stands for 'super user')
+- sudo        /environment, /user         - become root or another user to run a given command (stands for 'super user do')
+
+command
+====================
+
+### show
+- whatis      /command               - shows the one-line summary of a command
+- type        /command, /environment - show how a command would be interpreted in the current environment
+  - X is a shell keyword
+  - X is a shell builtin
+  - X is aliased to `Y'
+  - X is a function
+  - X is hashed (/path/to/X)
+  - X is /path/to/X
+  - -bash: type: X: not found
+
+### create
+- alias       /command, /environment - create an alias, or show aliases
+- function    /command, /environment - create a shell function
+
+### delete
+- unalias     /command, /environment - remove an alias
+
+Unknown Categorisation
+================================================================================
+
+### SELinux [?]
+- sestatus    /config/security [?]           - get status of SELinux
+- semanage    /config/security [?], /service - manage various things in SELinux
+- getenforce  /config/security [?]           - print the current enforcement status of SELinux
+- setenforce  /config/security [?]           - set the enforcement status of SELinux
+
+Todo
+================================================================================
+
+environment
+====================
+
+read - [not really environment, but eh]
+tmux - [terminal-related]
+
 shells and commands
 ====================
 
@@ -244,6 +324,90 @@ shells and commands
 - xargs
 - watch
 - strace
+
+time and scheduling
+====================
+
+## info
+- date - show time and date, and do calculations with them
+- cal  - show a calendar (arguments determine month/year, and other things)
+
+## operations
+- sleep   - wait for a given duration
+- wait    - wait for process to exit
+- time    - time a command's duration
+- timeout - run command with a time limit
+
+### commands
+- batch   - batch schedule commands
+- crontab - schedule command
+
+text manipulation
+====================
+
+## producers
+- echo   - print a given string
+- printf - format and print a given string
+- yes    - print a given string (or the word `yes` by default) repeatedly
+- seq    - print a sequence of numbers
+
+## processors
+
+### specific
+- tr       - translate all occurances of a given character to another character
+- head     - output only the first N lines or characters of a file or stdin
+- tail     - output only the last N lines or characters of a file or stdin
+- sort     - sort the lines of the given file or stdin by various metrics
+- tsort    - topological sort (ie. ordering nodes of a graph based on their deps)
+- uniq     - filter out duplicate lines of the given file or stdin, or only output duplicate (-d) or unique (-u) lines
+- wc       - count characters, words, or lines in the given file or stdin
+- dirname  - output only the path leading up to the file or directory a path refers to
+- basename - output only the name of the file or directory a path refers to
+
+- cut      /operation - extract fields separated by a delimiter from each line of input
+- expand   /operation - convert tabs to spaces
+- unexpand /operation - convert spaces to tabs
+- fold     /operation - line folding (wrapping) program
+- join     /operation - joins lines of files on a common field (like SQL JOIN)
+- fmt      /operation - formats text
+
+### languages
+- sed - text processing language (stands for 'stream editor')
+- awk - text processing language
+
+### hashing/checksums
+- md5sum    /operation - create checksum of a file or stdin using md5
+- sha1sum   /operation - create checksum of a file or stdin using sha1
+- sha224sum /operation - create checksum of a file or stdin using sha224
+- sha256sum /operation - create checksum of a file or stdin using sha256
+- sha384sum /operation - create checksum of a file or stdin using sha384
+- sha512sum /operation - create checksum of a file or stdin using sha512
+- cksum     /operation - create checksum of and count bytes in a file
+
+## viewers
+- less
+- more
+
+## editors
+- ed
+- nano
+- vi / vim
+- emacs
+
+expression languages
+====================
+
+- test   - evaluate an expression and returns 0 if true or 1 if false (alias: `[`)
+- bc     - calculator (arbitrary precision)
+- expr   - limited arithmetic and string expression evaluator [best to use bc]
+- factor - factor numbers
+
+misc
+====================
+
+- true  - return zero exit code
+- false - return non-zero exit code
+- fc    - fix command (shell builtin), used to quickly correct a previously entered command
 
 networking
 ====================
@@ -298,187 +462,37 @@ package management
 - yum
 - rpm
 
-time and scheduling
+version control
 ====================
 
-## info
-- date - show time and date, and do calculations with them
-- cal  - show a calendar (arguments determine month/year, and other things)
+- git - version control system
+- svn - version control system
 
-## operations
-- sleep   - wait for a given duration
-- wait    - wait for process to exit
-- time    - time a command's duration
-- timeout - run command with a time limit
-
-text manipulation
+programming
 ====================
 
-## producers
-- echo   - print a given string
-- printf - format and print a given string
-- yes    - print a given string (or the word `yes` by default) repeatedly
-- seq    - print a sequence of numbers
+- cc / c99 / gcc - C compiler
+- cflow - generate a C call graph
+- fort77 - fortran compiler [!]
+- make - follow steps to build an application
 
-## processors
+- lex - generate a lexer (I would suggest using a more modern one, like ANTLR4)
+- yacc - generate a parser (I would suggest using a more modern one, like ANTLR4)
 
-### specific
-- tr       - translate all occurances of a given character to another character
-- head     - output only the first N lines or characters of a file or stdin
-- tail     - output only the last N lines or characters of a file or stdin
-- sort     - sort the lines of the given file or stdin by various metrics
-- tsort    - topological sort (ie. ordering nodes of a graph based on their deps)
-- uniq     - filter out duplicate lines of the given file or stdin, or only output duplicate (-d) or unique (-u) lines
-- wc       - count characters, words, or lines in the given file or stdin
-- dirname  - output only the path leading up to the file or directory a path refers to
-- basename - output only the name of the file or directory a path refers to
-
-### languages
-- sed - text processing language (stands for 'stream editor')
-- awk - text processing language
-
-## viewers
-- less
-- more
-
-## editors
-- ed
-- nano
-- vi / vim
-- emacs
-
-installation
-====================
-
-### installations
-- whereis     /installation - searches for binary, source, and man pages for a command
-- which       /installation, /environment - show where a command's program is, based on the current $PATH
-
-environment
-====================
-
-### terminal
-- tty         /environment - return terminal name, eg. '/dev/tty4' (run on WSL)
-- stty        /environment - get or set terminal options
-- clear       /environment - clear the screen
-- reset       /environment - reset terminal (see `tput`)
-- tput        /environment - terminal-specific capabilities
-  - [most of the user-level uses of this are covered by ncurses or ANSI codes]
-
-### shell
-- bg - put a process into the background of a shell
-- fg - put a process into the foreground of a shell
-
-### current directory
-- pwd         /environment - print working directory
-- cd          /environment - change directory
-
-### environment variables
-- export      /environment - make environment variable available to programs [sh and dirivatives]
-- setenv      /environment - csh-style equivalent of the bash-style `export` [csh and dirivatives]
-- [see /process - env]
-
-### history
-- history     /environment - output shell command history
-
-### user
-- whoami      /environment, /user         - show the username of the currently logged in user
-- su          /environment, /user         - become root or another user (stands for 'super user')
-- sudo        /environment, /user         - become root or another user to run a given command (stands for 'super user do')
-
-command
-====================
-
-### show
-- whatis      /command               - shows the one-line summary of a command
-- type        /command, /environment - show how a command would be interpreted in the current environment
-  - X is a shell keyword
-  - X is a shell builtin
-  - X is aliased to `Y'
-  - X is a function
-  - X is hashed (/path/to/X)
-  - X is /path/to/X
-  - -bash: type: X: not found
-
-### create
-- alias       /command, /environment - create an alias, or show aliases
-- function    /command, /environment - create a shell function
-
-### delete
-- unalias     /command, /environment - remove an alias
-
-misc
+applications
 ====================
 
 - lynx    ?, interactive - a CLI browser
 - elm     ?, interactive - a CLI email system [not on WSL]
 - webster ?       - a CLI dictionary lookup (uses the webster dictionary)
 
-Temp
-==================================================
+openers/runners
+====================
 
-### environment
-read - [not really environment, but eh]
-umask
-tmux
-chroot
-
-### scheduling
-batch - batch schedule commands
-crontab - schedule command
-
-### utils
-test   - evaluate an expression and returns 0 if true or 1 if false (alias: `[`)
-bc     - calculator (arbitrary precision)
-expr   - limited arithmetic and string expression evaluator [best to use bc]
-factor - factor numbers
-
-### programming
-cc / c99 / gcc - C compiler
-cflow - generate a C call graph
-fort77 - fortran compiler [!]
-make - follow steps to build an application
-
-lex - generate a lexer (I would suggest using a more modern one, like ANTLR4)
-yacc - generate a parser (I would suggest using a more modern one, like ANTLR4)
-
-### version control
-git - version control system
-svn - version control system
-
-### text processing
-cut      /operation - extract fields separated by a delimiter from each line of input
-expand   /operation - convert tabs to spaces
-unexpand /operation - convert spaces to tabs
-fold     /operation - line folding (wrapping) program
-join     /operation - joins lines of files on a common field (like SQL JOIN)
-fmt      /operation - formats text
-
-### running standard actions based on file type
 - run-mailcap (and its aliases: view, see, edit, compose, print)
 
-### misc
-- true  - return zero exit code
-- false - return non-zero exit code
-fc - fix command (shell builtin), used to quickly correct a previously entered command
-
-### hashing/checksums
-- md5sum    /operation - create checksum of a file or stdin using md5
-- sha1sum   /operation - create checksum of a file or stdin using sha1
-- sha224sum /operation - create checksum of a file or stdin using sha224
-- sha256sum /operation - create checksum of a file or stdin using sha256
-- sha384sum /operation - create checksum of a file or stdin using sha384
-- sha512sum /operation - create checksum of a file or stdin using sha512
-- cksum     /operation - create checksum of and count bytes in a file
-
-### SELinux [?]
-- sestatus    /config/security [?]           - get status of SELinux
-- semanage    /config/security [?], /service - manage various things in SELinux
-- getenforce  /config/security [?]           - print the current enforcement status of SELinux
-- setenforce  /config/security [?]           - set the enforcement status of SELinux
-
 Archaic and Unknown
-==================================================
+================================================================================
 
 - unman - ???
 - ncftp - 'anonymous ftp'
@@ -491,7 +505,7 @@ printing to a physical printer:
 - lp - sometimes an alias to lpr or vice versa
 
 Refs
-==================================================
+================================================================================
 
 - https://www.digitalocean.com/community/tutorials/linux-commands
 - https://www.math.utah.edu/lab/unix/unix-commands.html
