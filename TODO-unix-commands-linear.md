@@ -96,10 +96,10 @@ Hosts, Kernels, and Processes
 - pgrep       /process         - search for processes by name or other attributes
 
 #### show resources
-- fuser   /process, /file      - show info about (or kill) processes using files, filesystems, or ports/sockets
-- lsof    /process, /file      - show open files of process(es) (by name, user, etc.) [mac, linux, bsd, and solaris only]
-- pfiles  /process, /file      - show open files of a process (by name, user, etc.) [solaris only]
-- pmap    /process             - show process memory data
+- fuser       /process, /file  - show info about (or kill) processes using files, filesystems, or ports/sockets
+- lsof        /process, /file  - show open files of process(es) by name, user, etc. [mac, linux, bsd, and solaris only]
+- pfiles      /process, /file  - show open files of a process by name, user, etc. [solaris only]
+- pmap        /process         - show process memory data
 
 #### signal
 - kill        /process         - send SIGTERM or another signal to a given process
@@ -245,8 +245,8 @@ environment
   - [most of the user-level uses of this are covered by ncurses or ANSI codes]
 
 ### shell
-- bg - put a process into the background of a shell
-- fg - put a process into the foreground of a shell
+- bg          /process, /environment - put a process into the background of a shell
+- fg          /process, /environment - put a process into the foreground of a shell
 
 ### files and filesystem
 - pwd         /environment - print working directory
