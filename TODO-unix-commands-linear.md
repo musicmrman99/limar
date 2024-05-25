@@ -126,14 +126,6 @@ Storage, Filesystems, Directories, and Files
 - file        /file, /dir      - show file/dir type
 - stat        /file, /dir      - show inode metadata
 
-## viewers
-
-## editors
-- ed          /file, is: /app - edit one or more files
-- nano        /file, is: /app - edit one or more files
-- vi / vim    /file, is: /app - edit one or more files
-- emacs       /file, is: /app - edit one or more files
-
 ### show content
 - readlink    /file            - show symbolic link content
 - cat         /file            - concatenate files and output results
@@ -146,6 +138,12 @@ Storage, Filesystems, Directories, and Files
 
 - less        /file, is: /app  - view one or more files
 - more        /file, is: /app  - view one or more files
+
+## editors
+- ed          /file, is: /app - edit one or more files
+- nano        /file, is: /app - edit one or more files
+- vi / vim    /file, is: /app - edit one or more files
+- emacs       /file, is: /app - edit one or more files
 
 ### compare
 - diff        /file, /dir      - compare files
