@@ -222,9 +222,9 @@ Hosts, Kernels, and Processes
 ====================
 
 ### kernel
-- uname       /kernal/package  - show system information
+- uname       /kernel/package  - show system information
 - arch        /kernel/package  - equivalent to `uname -m`
-- lsb_release /kernal/package  - release info for 'standard linux base' (LSB)
+- lsb_release /kernel/package  - release info for 'standard linux base' (LSB)
 - modprobe    /kernel/module   - add or remove (`-r`) modules from the linux kernel
 - lsmod       /kernel/module   - list active modules in the running linux kernel
 - insmod      /kernel/module   - insert a module into the running linux kernel
@@ -233,7 +233,7 @@ Hosts, Kernels, and Processes
 - dmesg       /kernel/log      - show the contents of the kernel message buffer
 
 ### boot and service
-- service     /kernal, /service, /service/config, OLD - manage the system and services (don't use on systemd systems)
+- service     /kernel, /service, /service/config, OLD - manage the system and services (don't use on systemd systems)
 - systemctl   /kernel, /service, /service/config - manage the system and services (see: `systemctl --help`)
 - journalctl  /kernel/log, /service/log - manage the systemd journal
 - uptime      /kernel          - show how long the system has been running
