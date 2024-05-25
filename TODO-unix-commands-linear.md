@@ -4,54 +4,75 @@ Mainly Linux/Mac
 Tag Info (static for now)
 ================================================================================
 
-/hardware
-
-/store (hardware? alias: data)
-  > store-host/attachment
-/host (hardware? alias: proccess or proc)
-
-data (store? path (optional)?) {
-  /filesystem (alias: fs)
-  /directory (alias: dir)
-  /file
-}
-
-process-data (store? path?) {
-  /project
-  /package (project? version?)
-  /install (package?)
-  /config (package? installation (optional)?)
-}
-
-/environment (alias: env)
-/command
-
-proccess (host? install? config?) {
-  /kernel
-  /service (kernel? operations?)
-  /operation (kernel? service (optional)?)
-
-  content {
-    /in/param
-    /out/log
-
-    /module (parent process?)
-  }
-}
-
-idt (alias: identity-and-trust, iam, identity-and-access) {
-  /user
-  /group
-}
-
-/time
+**NOTE**: Should differentiate between what a thing *is* and what a thing *operates on*.
 
 meta:
 - DUP (duplicate)
 - OLD (should no longer be used)
 
+----------
+
+```
+/hardware
+
+/store (hardware?)
+  > store-host/attachment
+/host (hardware?)
+
+data (store? path?) {
+  /filesystem (alias: fs)
+  /directory (alias: dir)
+  /file
+
+  /project
+  /package (project? version?)
+  /installation (package? alias: install)
+  /configuration (package? installation (optional)? alias: config)
+}
+
+/command
+
+proccess (host? installation? configuration? command? identity?) {
+  /kernel
+  /service     (kernel? async operations?)
+  /application (kernel? sync operations? alias: app)
+  /operation   (kernel? service (optional)? alias: op)
+
+  content {
+    # subprocess that depends on and augments a parent process
+    /module
+
+    # per-process /configuration ('pushed in')
+    /parameter (alias: param)
+    # per-process context, like env vars, current dir, vfs root, etc. ('pulled in')
+    /environment (alias: env)
+
+    # current state (including status)
+    /state
+    # historical state
+    /log
+
+    # synchronous I/O (stdin/stdout, keyboard, mouse, etc.)
+    /input
+    /output
+  }
+}
+
+identity (alias: identity and trust, identity and access, iam) {
+  /user
+  /group
+  /role
+}
+
+/time
+```
+
 Commands
 ================================================================================
+
+**Notes**:
+- Tags without a name represent the target entities of the command
+- Unless overridden, all items are assumed to be `is: /operation`.
 
 Hardware
 ====================
@@ -60,6 +81,7 @@ Hardware
 - biosdecode  /host            - description of system's bios/uefi
 - dmidecode   /host            - description of system's hardware components
 - lspci       /host            - list PCI devices
+- lsblk       /host            - list block devices
 - lsusb       /host            - list USB devices
 
 Hosts, Kernels, and Processes
@@ -73,8 +95,8 @@ Hosts, Kernels, and Processes
 - lsmod       /kernel/module   - list active modules in the running linux kernel
 - insmod      /kernel/module   - insert a module into the running linux kernel
 - rmmod       /kernel/module   - remove a module from the running linux kernel
-- sysctl      /kernel/in/param - show and modify linux kernel parameters while the kernel is running
-- dmesg       /kernel/out/log  - show the contents of the kernel message buffer
+- sysctl      /kernel/param    - show and modify linux kernel parameters while the kernel is running
+- dmesg       /kernel/log      - show the contents of the kernel message buffer
 
 ### boot and service
 - service     /kernal, /service, /service/config, OLD - manage the system and services (don't use on systemd systems)
@@ -91,12 +113,12 @@ Hosts, Kernels, and Processes
 #### show metadata
 - ps          /process         - list info about processes
 - ptree       /process         - show processes as a hierarchy [solaris only; `ps` can do this in linux]
-- top         /process, interactive - interactive view of info about processes
-- htop        /process, interactive - interactive view of info about processes
+- top         /process, is: /app - interactive view of info about processes
+- htop        /process, is: /app - interactive view of info about processes
 - pgrep       /process         - search for processes by name or other attributes
 
 #### show resources
-- fuser       /process, /file  - show info about (or kill) processes using files, filesystems, or ports/sockets
+- fuser       /process, /filesystem, /file  - show info about (or kill) processes using files, filesystems, or ports/sockets
 - lsof        /process, /file  - show open files of process(es) by name, user, etc. [mac, linux, bsd, and solaris only]
 - pfiles      /process, /file  - show open files of a process by name, user, etc. [solaris only]
 - pmap        /process         - show process memory data
@@ -107,9 +129,9 @@ Hosts, Kernels, and Processes
 - pkill       /process         - send signal to process (by name or other attributes)
 
 #### create
-- env         /process         - create process with modified environment (vars, cur dir, signals, etc.), or show environment
-- nice        /process         - create process with modified scheduling priority
-- chroot      /process, /environment - start a process with a special root directory
+- env         /process, /process/environment - create process with modified environment (vars, cur dir, signals, etc.), or show environment
+- chroot      /process, /process/environment - start a process with a special root directory
+- nice        /process, /process/parameter - create process with modified scheduling priority
 
 #### set attrs
 - renice      /process         - set the scheduling priority of a running process
@@ -230,48 +252,48 @@ installation
 ====================
 
 ### installations
-- whereis     /installation - searches for binary, source, and man pages for a command
-- which       /installation, /environment - show where a command's program is, based on the current $PATH
+- whereis     /installation    - searches for binary, source, and man pages for a command
+- which       /installation, /process/environment - show where a command's program is, based on the current $PATH
 
 environment
 ====================
 
 ### terminal
-- tty         /environment - return terminal name, eg. '/dev/tty4' (run on WSL)
-- stty        /environment - get or set terminal options
-- clear       /environment - clear the screen
-- reset       /environment - reset terminal (see `tput`)
-- tput        /environment - terminal-specific capabilities
+- tty         /process/environment - return terminal name, eg. '/dev/tty4' (run on WSL)
+- stty        /process/environment - get or set terminal options
+- clear       /process/environment - clear the screen
+- reset       /process/environment - reset terminal (see `tput`)
+- tput        /process/environment - terminal-specific capabilities
   - [most of the user-level uses of this are covered by ncurses or ANSI codes]
 
 ### shell
-- bg          /process, /environment - put a process into the background of a shell
-- fg          /process, /environment - put a process into the foreground of a shell
+- bg          /process/environment - resume a process in the background of a shell
+- fg          /process/environment - put a process into the foreground of a shell
 
 ### files and filesystem
-- pwd         /environment - print working directory
-- cd          /environment - change directory
-- umask       /environment - set the file permissions mask (ie. excluded perms) for creating files
+- pwd         /process/environment - print working directory
+- cd          /process/environment - change directory
+- umask       /process/environment - set the file permissions mask (ie. excluded perms) for creating files
 
 ### environment variables
-- export      /environment - make environment variable available to programs [sh and dirivatives]
-- setenv      /environment - csh-style equivalent of the bash-style `export` [csh and dirivatives]
+- export      /process/environment - make environment variable available to programs [sh and dirivatives]
+- setenv      /process/environment - csh-style equivalent of the bash-style `export` [csh and dirivatives]
 - [see /process - env]
 
 ### history
-- history     /environment - output shell command history
+- history     /process/log     - output shell command history
 
 ### user
-- whoami      /environment, /user         - show the username of the currently logged in user
-- su          /environment, /user         - become root or another user (stands for 'super user')
-- sudo        /environment, /user         - become root or another user to run a given command (stands for 'super user do')
+- whoami      /process/user    - show the username of the currently logged in user
+- su          /process/user    - become root or another user (stands for 'super user')
+- sudo        /process/user    - become root or another user to run a given command (stands for 'super user do')
 
 command
 ====================
 
 ### show
-- whatis      /command               - shows the one-line summary of a command
-- type        /command, /environment - show how a command would be interpreted in the current environment
+- whatis      /command, /process/environment - shows the one-line summary of a command
+- type        /command, /process/environment - show how a command would be interpreted in the current environment
   - X is a shell keyword
   - X is a shell builtin
   - X is aliased to `Y'
@@ -281,11 +303,11 @@ command
   - -bash: type: X: not found
 
 ### create
-- alias       /command, /environment - create an alias, or show aliases
-- function    /command, /environment - create a shell function
+- alias       /command - create an alias, or show aliases
+- function    /command - create a shell function
 
 ### delete
-- unalias     /command, /environment - remove an alias
+- unalias     /command - remove an alias
 
 Unknown Categorisation
 ================================================================================
@@ -310,15 +332,15 @@ shells and commands
 
 - man - show usage manual for a given command
 
-- sh   - the Bourne Shell (and other shells)
-- bash - Bourne Again Shell
-- zsh  - Z Shell
-- ash  - Almquist Shell
-- dash - Debian Almquist Shell
-- ksh  - Korn Shell
-- fish - Friendly Interactive Shell
-- csh  - C Shell
-- tcsh - TENEX C Shell
+- sh    is: /app - the Bourne Shell (and other shells)
+- bash  is: /app - Bourne Again Shell
+- zsh   is: /app - Z Shell
+- ash   is: /app - Almquist Shell
+- dash  is: /app - Debian Almquist Shell
+- ksh   is: /app - Korn Shell
+- fish  is: /app - Friendly Interactive Shell
+- csh   is: /app - C Shell
+- tcsh  is: /app - TENEX C Shell
   - [and many others ...]
 
 - xargs
@@ -482,8 +504,8 @@ programming
 applications
 ====================
 
-- lynx    ?, interactive - a CLI browser
-- elm     ?, interactive - a CLI email system [not on WSL]
+- lynx    ?, is: /app - a CLI browser
+- elm     ?, is: /app - a CLI email system [not on WSL]
 - webster ?       - a CLI dictionary lookup (uses the webster dictionary)
 
 openers/runners
