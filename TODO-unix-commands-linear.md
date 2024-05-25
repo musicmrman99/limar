@@ -130,14 +130,28 @@ Hosts, Kernels, and Processes
 
 #### create
 - env         /process, /process/environment - create process with modified environment (vars, cur dir, signals, etc.), or show environment
-- chroot      /process, /process/environment - start a process with a special root directory
+- chroot      /process, /process/environment - create a process with a special root directory
 - nice        /process, /process/parameter - create process with modified scheduling priority
+
+- strace      /process         - runs a command in trace mode, providing detailed output of system calls
+- watch       /process         - runs a command periodically, replacing the output of previous runs
+- xargs       /process, /command - create processes from commands interpolated using each line of its input
+
+- time        /process, /time  - create a process and time how long it takes
+- timeout     /process, /time  - create a process then wait until it's finished or for set duration, whichever comes first
+
+- at          /process, /time  - set a process to be created at a particular time
+- atq         /process, /time  - view the outstanding jobs added by 'at'
+- atrm        /process, /time  - remove an outstanding job added by 'at'
+- batch       /process, /time  - schedule process(es) to be created when resources are available
+- crontab     /process, /time  - manage when a process is scheduled to be created
 
 #### set attrs
 - renice      /process         - set the scheduling priority of a running process
 
 #### wait
-- pidwait     /process         - wait on process searched for by name or other attributes
+- wait        /process/state   - wait for process to exit (ie. reach the stopped state)
+- pidwait     /process/state   - wait on process searched for by name or other attributes
 
 Identity and Trust
 ====================
@@ -302,12 +316,55 @@ command
   - X is /path/to/X
   - -bash: type: X: not found
 
+- man         /command, /process/environment - show usage manual for a given command
+
 ### create
-- alias       /command - create an alias, or show aliases
-- function    /command - create a shell function
+- alias       /command         - create a command alias, or show aliases
+- function    /command         - create a shell function
 
 ### delete
-- unalias     /command - remove an alias
+- unalias     /command         - remove an alias
+
+time
+====================
+
+### time/date
+- date        /time            - show time and date, and do calculations with them
+- cal         /time            - show a calendar (arguments determine month/year, and other things)
+
+### wait for time
+- sleep       /time            - wait for a given duration
+
+application
+====================
+
+### shells
+@tags (
+  /command,             # Can interpolate commands
+  /process,             # Can start processes
+  /process/environment, # Can view and modify its environment (eg. vars, cd, chroot, etc.)
+  /process/parameter,   # Can modify its parameters (shopt), and set those of processes
+  /process/input,       # Can set (via redirect, pipes, command substitution, etc.) the input of created processes
+  /process/output,      # Can redirect the output of created processes
+  /process/state,       # Can determine the status of processes it started (ie. if still blocking, or job status)
+  is: /app
+) {
+- sh                           - the Bourne Shell (and other shells)
+- bash                         - Bourne Again Shell
+- zsh                          - Z Shell
+- ash                          - Almquist Shell
+- dash                         - Debian Almquist Shell
+- ksh                          - Korn Shell
+- fish                         - Friendly Interactive Shell
+- csh                          - C Shell
+- tcsh                         - TENEX C Shell
+  - [and many others ...]
+}
+
+### other apps
+- lynx    /webpage, is: /app - a CLI browser
+- elm     /email, is: /app   - a CLI email system [not on WSL by default]
+- webster /word     - a CLI dictionary lookup (uses the webster dictionary)
 
 Unknown Categorisation
 ================================================================================
@@ -326,43 +383,6 @@ environment
 
 read - [not really environment, but eh]
 tmux - [terminal-related]
-
-shells and commands
-====================
-
-- man - show usage manual for a given command
-
-- sh    is: /app - the Bourne Shell (and other shells)
-- bash  is: /app - Bourne Again Shell
-- zsh   is: /app - Z Shell
-- ash   is: /app - Almquist Shell
-- dash  is: /app - Debian Almquist Shell
-- ksh   is: /app - Korn Shell
-- fish  is: /app - Friendly Interactive Shell
-- csh   is: /app - C Shell
-- tcsh  is: /app - TENEX C Shell
-  - [and many others ...]
-
-- xargs
-- watch
-- strace
-
-time and scheduling
-====================
-
-## info
-- date - show time and date, and do calculations with them
-- cal  - show a calendar (arguments determine month/year, and other things)
-
-## operations
-- sleep   - wait for a given duration
-- wait    - wait for process to exit
-- time    - time a command's duration
-- timeout - run command with a time limit
-
-### commands
-- batch   - batch schedule commands
-- crontab - schedule command
 
 text manipulation
 ====================
@@ -500,13 +520,6 @@ programming
 
 - lex - generate a lexer (I would suggest using a more modern one, like ANTLR4)
 - yacc - generate a parser (I would suggest using a more modern one, like ANTLR4)
-
-applications
-====================
-
-- lynx    ?, is: /app - a CLI browser
-- elm     ?, is: /app - a CLI email system [not on WSL]
-- webster ?       - a CLI dictionary lookup (uses the webster dictionary)
 
 openers/runners
 ====================
