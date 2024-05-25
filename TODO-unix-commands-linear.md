@@ -42,7 +42,7 @@ persistent-data (store? path?) {
   /configuration (package? installation (optional)? alias: config)
 }
 
-proccess (host? installation? configuration? command? identity?) {
+process (host? installation? configuration? command? identity?) {
   /kernel
   /service     (kernel? async operations?)
   /application (kernel? sync operations? alias: app)
