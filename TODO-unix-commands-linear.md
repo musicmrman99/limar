@@ -19,7 +19,7 @@ meta:
   > store-host/attachment
 /host (hardware?)
 
-streamed-data {
+/transient-data {
   # Address of persistent-data
   /path
 
@@ -31,7 +31,9 @@ streamed-data {
   /time
 }
 
-persistent-data (store? path?) {
+/persistent-data (store? path?) {
+  /host/image (project? version?)
+
   /filesystem (alias: fs)
   /directory (alias: dir)
   /file
@@ -42,7 +44,12 @@ persistent-data (store? path?) {
   /configuration (package? installation (optional)? alias: config)
 }
 
-process (host? installation? configuration? command? identity?) {
+/channel {
+  /host/channel
+  /process/channel
+}
+
+/proccess (host? installation? configuration? command? identity? alias: proc) {
   /kernel
   /service     (kernel? async operations?)
   /application (kernel? sync operations? alias: app)
@@ -62,13 +69,13 @@ process (host? installation? configuration? command? identity?) {
     # historical state
     /log
 
-    # synchronous I/O (stdin/stdout, keyboard, mouse, etc.)
+    # synchronous I/O (stdin/out/err, keyboard, mouse, etc.)
     /input
     /output
   }
 }
 
-identity (alias: identity and trust, identity and access, iam) {
+/identity (alias: identity and trust, identity and access, iam) {
   /user
   /group
   /role
@@ -86,11 +93,11 @@ Hardware
 ====================
 
 ### hardware
-- biosdecode  /host            - description of system's bios/uefi
-- dmidecode   /host            - description of system's hardware components
-- lspci       /host            - list PCI devices
-- lsblk       /host            - list block devices
-- lsusb       /host            - list USB devices
+- biosdecode  /hardware        - description of system's bios/uefi
+- dmidecode   /hardware        - description of system's hardware components
+- lspci       /hardware        - list PCI devices
+- lsblk       /hardware        - list block devices
+- lsusb       /hardware        - list USB devices
 
 Storage, Filesystems, Directories, and Files
 ====================
@@ -159,6 +166,10 @@ Storage, Filesystems, Directories, and Files
 
 - ar          /file            - create an archive
 - tar         /file            - create a tar archive
+- zip         /file            - package and compress files/dirs into zip (`.zip`) file
+- unzip       /file            - decompress and unpackage zip file
+- gzip        /file            - package and compress files/dirs into gzip (`.gz`) file
+- gunzip      /file            - decompress and unpackage gzip file
 - compress    /file, /dir      - compress (gzip?) file or all files in dir recursively (`-r`), adding `.Z` extension
 - uncompress  /file            - uncompress (gzip?) file or all files in dir recursively (`-r`), removing `.Z` extension
 
@@ -168,8 +179,15 @@ Storage, Filesystems, Directories, and Files
 - tee         /file            - both write (overwrite or append) input to a file, and output the input unchanged
 
 ### copy
-- cp          /file, /dir      - copy a file/dir (file-level)
-- dd          /file, /dir      - copy (and convert) a file (or dir??) (stream-level)
+- cp          /file, /dir      - copy a file/dir
+- dd          /file, /dir      - copy (and convert) a file (or dir??) (as a stream)
+
+- ftp         /file, /dir, /host/channel - transfer files/dirs to/from another host using FTP
+- sftp        /file, /dir, /host/channel - transfer files/dirs to/from another host using SFTP (FTP + SSL/TLS)
+- rcp         /file, /dir, /host/channel - transfer files/dirs to/from another host using RSH (stands for 'remote copy')
+- scp         /file, /dir, /host/channel - transfer files/dirs to/from another host using SSH (stands for 'secure copy')
+- wget        /file, /dir, /host/channel - fetch a file from another host using HTTP or HTTPS
+- curl        /file, /dir, /host/channel - fetch a file from another host using HTTP or HTTPS
 
 ### move
 - mv          /file, /dir      - move a file/dir
@@ -188,10 +206,44 @@ Storage, Filesystems, Directories, and Files
 ### synchronise
 - rsync       /file, /dir      - sync files/dirs (optionally over the network)
 
-Installations
+Packages and Installations
 ====================
 
-### installations
+### system package managers
+
+#### global
+- dpkg        /package, /installation - manage deb packages
+- apt-get     /package, /installation - manage deb packages
+- apt-cache   /package, /installation - manage the APT cache
+- apt         /package, /installation - manage deb packages and the APT chache
+- aptitute    /package, /installation - manage deb packages
+- yum         /package, /installation - manage rpm packages
+- rpm         /package, /installation - manage rpm packages
+- pacman      /package, /installation - manage tar packages
+- brew        /package, /installation - manage build scripts ('formulae') and binary packages ('bottles')
+
+#### namespaced
+- flatpak     /package, /installation - manage flatpack packages
+- snap        /package, /installation - manage snap packages
+
+### language package managers
+- npm         /package, /installation - node and JS package manager
+- yarn        /package, /installation - node and JS package manager
+- pip         /package, /installation - python package manager
+- cargo       /package, /installation - rust package manager
+- gem         /package, /installation - ruby package manager
+- composer    /package, /installation - PHP package manager
+- maven       /package, /installation - Java package manager
+- gradle      /package, /installation - Java package manager
+- nuget       /package, /installation - .NET package manager
+
+### environment managers
+- conda       /package, /installation, /process/environment - multi-language package and environment manager
+
+### host image managers
+- docker      /host/image, /host - Docker container image and instance manager
+
+### search
 - whereis     /installation    - searches for binary, source, and man pages for a command
 - which       /installation, /process/environment - show where a command's program is, based on the current $PATH
 
@@ -241,6 +293,10 @@ Hosts, Kernels, and Processes
 - halt        /kernel          - halt the system; alias for `systemctl halt`
 - poweroff    /kernel          - power off the system; alias for `systemctl poweroff`
 - reboot      /kernel          - reboot the system; alias for `systemctl reboot`
+
+### names and addresses
+- hostname    /host            - show hostname of current host
+- host        /host            - resolve DNS records of given hostname
 
 ### services and operations
 
@@ -336,6 +392,10 @@ Applications
 - csh                          - C Shell
 - tcsh                         - TENEX C Shell
   - [and many others ...]
+
+- ssh         /host            - secure shell (alias: `slogin`)
+- rsh         /host            - remote shell (alias: `rlogin`)
+- telnet      /host            - remote shell
 }
 
 - history     /application/log - output shell command history
@@ -344,6 +404,26 @@ Applications
 - lynx        /webpage, is: /app - a CLI browser
 - elm         /email, is: /app - a CLI email system [not on WSL by default]
 - webster     /word            - a CLI dictionary lookup (uses the webster dictionary)
+
+Channels
+====================
+
+### show configuration
+- netstat     /channel/config, /host/channel - show network connections, routing tables, interface statistics, masquerade connections, and multicast memberships
+
+### configuration
+- ifconfig    /channel/config  - show and modify network interface configuration
+- ip          /channel/config  - show and modify network interface configuration (the newer version of `ifconfig`)
+- iptables    /channel/config  - configure firewall, routing, and NAT
+- ufw         /channel/config  - show info about and configure the 'uncomplicated firewall'
+
+### discovery
+- ping        /host/channel    - repeatedly send ICMP packets to a given host and output responses
+- traceroute  /host/channel    - try to find the sequence of hosts, including routers, that a packet goes through on its round trip to/from a given host
+
+## human-to-human
+- talk        /process/channel - single-system text chat
+- write       /process/channel - single-system text chat (one line per message)
 
 Identity and Trust
 ====================
@@ -449,15 +529,6 @@ Time
 ### wait for time
 - sleep       /time            - wait for a given duration
 
-Unknown Categorisation
-================================================================================
-
-### SELinux [?]
-- sestatus    /config/security [?]           - get status of SELinux
-- semanage    /config/security [?], /service - manage various things in SELinux
-- getenforce  /config/security [?]           - print the current enforcement status of SELinux
-- setenforce  /config/security [?]           - set the enforcement status of SELinux
-
 Todo
 ================================================================================
 
@@ -467,59 +538,6 @@ terminal
 - fc    - fix command (shell builtin), used to quickly correct a previously entered command
 - read - reads user input and stores it in a variable
 - tmux - terminal multiplexer
-
-networking
-====================
-
-## info
-- hostname
-- host
-- netstat - show network connections, routing tables, interface statistics, masquerade connections, and multicast memberships
-
-## configure
-- ifconfig - show and modify network interface configuration
-- ip       - show and modify network interface configuration (the newer version of `ifconfig`)
-- iptables - configure firewall, routing, and NAT
-- ufw      - uncomplicated firewall (show info and configure firewall)
-
-## human-to-human communication
-- talk  - single-system text chat
-- write - single-system text chat (one line per message)
-
-## test tools
-- ping       - repeatedly send ICMP packets to a give host and output responses
-- traceroute - try to find the sequence of hosts, including routers, that a packet goes through on its round trip to/from a given host
-
-## remote shell
-- ssh (alias: slogin) - secure shell
-- rsh (alias: rlogin) - remote shell
-- telnet              - remote shell
-
-## file transfer
-- ftp  - transfer files and directories using FTP
-- sftp - transfer files and directories using SFTP (FTP + SSL/TLS)
-- rcp  - remote file copy over RSH
-- scp  - secure remote file copy over SSH
-- wget - fetch a file from a remote resource over HTTP or HTTPS
-- curl - fetch a file from a remote resource over HTTP or HTTPS
-
-package management
-====================
-
-## packaging
-- zip    - package and compress files and directories into zip (`.zip`) file
-- unzip  - decompress and unpackage zip file
-- gzip   - package and compress files and directories into gzip (`.gz`) file
-- gunzip - decompress and unpackage gzip file
-
-## managers
-- dpkg
-- apt
-  - apt-get
-  - apt-cache
-- pacman
-- yum
-- rpm
 
 version control
 ====================
@@ -542,6 +560,15 @@ openers/runners
 ====================
 
 - run-mailcap (and its aliases: view, see, edit, compose, print)
+
+Unknown Categorisation
+================================================================================
+
+### SELinux [?]
+- sestatus    /config/security [?]           - get status of SELinux
+- semanage    /config/security [?], /service - manage various things in SELinux
+- getenforce  /config/security [?]           - print the current enforcement status of SELinux
+- setenforce  /config/security [?]           - set the enforcement status of SELinux
 
 Archaic and Unknown
 ================================================================================
