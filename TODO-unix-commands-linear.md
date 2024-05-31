@@ -331,6 +331,15 @@ Hosts, Kernels, and Processes
 - batch       /process, /time  - schedule process(es) to be created when resources are available
 - crontab     /process, /time  - manage when a process is scheduled to be created
 
+#### openers
+- run-mailcap /process, /file  - open file with configured app for category
+- view        /process, /file  - open file with configured app for category [run-mailcap w/ default action]
+- see         /process, /file  - open file with configured app for category [run-mailcap w/ default action]
+- edit        /process, /file  - open file with configured app for category [run-mailcap w/ default action]
+- compose     /process, /file  - open file with configured app for category [run-mailcap w/ default action]
+- print       /process, /file  - open file with configured app for category [run-mailcap w/ default action]
+- open        /process, /file, /dir, /web-resource - open file or uri with associated app [Mac only?]
+
 #### signal
 - kill        /process         - send SIGTERM or another signal to a given process
 - killall     /process         - send SIGTERM or another signal to process(es) (by name, path, or other criteria)
@@ -398,10 +407,14 @@ Applications
 - telnet      /host            - remote shell
 }
 
-- history     /application/log - output shell command history
+- read        /app/input       - reads user input from a shell and stores it in a variable
+- tmux        /app/input       - terminal multiplexer
+
+- fc          /app/input, /app/log - fix command (shell builtin), used to quickly correct a previously entered command
+- history     /app/input, /app/log - output shell command history
 
 ### other apps
-- lynx        /webpage, is: /app - a CLI browser
+- lynx        /web-resource, is: /app - a CLI browser
 - elm         /email, is: /app - a CLI email system [not on WSL by default]
 - webster     /word            - a CLI dictionary lookup (uses the webster dictionary)
 
@@ -529,24 +542,12 @@ Time
 ### wait for time
 - sleep       /time            - wait for a given duration
 
-Todo
+Unknown Categorisation
 ================================================================================
 
-terminal
-====================
+### Programming
 
-- fc    - fix command (shell builtin), used to quickly correct a previously entered command
-- read - reads user input and stores it in a variable
-- tmux - terminal multiplexer
-
-version control
-====================
-
-- git - version control system
-- svn - version control system
-
-programming
-====================
+Should these be moved into their own manifest, or merged with other build tools, eg. maven (which is currently categorised as a package manager)?
 
 - cc / c99 / gcc - C compiler
 - cflow - generate a C call graph
@@ -555,14 +556,6 @@ programming
 
 - lex - generate a lexer (I would suggest using a more modern one, like ANTLR4)
 - yacc - generate a parser (I would suggest using a more modern one, like ANTLR4)
-
-openers/runners
-====================
-
-- run-mailcap (and its aliases: view, see, edit, compose, print)
-
-Unknown Categorisation
-================================================================================
 
 ### SELinux [?]
 - sestatus    /config/security [?]           - get status of SELinux

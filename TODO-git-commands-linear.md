@@ -1,4 +1,7 @@
-# Todo - Git
+# Todo - Git / Version Control
+
+- git - version control system
+- svn - version control system [?]
 
 ## Notes
 
