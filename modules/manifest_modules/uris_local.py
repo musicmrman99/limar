@@ -6,7 +6,7 @@ class UrisLocal:
         return 'uris'
 
     def on_declare_item(self, contexts, item, **_):
-        if 'project' not in item['tags'].raw():
+        if 'project' not in item['tags']:
             return
 
         # Local path
@@ -29,4 +29,4 @@ class UrisLocal:
             path = os.path.join(prefix, ref)
 
         # Assume the result is an absolute path if not already absolute
-        item['tags'].add(path=os.path.join('/', path))
+        item['path'] = os.path.join('/', path)

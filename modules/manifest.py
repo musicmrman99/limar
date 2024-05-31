@@ -341,6 +341,9 @@ class ManifestItemTags:
     def __eq__(self, value):
         return hasattr(value, '_tags') and self._tags == value._tags
 
+    def __contains__(self, value):
+        return value in self._tags
+
 class ManifestModule:
     """
     MM module to parse all manifest files declared by added context modules and

@@ -8,16 +8,16 @@ class UrisRemote:
         return 'uris'
 
     def on_declare_item(self, contexts, item, *, logger: LogModule):
-        if 'project' not in item['tags'].raw():
+        if 'project' not in item:
             return
 
         # Remote protocol
         try:
-            item['tags'].add(protocol=next(
+            item['protocol'] = next(
                 context['opts']['protocol']
                 for context in reversed(contexts)
                 if 'protocol' in context['opts']
-            ))
+            )
         except StopIteration:
             logger.warning(
                 "@uris (remote): Protocol not given in any parent context of"
@@ -27,11 +27,11 @@ class UrisRemote:
 
         # Remote host
         try:
-            item['tags'].add(host=next(
+            item['host'] = next(
                 context['opts']['host']
                 for context in reversed(contexts)
                 if 'host' in context['opts']
-            ))
+            )
         except StopIteration:
             logger.warning( # TODO: Make this use the log module
                 "@uris (remote): Remote host not given in any parent context of"
@@ -59,4 +59,4 @@ class UrisRemote:
             remotePath = os.path.join(prefix, ref)
 
           # Assume the result is an absolute path if not already absolute
-        item['tags'].add(remotePath=os.path.join('/', remotePath))
+        item['remotePath'] = os.path.join('/', remotePath)

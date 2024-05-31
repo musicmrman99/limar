@@ -53,10 +53,10 @@ class EnvModule:
                 item_set=item_set
             )
             try:
-                self._temp_proj_path = temp_proj['tags']['path']
+                self._temp_proj_path = temp_proj['path']
             except KeyError:
                 raise VCSException(
-                    "'path' not a tag of the project resolved from"
+                    "'path' not a property of the project resolved from"
                     f" {self._temp_proj_pattern}. Are you missing the"
                     " manifest_context_uris module, or an '@uris' context in"
                     " your manifest?"
@@ -80,10 +80,10 @@ class EnvModule:
             item_set = mod.manifest.get_item_set('^project$')
             proj = mod.manifest.get_item(proj_pattern, item_set=item_set)
             try:
-                proj_path = proj['tags']['path']
+                proj_path = proj['path']
             except KeyError:
                 raise VCSException(
-                    "'path' not a tag of the project resolved from"
+                    "'path' not a property of the project resolved from"
                     f" {proj_pattern}. Are you missing the"
                     " manifest_context_uris module, or an '@uris' context in"
                     " your manifest?"
