@@ -80,6 +80,11 @@ meta:
   /group
   /role
 }
+
+# Other stuff
+/web-resource
+/email
+/word
 ```
 
 System Entities - Creation, Information, Management, and Destruction (CRUD)
@@ -147,10 +152,10 @@ Storage, Filesystems, Directories, and Files
 - more        /file, is: /app  - view one or more files
 
 ## editors
-- ed          /file, is: /app - edit one or more files
-- nano        /file, is: /app - edit one or more files
-- vi / vim    /file, is: /app - edit one or more files
-- emacs       /file, is: /app - edit one or more files
+- ed          /file, is: /app  - edit one or more files
+- nano        /file, is: /app  - edit one or more files
+- vi / vim    /file, is: /app  - edit one or more files
+- emacs       /file, is: /app  - edit one or more files
 
 ### compare
 - diff        /file, /dir      - compare files
@@ -308,7 +313,7 @@ Hosts, Kernels, and Processes
 - pgrep       /process         - search for processes by name or other attributes
 
 #### show resources
-- fuser       /process, /filesystem, /file  - show info about (or kill) processes using files, filesystems, or ports/sockets
+- fuser       /process, /filesystem, /file - show info about (or kill) processes using files, filesystems, or ports/sockets
 - lsof        /process, /file  - show open files of process(es) by name, user, etc. [mac, linux, bsd, and solaris only]
 - pfiles      /process, /file  - show open files of a process by name, user, etc. [solaris only]
 - pmap        /process         - show process's raw memory
@@ -511,26 +516,26 @@ Text
 - wc          /text            - count characters, words, or lines in the given file or stdin
 
 ### processor languages
-- sed         /text - text processing language (stands for 'stream editor')
-- awk         /text - text processing language
+- sed         /text            - text processing language (stands for 'stream editor')
+- awk         /text            - text processing language
 
 ### hashing/checksums
-- md5sum      /text - create checksum of a file or stdin using md5
-- sha1sum     /text - create checksum of a file or stdin using sha1
-- sha224sum   /text - create checksum of a file or stdin using sha224
-- sha256sum   /text - create checksum of a file or stdin using sha256
-- sha384sum   /text - create checksum of a file or stdin using sha384
-- sha512sum   /text - create checksum of a file or stdin using sha512
-- cksum       /text - create checksum of and count bytes in a file
+- md5sum      /text            - create checksum of a file or stdin using md5
+- sha1sum     /text            - create checksum of a file or stdin using sha1
+- sha224sum   /text            - create checksum of a file or stdin using sha224
+- sha256sum   /text            - create checksum of a file or stdin using sha256
+- sha384sum   /text            - create checksum of a file or stdin using sha384
+- sha512sum   /text            - create checksum of a file or stdin using sha512
+- cksum       /text            - create checksum of and count bytes in a file
 
 Numbers
 ====================
 
 ### expression languages
-- test        /expression - evaluate an expression and returns 0 if true or 1 if false (alias: `[`)
-- bc          /expression - calculator (arbitrary precision)
-- expr        /expression - limited arithmetic and string expression evaluator [best to use bc]
-- factor      /expression - factor numbers
+- test        /expression      - evaluate an expression and returns 0 if true or 1 if false (alias: `[`)
+- bc          /expression      - calculator (arbitrary precision)
+- expr        /expression      - limited arithmetic and string expression evaluator [best to use bc]
+- factor      /expression      - factor numbers
 
 Time
 ====================
