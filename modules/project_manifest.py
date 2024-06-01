@@ -4,7 +4,7 @@ from modules.manifest_modules import (
     tags,
 
     # Projects
-    projects,
+    project,
     uris_local,
     uris_remote
 )
@@ -20,7 +20,7 @@ class ProjectManifestModule:
     def configure(self, *, mod: Namespace, **_):
         mod.manifest.add_context_modules(
             tags.Tags,
-            projects.Projects,
+            project.Project,
             uris_local.UrisLocal,
             uris_remote.UrisRemote
         )

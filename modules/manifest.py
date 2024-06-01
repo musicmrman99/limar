@@ -459,7 +459,7 @@ class ManifestModule:
     example-item2 (thing, thing-type)
 
     # Contexts that are stacked like this are actually nested.
-    @projects
+    @project
     @uris (path: /home/username/Source)
     # Refs can contain slashes, but tag names can't
     collection/thing-a (thing, thing-typeA)

@@ -52,7 +52,7 @@ Develop Existing Modules
 ```sh
 python -c '
 import glob, pathlib, pickle, json
-glob_path = "manifest/projects.manifest.*.pickle"
+glob_path = "manifest/project.manifest.*.pickle"
 path = glob.glob(glob_path)[0]
 data_txt = pathlib.Path(path).read_bytes()
 data_py = pickle.loads(data_txt)
