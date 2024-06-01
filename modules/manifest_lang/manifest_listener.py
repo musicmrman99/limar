@@ -1,4 +1,5 @@
 from argparse import Namespace
+import textwrap
 
 from modules.manifest import ManifestBuilder
 from modules.manifest_lang.build.ManifestListener import ManifestListener
@@ -98,21 +99,26 @@ class ManifestListenerImpl(ManifestListener):
     # Util
     def _get_ref_content(self, ref):
         if ref.literalBlock() is not None:
-            return ref.literalBlock().literal().getText()
+            return self._get_literal_block_content(ref.literalBlock())
         else:
             return ref.getText()
 
     def _get_kvpair_content(self, kvpair):
         if kvpair.name().literalBlock() is not None:
-            name = kvpair.name().literalBlock().literal().getText()
+            name = self._get_literal_block_content(kvpair.name().literalBlock())
         else:
             name = kvpair.name().getText()
 
         if kvpair.value() is None:
             value = None
         elif kvpair.value().literalBlock() is not None:
-            value = kvpair.value().literalBlock().literal().getText()
+            value = self._get_literal_block_content(
+                kvpair.value().literalBlock()
+            )
         else:
             value = kvpair.value().getText()
 
         return Namespace(name=name, value=value)
+
+    def _get_literal_block_content(self, block):
+        return textwrap.dedent(block.literal().getText())
