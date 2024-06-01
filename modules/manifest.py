@@ -528,23 +528,6 @@ class ManifestModule:
         parser.add_variable('DEFAULT_ITEM_SET', default_is_none=True)
 
     def configure_args(self, *, parser: ArgumentParser, **_):
-        # Options
-        parser.add_argument('-f', '--format', default='compact',
-            help="""
-            Specify the formatter to use. May be one of:
-
-            `compact` - Formats each item into a single line, showing the ref
-            (default)   and all tags (in brackets, separated by commas), and
-                        omits the blank line between items if formatting an item
-                        set.
-            `tabular` - Same as compact, but aligns the project ref and tag
-                        key/value pairs into columns, as applicable.
-            `object`  - Formats each item's ref, tags, and any other properties
-                        each on their own line, or where a property's value is
-                        multiple (ie. a list), then each value on its own line
-                        with a header line for the property name.
-            """)
-
         # Subcommands
         manifest_subparsers = parser.add_subparsers(dest="manifest_command")
 
