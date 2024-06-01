@@ -1,7 +1,4 @@
 class Project:
-    def __init__(self):
-        pass
-
     @staticmethod
     def context_type():
         return 'project'
