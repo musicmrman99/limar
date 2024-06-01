@@ -8,7 +8,7 @@ from core.exceptions import VCSException
 # Types
 from core.modules.log import LogModule
 from core.envparse import EnvironmentParser
-from argparse import ArgumentParser, Namespace
+from argparse import ArgumentParser, Namespace, BooleanOptionalAction
 from typing import Any, Callable
 
 Item = dict[str, Any]
@@ -543,7 +543,7 @@ class ManifestModule:
             A pattern that matches the item set to use to resolve the item
             """)
 
-        # Subcommands / Resolve Item Set - Permit data forwarding
+        # Subcommands / Resolve Item Set - Output Controls
         item_parser.add_argument('-L', '--lower-stage', default=None,
             help="""
             Specifies that all stages of processing up to the given stage should
@@ -561,13 +561,21 @@ class ManifestModule:
             another module. This option terminates this module call.
             """)
 
+          # Non-standard
+        item_parser.add_argument('-P', '--extra-properties',
+            action=BooleanOptionalAction, default=False,
+            help="""
+            Specifies that all item properties should be included in the output.
+            The default is False, so only item `ref` and `tags` are shown.
+            """)
+
         # Subcommands / Resolve Item Set
         item_set_parser = manifest_subparsers.add_parser('item-set')
 
         item_set_parser.add_argument('pattern', metavar='PATTERN',
             help='A regex pattern to resolve to an item set')
 
-        # Subcommands / Resolve Item Set - Permit data forwarding
+        # Subcommands / Resolve Item Set - Output Controls
         item_set_parser.add_argument('-L', '--lower-stage', default=None,
             help="""
             Specifies that all stages of processing up to the given stage should
@@ -583,6 +591,14 @@ class ManifestModule:
             help="""
             Specifies that the result of this module call should be forwarded to
             another module. This option terminates this module call.
+            """)
+
+          # Non-standard
+        item_set_parser.add_argument('-P', '--extra-properties',
+            action=BooleanOptionalAction, default=False,
+            help="""
+            Specifies that all item properties should be included in the output.
+            The default is False, so only item `ref` and `tags` are shown.
             """)
 
     def configure(self, *, mod: Namespace, env: Namespace, **_):
@@ -683,7 +699,10 @@ class ManifestModule:
             if self._should_run_stage('flatten',
                 args.output_is_forward, args.lower_stage, args.upper_stage
             ):
-                output = self._list_flattened_items({'': output})
+                output = self._list_flattened_items(
+                    {'': output},
+                    include_extra_props=args.extra_properties
+                )
 
             if self._should_run_stage('tabulate',
                 args.output_is_forward, args.lower_stage, args.upper_stage
@@ -701,7 +720,10 @@ class ManifestModule:
             if self._should_run_stage('flatten',
                 args.output_is_forward, args.lower_stage, args.upper_stage
             ):
-                output = self._list_flattened_items(output)
+                output = self._list_flattened_items(
+                    output,
+                    include_extra_props=args.extra_properties
+                )
 
             if self._should_run_stage('tabulate',
                 args.output_is_forward, args.lower_stage, args.upper_stage
@@ -929,12 +951,16 @@ class ManifestModule:
 
     # Transformation Stage
 
-    def _list_flattened_items(self, item_set: ItemSet) -> list[dict[str, Any]]:
+    def _list_flattened_items(self,
+            item_set: ItemSet,
+            include_extra_props: bool = False
+    ) -> list[dict[str, Any]]:
         return [
             self._flatten_item(
                 item,
                 self._all_tags(item_set),
-                self._all_extra_props(item_set)
+                self._all_extra_props(item_set),
+                include_extra_props=include_extra_props
             )
             for item in item_set.values()
         ]
@@ -942,7 +968,8 @@ class ManifestModule:
     def _flatten_item(self,
             item: Item,
             all_tags: list[str] | None = None,
-            all_extra_props: list[str] | None = None
+            all_extra_props: list[str] | None = None,
+            include_extra_props: bool = False
     ) -> dict[str, Any]:
         all_tags_computed: list[str] = []
         if all_tags is not None:
@@ -960,10 +987,14 @@ class ManifestModule:
                 f':{tag}': self._format_item_tag(item, tag)
                 for tag in all_tags_computed
             },
-            **{
-                f'.{prop}': self._format_item_prop(item, prop)
-                for prop in all_extra_props_computed
-            }
+            **(
+                {
+                    f'.{prop}': self._format_item_prop(item, prop)
+                    for prop in all_extra_props_computed
+                }
+                if include_extra_props
+                else {}
+            )
         }
 
     def _format_item_tag(self, item, tag):

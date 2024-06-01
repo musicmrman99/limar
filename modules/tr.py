@@ -122,9 +122,10 @@ class TrModule:
         as a list[str] and split on delim into a list[list[str]].
 
         If obj_mapping is 'values', then interpret data as a
-        list[dict[str, Any]] and convert it into a list[list[Any]] based on
-        object keys. Dictionary order is preserved. If obj_mapping is 'all',
-        then do the same, but also insert the object keys as a header row.
+        list[dict[str, Any]] and convert it into a list[list[Any]] with one
+        column for each unique key in any of the dicts. Dictionary order is
+        preserved. If obj_mapping is 'all', then do the same, but also insert
+        the list of unique dict keys as a header row.
 
         If none of the above transformations are applied, data is assumed to
         already be a list[list[Any]].
