@@ -1,6 +1,7 @@
 import jq
 import json
 from rich.table import Table
+from rich.console import RenderableType
 
 from core.modulemanager import ModuleAccessor
 
@@ -190,7 +191,14 @@ class TrModule:
                 table.add_row(*row[1:], **row[0])
         else:
             for row in data:
-                table.add_row(*row)
+                table.add_row(*[
+                    (
+                        item
+                        if isinstance(item, RenderableType)
+                        else str(item)
+                    )
+                    for item in row
+                ])
 
         return table
 
