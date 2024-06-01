@@ -1,3 +1,5 @@
+from argparse import Namespace
+
 from modules.manifest import ManifestBuilder
 from modules.manifest_lang.build.ManifestListener import ManifestListener
 
@@ -38,30 +40,25 @@ class ManifestListenerImpl(ManifestListener):
     # Util
     def _enter_context(self, context_header: ManifestParser.ContextHeaderContext):
         context_type = context_header.typeName.text
-        context_opts = {
-            opt.kvPair().name.text: (
-                opt.kvPair().value.getText()
-                if opt.kvPair().value is not None
-                else None
-            )
-            for opt in context_header.contextOpt()
-        }
+        context_opts = {}
+        for opt in context_header.contextOpt():
+            kvpair = self._get_kvpair_content(opt.kvPair())
+            context_opts[kvpair.name] = kvpair.value
 
         self._manifest_builder.enter_context(context_type, context_opts)
 
-    def exitContext(self, ctx: ManifestParser.ContextContext):
+    def exitExplScopedContext(self, ctx: ManifestParser.ExplScopedContextContext):
+        self._manifest_builder.exit_context()
+
+    def exitImplScopedContext(self, ctx: ManifestParser.ImplScopedContextContext):
         self._manifest_builder.exit_context()
 
     def enterItem(self, ctx: ManifestParser.ItemContext):
         ref = self._get_ref_content(ctx.ref())
-        tags = {
-            tag.kvPair().name.text: (
-                tag.kvPair().value.getText()
-                if tag.kvPair().value is not None
-                else None
-            )
-            for tag in ctx.tag()
-        }
+        tags = {}
+        for tag in ctx.tag():
+            kvpair = self._get_kvpair_content(tag.kvPair())
+            tags[kvpair.name] = kvpair.value
 
         self._manifest_builder.declare_item(ref, tags)
 
@@ -77,7 +74,7 @@ class ManifestListenerImpl(ManifestListener):
     # TODO: For now, a tag (with a value) appearning in a set is treated the
     #       same as a ref (ie. without a value).
     def enterSetTag(self, ctx: ManifestParser.SetTagContext):
-        item_set_ref = ctx.tag().kvPair().name.text
+        item_set_ref = self._get_kvpair_content(ctx.tag().kvPair()).name
         self._set_stack.append(item_set_ref)
 
     def exitSetOp(self, ctx: ManifestParser.SetOpContext):
@@ -100,7 +97,22 @@ class ManifestListenerImpl(ManifestListener):
 
     # Util
     def _get_ref_content(self, ref):
-        if ref.refLiteral() is not None:
-            return ref.refLiteral().getText()
+        if ref.literalBlock() is not None:
+            return ref.literalBlock().literal().getText()
         else:
-            return ref.refNormal().getText()
+            return ref.getText()
+
+    def _get_kvpair_content(self, kvpair):
+        if kvpair.name().literalBlock() is not None:
+            name = kvpair.name().literalBlock().literal().getText()
+        else:
+            name = kvpair.name().getText()
+
+        if kvpair.value() is None:
+            value = None
+        elif kvpair.value().literalBlock() is not None:
+            value = kvpair.value().literalBlock().literal().getText()
+        else:
+            value = kvpair.value().getText()
+
+        return Namespace(name=name, value=value)

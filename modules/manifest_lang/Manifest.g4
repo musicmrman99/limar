@@ -56,15 +56,15 @@ itemSetList : ref                                     #setItemSet
             | setOpen itemSetList setClose            #setGroup
             | itemSetList setItemOperator itemSetList #setOp
             ;
-ref : LITERAL_WRAPPER refLiteral LITERAL_WRAPPER | refNormal ;
-refLiteral : ~LITERAL_WRAPPER+ ;
-refNormal : NAME | PATH ;
+ref : literalBlock | NAME | PATH ;
 tag : kvPair ;
 
 /* Primitives
 -------------------- */
 
-kvPair : name=NAME (kvSeparator value=toEndOfItem)? ;
+kvPair : name (kvSeparator value)? ;
+name : (literalBlock | NAME) ;
+value : (literalBlock | toEndOfItem) ;
 kvSeparator : SPACE? KEY_VALUE_SEPARATOR SPACE? ;
 
 blockOpen : BLOCK_OPEN comment? NEWLINE? SPACE? ;
@@ -84,18 +84,25 @@ setItemOperator : (comment? NEWLINE)?
                   SPACE? SET_ITEM_OPERATOR
                   (comment? NEWLINE)? SPACE? ;
 
-comment : SPACE? COMMENT_OPEN text=toEndOfLine ;
+comment : SPACE? COMMENT_OPEN commentContent ;
+commentContent : literalBlock | toEndOfLine ;
 
 /* Utils
 -------------------- */
 
-toEndOfItem : ~( NEWLINE 
+toEndOfItem : ~( NEWLINE
                | DATA_ITEM_SEPARATOR
                | SET_ITEM_OPERATOR
                | DATA_CLOSE
                | SET_CLOSE
                )* ;
 toEndOfLine : ~NEWLINE* ;
+
+/* Literal Blocks
+-------------------- */
+
+literalBlock : LITERAL_WRAPPER literal LITERAL_WRAPPER ;
+literal : ~LITERAL_WRAPPER* ;
 
 /* Tokens
 -------------------------------------------------- */
