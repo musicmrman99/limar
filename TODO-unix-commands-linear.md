@@ -87,6 +87,32 @@ meta:
 /word
 ```
 
+Category Info (static for now)
+================================================================================
+
+- System Entities
+  - Hardware
+
+  - Storage, Filesystems, Directories, and Files
+  - Packages and Installations
+
+  - Commands
+
+  - Hosts, Kernels, and Processes
+  - Process Environment
+  - Applications
+
+  - Channels
+
+  - Identity and Trust
+
+- Data Entities - Producers and Processors
+  - Paths
+  - Process State
+  - Text
+  - Numbers
+  - Time
+
 System Entities - Creation, Information, Management, and Destruction (CRUD)
 ================================================================================
 
