@@ -781,7 +781,8 @@ class ManifestModule:
             if (
                 module_added and
                 hasattr(module, 'can_be_root') and
-                module.can_be_root()
+                module.can_be_root() and
+                module.context_type() not in self._manifest_names
             ):
                 self._manifest_names.append(module.context_type())
 
