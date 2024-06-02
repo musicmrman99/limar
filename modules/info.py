@@ -1,3 +1,5 @@
+import random
+import string
 import subprocess
 import shlex
 
@@ -48,7 +50,9 @@ class InfoModule:
     ]
 
     def __call__(self, *, mod: Namespace, args: Namespace, **_):
-        query_tools = mod.manifest.get_item_set('queryable')
+        ref = 'info-query-'+''.join(random.choices(string.hexdigits, k=32))
+        mod.manifest.declare_item_set(ref, 'queryable & '+args.entity)
+        query_tools = mod.manifest.get_item_set(ref)
 
         # Execute each query. Should produce a list of entity data (inc. ID) for
         # each query executed.
