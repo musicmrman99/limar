@@ -1,5 +1,7 @@
 from hashlib import md5
 import re
+import random
+import string
 
 from core.store import Store
 from core.modulemanager import ModuleAccessor
@@ -657,8 +659,24 @@ class ManifestModule:
         # Subcommands / Resolve Item Set
         item_set_parser = manifest_subparsers.add_parser('item-set')
 
+        item_set_parser.add_argument('-s', '--item-set-spec',
+            action='store_true', default=False,
+            help="""
+            Interpret the item set PATTERN as an item set spec (ie. the part
+            between `[` and `]` in an item set declaration of a manifest file).
+            This allows dynamically extracting sets of items from multiple
+            manifest files.
+
+            Note: The set is actually declared in the manifest for the duration
+            of the app run, but is created with a randomly generated ref, so is
+            effectively inaccessible.
+            """)
+
         item_set_parser.add_argument('pattern', metavar='PATTERN',
-            help='A regex pattern to resolve to an item set')
+            help="""
+            A regex pattern to resolve to an item set, or an item set spec if
+            `--set` was given (see its help for details).
+            """)
 
         # Subcommands / Resolve Item Set - Output Controls
         item_set_parser.add_argument('-L', '--lower-stage', default=None,
@@ -816,7 +834,12 @@ class ManifestModule:
                 output = mod.tr.render_table(output, has_headers=True)
 
         if args.manifest_command == 'item-set':
-            output = self.get_item_set(args.pattern)
+            if args.item_set_spec:
+                ref = ''.join(random.choices(string.hexdigits, k=32))
+                self.declare_item_set(ref, args.pattern)
+                output = self.get_item_set(ref)
+            else:
+                output = self.get_item_set(args.pattern)
 
             if self._should_run_stage('flatten',
                 args.output_is_forward, args.lower_stage, args.upper_stage
@@ -876,6 +899,33 @@ class ManifestModule:
 
     # Invokation
     # --------------------
+
+    @ModuleAccessor.invokable_as_service
+    def declare_item_set(self, ref, item_set_spec):
+        assert self._global_manifest is not None, '_global_manifest is initialised in STARTING phase, but this method is only run during RUNNING phase'
+
+        # This is effectively parsing a fragment of a manifest, rather than a
+        # whole manifest, but this way makes sure it goes through exactly the
+        # same process as parsing a real manifest, just with no contexts.
+
+        # Import Deps (these are slow to import, so only (re)parse the
+        # manifest if needed)
+        from antlr4 import InputStream, CommonTokenStream, ParseTreeWalker
+        from modules.manifest_lang.build.ManifestLexer import ManifestLexer
+        from modules.manifest_lang.build.ManifestParser import ManifestParser
+        from modules.manifest_lang.manifest_listener import ManifestListenerImpl
+
+        # Setup Parser
+        input_stream = InputStream(f'"""{ref}""" [{item_set_spec}]')
+        lexer = ManifestLexer(input_stream)
+        tokens = CommonTokenStream(lexer)
+        parser = ManifestParser(tokens)
+        tree = parser.itemSet()
+
+        # Parse
+        listener = ManifestListenerImpl(self._mod.log, self._global_manifest)
+        walker = ParseTreeWalker()
+        walker.walk(listener, tree)
 
     @ModuleAccessor.invokable_as_service
     def get_item_set(self, pattern: str | None = None) -> ItemSet:
