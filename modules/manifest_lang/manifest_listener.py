@@ -1,7 +1,7 @@
 from argparse import Namespace
 import textwrap
 
-from modules.manifest import ManifestBuilder
+from modules.manifest import Manifest
 from modules.manifest_lang.build.ManifestListener import ManifestListener
 
 # Types
@@ -18,19 +18,19 @@ class ManifestListenerImpl(ManifestListener):
 
     def __init__(self,
             logger: LogModule,
-            manifestBuilder: ManifestBuilder
+            manifest: Manifest
     ):
         self._logger = logger
-        self._manifest_builder = manifestBuilder
+        self._manifest = manifest
 
     # Listen Points
     # --------------------------------------------------
 
     def enterManifest(self, ctx: ManifestParser.ManifestContext):
-        self._manifest_builder.enter()
+        self._manifest.enter()
 
     def exitManifest(self, ctx: ManifestParser.ManifestContext):
-        self._manifest_builder.exit()
+        self._manifest.exit()
 
     def enterExplScopedContext(self, ctx: ManifestParser.ExplScopedContextContext):
         self._enter_context(ctx.contextHeader())
@@ -46,13 +46,13 @@ class ManifestListenerImpl(ManifestListener):
             kvpair = self._get_kvpair_content(opt.kvPair())
             context_opts[kvpair.name] = kvpair.value
 
-        self._manifest_builder.enter_context(context_type, context_opts)
+        self._manifest.enter_context(context_type, context_opts)
 
     def exitExplScopedContext(self, ctx: ManifestParser.ExplScopedContextContext):
-        self._manifest_builder.exit_context()
+        self._manifest.exit_context()
 
     def exitImplScopedContext(self, ctx: ManifestParser.ImplScopedContextContext):
-        self._manifest_builder.exit_context()
+        self._manifest.exit_context()
 
     def enterItem(self, ctx: ManifestParser.ItemContext):
         ref = self._get_ref_content(ctx.ref())
@@ -61,7 +61,7 @@ class ManifestListenerImpl(ManifestListener):
             kvpair = self._get_kvpair_content(tag.kvPair())
             tags[kvpair.name] = kvpair.value
 
-        self._manifest_builder.declare_item(ref, tags)
+        self._manifest.declare_item(ref, tags)
 
     def enterItemSet(self, ctx: ManifestParser.ItemSetContext):
         # Stacks item set specs on the way in, then structures them into a
@@ -91,7 +91,7 @@ class ManifestListenerImpl(ManifestListener):
 
     def exitItemSet(self, ctx: ManifestParser.ItemSetContext):
         item_set_ref = self._get_ref_content(ctx.ref())
-        self._manifest_builder.declare_item_set(
+        self._manifest.declare_item_set(
             item_set_ref,
             self._set_stack[0] if len(self._set_stack) > 0 else None
         )
