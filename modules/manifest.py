@@ -1076,7 +1076,7 @@ class ManifestModule:
         if 'tags' in item and tag in item['tags']:
             if item['tags'][tag] is not None:
                 return item['tags'][tag]
-            return 'O'
+            return '✓'
         return None
 
     def _format_item_prop(self, item, prop):
