@@ -27,10 +27,6 @@ class TrModule:
         parser.add_argument('-q', '--query', default=None,
             help="The `jq`-language query to apply.")
 
-        parser.add_argument('-j', '--jsonify',
-            action='store_true', default=False,
-            help="Convert the input data to JSON before querying.")
-
         parser.add_argument('-1', '--first',
             action='store_true', default=False,
             help="Only take the first result of the queried stream.")
@@ -81,12 +77,7 @@ class TrModule:
         output = forwarded_data
 
         if args.query is not None:
-            output = self.query(
-                args.query,
-                output,
-                jsonify=args.jsonify,
-                first=args.first
-            )
+            output = self.query(args.query, output, first=args.first)
 
         if args.tabulate:
             output = self.tabulate(
@@ -109,12 +100,7 @@ class TrModule:
         return output
 
     @ModuleAccessor.invokable_as_service
-    def query(self, query: str, data: Any, jsonify=False, first=False):
-        # If it's actually just a string, you probably wouldn't be trying to
-        # `jq` it, so assume that it's stringified JSON.
-        if isinstance(data, str) and jsonify:
-            data = json.loads(data)
-
+    def query(self, query: str, data: Any, first=False):
         transformer = jq.first if first is True else jq.all
         return transformer(query, data)
 
