@@ -52,7 +52,7 @@ class InfoModule:
     def __call__(self, *, mod: Namespace, args: Namespace, **_):
         ref = 'info-query-'+''.join(random.choices(string.hexdigits, k=32))
         # FIXME: Yes, I know, this is an injection attack waiting to happen.
-        mod.manifest.declare_item_set(ref, 'query & ('+args.entity+')')
+        mod.manifest.declare_item_set(ref, f'query & [{args.entity}]')
         query_command_items = mod.manifest.get_item_set(ref)
 
         # Execute each query. Produces a list of entity data (inc. entity ID)
