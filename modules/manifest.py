@@ -13,9 +13,13 @@ from core.envparse import EnvironmentParser
 from argparse import ArgumentParser, Namespace, BooleanOptionalAction
 from typing import Any, Callable
 
+ItemRef = str
+ItemSetRef = str | tuple[str, str] # (tag_name, tag_value)
+
 Item = dict[str, Any]
-ItemSet = dict[str, Item]
-ItemSetSet = dict[str, ItemSet]
+ItemSet = dict[ItemRef, Item]
+ItemSetSet = dict[ItemSetRef, ItemSet]
+
 ContextModule = Any
 
 class ManifestItemTags:
@@ -49,6 +53,8 @@ class ManifestItemTags:
         return value in self._tags
 
 class Manifest:
+
+    TAG_OPT_CONTINUOUS = 'continuous'
 
     STAGES_ORDERED = [
         'initialising',
@@ -100,12 +106,12 @@ class Manifest:
                 )
 
         # Inputs and Outputs
-        self._items = (
+        self._items: ItemSet = (
             initial_items
             if initial_items is not None
             else {}
         )
-        self._item_sets = (
+        self._item_sets: ItemSetSet = (
             initial_item_sets
             if initial_item_sets is not None
             else {}
@@ -254,20 +260,33 @@ class Manifest:
 
     # Util for _declare_item()
     def _on_add_item_tags(self, item_ref, tags):
-        for tag_name in tags.keys():
+        for tag_name, tag_value in tags.items():
             if tag_name not in self._item_sets.keys():
                 self._item_sets[tag_name] = {}
             self._item_sets[tag_name][item_ref] = self._items[item_ref]
+
+            if (
+                tag_value is not None and
+                not ( # Value indexing not disabled for this tag
+                    tag_name in self._tags and
+                    self.TAG_OPT_CONTINUOUS in self._tags[tag_name]
+                )
+            ):
+                indexed_tag = (tag_name, tag_value)
+                if indexed_tag not in self._item_sets.keys():
+                    self._item_sets[indexed_tag] = {}
+                self._item_sets[indexed_tag][item_ref] = self._items[item_ref]
 
     # Util for _declare_item()
     def _on_remove_item_tags(self, item_ref, names):
         for tag_name in names:
             if item_ref in self._item_sets[tag_name].keys():
                 del self._item_sets[tag_name][item_ref]
+
             if len(self._item_sets[tag_name]) == 0:
                 del self._item_sets[tag_name]
 
-    def declare_item(self, ref, tags = None):
+    def declare_item(self, ref: ItemRef, tags = None):
         if (
             self._stage != self.STAGES.entered and
             len(self._context_modules) > 0
@@ -313,21 +332,49 @@ class Manifest:
         )
 
     # Util for _declare_item_set()
-    def _get_item_set(self, ref):
+    def _get_item(self, ref: str):
         return (
-            self._item_sets[ref]
-            if ref in self._item_sets
-            else {} # In case the item set isn't defined
+            self._items[ref]
+            if ref in self._items
+            else None
         )
 
     # Util for _declare_item_set()
-    def _compute_set(self, ops_btree):
+    def _get_item_set(self, ref: str, value: str | None = None):
+        if ref not in self._item_sets:
+            return None
+        elif value is None:
+            return self._item_sets[ref]
+        else:
+            return self._item_sets[(ref, value)]
+
+    # Util for _declare_item_set()
+    def _compute_set(self, ops_btree) -> ItemSet:
+        # Base Case: Empty set
         if ops_btree is None:
-            return {} # In case of an empty set
+            return {}
 
+        # Base Case: Declared or tag item set or item
         if type(ops_btree) is str:
-            return self._get_item_set(ops_btree)
+            item_set = self._get_item_set(ops_btree)
+            if item_set is not None:
+                return item_set
 
+            item = self._get_item(ops_btree)
+            if item is not None:
+                return {item['ref']: item}
+
+            return {} # Empty item set
+
+        # Base Case: Tag item set with indexed value
+        if type(ops_btree) is tuple:
+            item_set = self._get_item_set(*ops_btree)
+            if item_set is not None:
+                return item_set
+
+            return {} # Empty item set
+
+        # Recursive Case: Binary operation
         left_item_set = self._compute_set(ops_btree['left'])
         right_item_set = self._compute_set(ops_btree['right'])
 
@@ -353,7 +400,7 @@ class Manifest:
                 " computing item set"
             )
 
-    def declare_item_set(self, ref, ops_btree):
+    def declare_item_set(self, ref: ItemSetRef, ops_btree):
         if (
             self._stage != self.STAGES.entered and
             len(self._context_modules) > 0
@@ -392,10 +439,10 @@ class Manifest:
     def item_sets(self) -> ItemSetSet:
         return self._item_sets
 
-    def item(self, ref: str) -> Item:
+    def item(self, ref: ItemRef) -> Item:
         return self._items[ref]
 
-    def item_set(self, ref: str) -> ItemSet:
+    def item_set(self, ref: ItemSetRef) -> ItemSet:
         return self._item_sets[ref]
 
     def raw(self) -> dict[str, Any]:
@@ -921,7 +968,7 @@ class ManifestModule:
     # --------------------
 
     @ModuleAccessor.invokable_as_service
-    def declare_item_set(self, ref, item_set_spec):
+    def declare_item_set(self, ref: str, item_set_spec):
         assert self._global_manifest is not None, '_global_manifest is initialised in STARTING phase, but this method is only run during RUNNING phase'
 
         # This is effectively parsing a fragment of a manifest, rather than a
@@ -966,9 +1013,12 @@ class ManifestModule:
             item_set_regex = re.compile(pattern)
             try:
                 item_set = next(
-                    value
-                    for name, value in self._global_manifest.item_sets().items()
-                    if item_set_regex.search(name)
+                    item
+                    for ref, item in self._global_manifest.item_sets().items()
+                    if (
+                        (type(ref) == str and item_set_regex.search(ref)) or
+                        (type(ref) == tuple and item_set_regex.search(ref[0]))
+                    )
                 )
             except (KeyError, StopIteration):
                 raise VCSException(

@@ -1,8 +1,9 @@
 # Done
 
-# Todo
+- ./ add tag indexing options (index if categorical, don't if continuous)
+- ./ allow item set spec to contain tag value filters
 
-- allow item set spec to contain tag value filters
+# Todo
 
 - TESTING
 

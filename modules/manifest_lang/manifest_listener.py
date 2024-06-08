@@ -86,8 +86,8 @@ class ManifestListenerImpl(ManifestListener):
     # TODO: For now, a tag (with a value) appearning in a set is treated the
     #       same as a ref (ie. without a value).
     def enterItemSetSpec_tag(self, ctx: ManifestParser.ItemSetSpec_tagContext):
-        item_set_ref = self._get_kvpair_content(ctx.tag().kvPair()).name
-        self._set_stack.append(item_set_ref)
+        tag = self._get_kvpair_content(ctx.tag().kvPair())
+        self._set_stack.append((tag.name, tag.value))
 
     def exitItemSetSpec_op(self, ctx: ManifestParser.ItemSetSpec_opContext):
         operator = ctx.setItemOperator().SET_ITEM_OPERATOR().getText()
