@@ -4,11 +4,12 @@ from modules.manifest_modules import (
     tags,
 
     # Tools and Commands
+    command,
     tool,
     query
 )
 
-class ToolManifestModule:
+class CommandManifestModule:
 
     # Lifecycle
     # --------------------
@@ -19,6 +20,8 @@ class ToolManifestModule:
     def configure(self, *, mod: Namespace, **_):
         mod.manifest.add_context_modules(
             tags.Tags,
+
+            command.Command,
             tool.Tool,
             query.Query
         )

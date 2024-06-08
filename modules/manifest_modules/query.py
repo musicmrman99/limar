@@ -5,24 +5,30 @@ class Query:
     def context_type():
         return 'query'
 
-    def on_declare_item(self, contexts, item, **_):
-        if 'commands' not in item:
-            commands = item['commands'] = {}
-        if 'queries' not in item['commands']:
-            queries = commands['queries'] = []
+    def __init__(self):
+        self._current_query = None
 
-        item['tags'].add('queryable')
+    def on_enter_context(self, context, *_, **__):
+        if 'command' not in context['opts']:
+            raise VCSException(
+                "@query context must be given a `command` to execute"
+            )
 
-        for context in contexts:
-            opts = context['opts']
+        if self._current_query is not None:
+            raise VCSException(
+                "Can only have one nested @query context: tried to nest"
+                f" '{context['opts']['command']}' inside"
+                f" '{self._current_query['command']}'"
+            )
 
-            if 'command' not in opts:
-                raise VCSException(
-                    "@query context must be given a `command` to execute"
-                )
-            queries.append({'command': opts['command']})
+        self._current_query = {
+            'type': 'query',
+            **context['opts']
+        }
 
-            # If `parse` (a `jq` expression) is omitted, then assumes the command's
-            # output is already in the desired JSON structure.
-            if 'parse' in opts:
-                queries[-1]['parse'] = opts['parse']
+    def on_exit_context(self, *_, **__):
+        self._current_query = None
+
+    def on_declare_item(self, contexts, item, *_, **__):
+        item['tags'].add('query')
+        item['command'] = self._current_query
