@@ -40,7 +40,7 @@ class ManifestListenerImpl(ManifestListener):
 
     # Util
     def _enter_context(self, context_header: ManifestParser.ContextHeaderContext):
-        context_type = context_header.typeName.text
+        context_type = context_header.typeName.text # type: ignore (dynamic)
         context_opts = {}
         for opt in context_header.contextOpt():
             kvpair = self._get_kvpair_content(opt.kvPair())
