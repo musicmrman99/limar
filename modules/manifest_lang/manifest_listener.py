@@ -68,17 +68,19 @@ class ManifestListenerImpl(ManifestListener):
         # b-tree on the way out based on operators.
         self._set_stack = []
 
-    def enterSetItemSet(self, ctx: ManifestParser.SetItemSetContext):
+    def enterItemSetSpec_itemSet(self,
+            ctx: ManifestParser.ItemSetSpec_itemSetContext
+    ):
         item_set_ref = self._get_ref_content(ctx.ref())
         self._set_stack.append(item_set_ref)
 
     # TODO: For now, a tag (with a value) appearning in a set is treated the
     #       same as a ref (ie. without a value).
-    def enterSetTag(self, ctx: ManifestParser.SetTagContext):
+    def enterItemSetSpec_tag(self, ctx: ManifestParser.ItemSetSpec_tagContext):
         item_set_ref = self._get_kvpair_content(ctx.tag().kvPair()).name
         self._set_stack.append(item_set_ref)
 
-    def exitSetOp(self, ctx: ManifestParser.SetOpContext):
+    def exitItemSetSpec_op(self, ctx: ManifestParser.ItemSetSpec_opContext):
         operator = ctx.setItemOperator().SET_ITEM_OPERATOR().getText()
         self._set_stack = [
             *self._set_stack[:-2],

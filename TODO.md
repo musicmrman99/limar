@@ -1,26 +1,8 @@
 # Done
 
-- ./ fix "Attempt to proceed to STOPPING ModuleLifecycle phase before the RUNNING phase" when argparse throws an ArgumentError because argument parsing failed
-
-- ./ add 'console' module
-  - ./ add console printer to MM
-
-- ./ support getting env vars without prefixing
-
-- ./ update MM docstring
-
-- X add `manifest [(--format|-f) FORMAT] <command> ...`
-  - ./ moved formatting to `tr` module instead
-
-- X maybe merge env and arg namespaces?
-    def _merge_namespaces(self, ns1, ns2):
-        return Namespace(**{**vars(ns1), **vars(ns2)})
-
-  - ./ No, I think it's best to keep them separate
-
-- ./ fix help text after splitting into two ModuleLifecycles
-
 # Todo
+
+- allow item set spec to contain tag value filters
 
 - TESTING
 

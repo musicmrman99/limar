@@ -50,11 +50,11 @@ declaration : (item | itemSet) comment? ;
 item : ref (SPACE dataOpen
          tag (dataItemSeparator tag)*
        dataClose)? ;
-itemSet : ref SPACE setOpen itemSetList setClose ;
-itemSetList : ref                                     #setItemSet
-            | tag                                     #setTag
-            | setOpen itemSetList setClose            #setGroup
-            | itemSetList setItemOperator itemSetList #setOp
+itemSet : ref SPACE setOpen itemSetSpec setClose ;
+itemSetSpec : ref                                     #itemSetSpec_itemSet
+            | tag                                     #itemSetSpec_tag
+            | setOpen itemSetSpec setClose            #itemSetSpec_group
+            | itemSetSpec setItemOperator itemSetSpec #itemSetSpec_op
             ;
 ref : literalBlock | NAME | PATH ;
 tag : kvPair ;
