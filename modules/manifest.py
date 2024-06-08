@@ -112,6 +112,8 @@ class Manifest:
         )
 
         # Internal
+        # Note: Same signature as an ItemSet, but different structure
+        self._tags: dict[str, dict[str, Any]] = {}
         self._contexts = []
         self._stage = self.STAGES.initialising
 
@@ -231,6 +233,24 @@ class Manifest:
             ],
             old_context['type']
         )
+
+    def declare_tag(self, ref, tags = None):
+        if (
+            self._stage != self.STAGES.entered and
+            len(self._context_modules) > 0
+        ):
+            raise VCSException(
+                "Attempt to call Manifest.declare_tag() outside of"
+                f" '{self.STAGES.entered}' stage with uninitialised context"
+                f" modules present (was in '{self._stage}' stage)"
+            )
+
+        # Validate
+        if ref in self._tags:
+            raise VCSException(f"Manifest item already exists with ref '{ref}'")
+
+          # Add to main item set
+        self._tags[ref] = tags if tags is not None else {}
 
     # Util for _declare_item()
     def _on_add_item_tags(self, item_ref, tags):

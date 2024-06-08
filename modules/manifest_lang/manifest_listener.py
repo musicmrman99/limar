@@ -54,6 +54,15 @@ class ManifestListenerImpl(ManifestListener):
     def exitImplScopedContext(self, ctx: ManifestParser.ImplScopedContextContext):
         self._manifest.exit_context()
 
+    def enterTagDecl(self, ctx: ManifestParser.ItemContext):
+        ref = self._get_ref_content(ctx.ref())
+        tags = {}
+        for tag in ctx.tag():
+            kvpair = self._get_kvpair_content(tag.kvPair())
+            tags[kvpair.name] = kvpair.value
+
+        self._manifest.declare_tag(ref, tags)
+
     def enterItem(self, ctx: ManifestParser.ItemContext):
         ref = self._get_ref_content(ctx.ref())
         tags = {}

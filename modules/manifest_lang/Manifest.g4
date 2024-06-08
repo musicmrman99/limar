@@ -42,11 +42,14 @@ contextHeader : CONTEXT_OPEN typeName=NAME (SPACE? dataOpen
                 dataClose)? ;
 contextOpt : kvPair comment? ;
 
-declaration : (item | itemSet) comment? ;
+declaration : (tagDecl | item | itemSet) comment? ;
 
 /* Declarations
 -------------------- */
 
+tagDecl : KEY_VALUE_SEPARATOR ref (SPACE dataOpen
+            tag (dataItemSeparator tag)*
+          dataClose)? ;
 item : ref (SPACE dataOpen
          tag (dataItemSeparator tag)*
        dataClose)? ;
