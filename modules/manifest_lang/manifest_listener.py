@@ -132,4 +132,4 @@ class ManifestListenerImpl(ManifestListener):
         return Namespace(name=name, value=value)
 
     def _get_literal_block_content(self, block):
-        return textwrap.dedent(block.literal().getText())
+        return textwrap.dedent(block.literal().getText()).strip('\n')
