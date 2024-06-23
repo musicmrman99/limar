@@ -190,7 +190,9 @@ class TrModule:
                 table.add_row(*[
                     (
                         item
-                        if isinstance(item, RenderableType)
+                        # None is renderable (as an empty cell), but for some
+                        # reason isn't an instance of RenderableType.
+                        if item is None or isinstance(item, RenderableType)
                         else str(item)
                     )
                     for item in row
