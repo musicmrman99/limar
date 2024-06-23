@@ -77,8 +77,8 @@ class ManifestListenerImpl(ManifestListener):
         # b-tree on the way out based on operators.
         self._set_stack = []
 
-    def enterItemSetSpec_itemSet(self,
-            ctx: ManifestParser.ItemSetSpec_itemSetContext
+    def enterItemSetSpec_ref(self,
+            ctx: ManifestParser.ItemSetSpec_refContext
     ):
         item_set_ref = self._get_ref_content(ctx.ref())
         self._set_stack.append(item_set_ref)

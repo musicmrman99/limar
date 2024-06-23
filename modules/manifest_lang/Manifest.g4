@@ -54,7 +54,7 @@ item : ref (SPACE dataOpen
          tag (dataItemSeparator tag)*
        dataClose)? ;
 itemSet : ref SPACE setOpen itemSetSpec setClose ;
-itemSetSpec : ref                                     #itemSetSpec_itemSet
+itemSetSpec : ref                                     #itemSetSpec_ref
             | tag                                     #itemSetSpec_tag
             | setOpen itemSetSpec setClose            #itemSetSpec_group
             | itemSetSpec setItemOperator itemSetSpec #itemSetSpec_op
