@@ -94,6 +94,7 @@ commentContent : literalBlock | toEndOfLine ;
 -------------------- */
 
 toEndOfItem : ~( NEWLINE
+               | SPACE
                | DATA_ITEM_SEPARATOR
                | SET_ITEM_OPERATOR
                | DATA_CLOSE
