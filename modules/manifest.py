@@ -43,6 +43,9 @@ class ManifestItemTags:
             if self._remove_callback is not None:
                 self._remove_callback(names)
 
+    def get(self, name, default=None):
+        return self._tags.get(name, default)
+
     def raw(self):
         return self._tags
 
