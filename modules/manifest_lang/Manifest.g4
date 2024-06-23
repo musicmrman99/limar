@@ -42,19 +42,22 @@ contextHeader : CONTEXT_OPEN typeName=NAME (SPACE? dataOpen
                 dataClose)? ;
 contextOpt : kvPair comment? ;
 
-declaration : (item | itemSet) comment? ;
+declaration : (tagDecl | item | itemSet) comment? ;
 
 /* Declarations
 -------------------- */
 
+tagDecl : KEY_VALUE_SEPARATOR ref (SPACE dataOpen
+            tag (dataItemSeparator tag)*
+          dataClose)? ;
 item : ref (SPACE dataOpen
          tag (dataItemSeparator tag)*
        dataClose)? ;
-itemSet : ref SPACE setOpen itemSetList setClose ;
-itemSetList : ref                                     #setItemSet
-            | tag                                     #setTag
-            | setOpen itemSetList setClose            #setGroup
-            | itemSetList setItemOperator itemSetList #setOp
+itemSet : ref SPACE setOpen itemSetSpec setClose ;
+itemSetSpec : ref                                     #itemSetSpec_ref
+            | tag                                     #itemSetSpec_tag
+            | setOpen itemSetSpec setClose            #itemSetSpec_group
+            | itemSetSpec setItemOperator itemSetSpec #itemSetSpec_op
             ;
 ref : literalBlock | NAME | PATH ;
 tag : kvPair ;
@@ -91,6 +94,7 @@ commentContent : literalBlock | toEndOfLine ;
 -------------------- */
 
 toEndOfItem : ~( NEWLINE
+               | SPACE
                | DATA_ITEM_SEPARATOR
                | SET_ITEM_OPERATOR
                | DATA_CLOSE

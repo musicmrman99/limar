@@ -1,5 +1,7 @@
 from hashlib import md5
 import re
+import random
+import string
 
 from core.store import Store
 from core.modulemanager import ModuleAccessor
@@ -11,26 +13,85 @@ from core.envparse import EnvironmentParser
 from argparse import ArgumentParser, Namespace, BooleanOptionalAction
 from typing import Any, Callable
 
+ItemRef = str
+ItemSetRef = str | tuple[str, str] # (tag_name, tag_value)
+
 Item = dict[str, Any]
-ItemSet = dict[str, Item]
-ItemSetSet = dict[str, ItemSet]
+ItemSet = dict[ItemRef, Item]
+ItemSetSet = dict[ItemSetRef, ItemSet]
+
 ContextModule = Any
 
-class ManifestBuilder:
+class ManifestItemTags:
+    def __init__(self, add_callback=None, remove_callback=None):
+        self._tags = {}
+        self._add_callback = add_callback
+        self._remove_callback = remove_callback
+
+    def add(self, *names, **tags):
+        for name, value in tags.items():
+            self._tags[name] = value
+            if self._add_callback is not None:
+                self._add_callback(tags)
+
+        if len(names) > 0:
+            self.add(**{name: None for name in names})
+
+    def remove(self, *names):
+        for name in names:
+            del self._tags[name]
+            if self._remove_callback is not None:
+                self._remove_callback(names)
+
+    def get(self, name, default=None):
+        return self._tags.get(name, default)
+
+    def raw(self):
+        return self._tags
+
+    def __eq__(self, value):
+        return hasattr(value, '_tags') and self._tags == value._tags
+
+    def __contains__(self, value):
+        return value in self._tags
+
+class Manifest:
+
+    TAG_OPT_CONTINUOUS = 'continuous'
+
+    STAGES_ORDERED = [
+        'initialising',
+        'entered',
+        'exited'
+    ]
+    STAGES = Namespace(**{
+        name: name
+        for name in STAGES_ORDERED
+    })
+
+    # Constructors
+    # --------------------
+
     def __init__(self,
             logger: LogModule,
+            initial_items: ItemSet | None = None,
+            initial_item_sets: ItemSetSet | None = None,
+            initial_contexts: list[str] | None = None,
             context_modules: dict[str, list[ContextModule]] | None = None,
-            default_contexts: list[str] | None = None
     ):
         """
-        `context_modules` must be a dictionary of the following format:
-            {'context-type-name': [context_module, ...], ...}
+        Use `initial_items` and `initial_item_sets` as the initial items and
+        item sets of this Manifest. Further items and item sets can be declared
+        using this Manifest's methods.
 
-        `default_contexts` is a list of context type names to enter immediately
+        `initial_contexts` is a list of context type names to enter immediately
         after entering the manifest. Enter the contexts in the order the names
         are given, passing no options to each. Raise a VCSException if any
-        module names given in `default_contexts` are not defined in
+        module names given in `initial_contexts` are not defined in
         `context_modules`.
+
+        `context_modules` must be a dictionary of the following format:
+            {'context-type-name': [context_module, ...], ...}
         """
 
         # Inputs
@@ -38,32 +99,76 @@ class ManifestBuilder:
         self._context_modules = (
             context_modules if context_modules is not None else {}
         )
-        self._default_contexts = default_contexts
-        self._default_context_names = (
-            default_contexts if default_contexts is not None else []
+        self._initial_contexts = (
+            initial_contexts if initial_contexts is not None else []
         )
-        for name in self._default_context_names:
+        for name in self._initial_contexts:
             if name not in self._context_modules:
-                raise VCSException('Default context')
+                raise VCSException(
+                    f"Initial context '{name}' not available to manifest"
+                )
 
-        # Outputs
-        self._items = {}
-        self._item_sets = {}
+        # Inputs and Outputs
+        self._items: ItemSet = (
+            initial_items
+            if initial_items is not None
+            else {}
+        )
+        self._item_sets: ItemSetSet = (
+            initial_item_sets
+            if initial_item_sets is not None
+            else {}
+        )
 
-        # Temp
+        # Internal
+        # Note: Same signature as an ItemSet, but different structure
+        self._tags: dict[str, dict[str, Any]] = {}
         self._contexts = []
+        self._stage = self.STAGES.initialising
+
+    @staticmethod
+    def from_raw(
+            logger: LogModule,
+            raw_data: dict[str, Any],
+            initial_contexts: list[str] | None = None,
+            context_modules: dict[str, list[ContextModule]] | None = None
+    ):
+        return Manifest(
+            logger,
+            raw_data['items'],
+            raw_data['item_sets'],
+            initial_contexts,
+            context_modules
+        )
+
+    # Mutators
+    # --------------------
 
     def enter(self):
+        if self._stage != self.STAGES.initialising:
+            raise VCSException(
+                "Attempt to call Manifest.enter() outside of"
+                f" '{self.STAGES.initialising}' stage (was in '{self._stage}'"
+                f" stage)"
+            )
+        self._stage = self.STAGES.entered
+
         # Call - 'on_enter_manifest' on all registered context modules
         self._run_manifest_lifecycle_point('on_enter_manifest', [])
 
-        # Enter each default context
-        for context_name in self._default_context_names:
+        # Enter each initial context
+        for context_name in self._initial_contexts:
             self.enter_context(context_name)
 
     def exit(self):
-        # Exit each default context
-        for _ in range(len(self._default_context_names)):
+        if self._stage != self.STAGES.entered:
+            raise VCSException(
+                "Attempt to call Manifest.exit() outside of"
+                f" '{self.STAGES.entered}' stage (was in '{self._stage}' stage)"
+            )
+
+        # Exit each initial context
+        for _ in range(len(self._initial_contexts)):
             self.exit_context()
 
         # Call - 'on_exit_manifest' on all registered context modules
@@ -75,7 +180,15 @@ class ManifestBuilder:
         for item in self._items.values():
             item['tags'] = item['tags'].raw()
 
+        self._stage = self.STAGES.exited
+
     def enter_context(self, type, opts = None):
+        if self._stage != self.STAGES.entered:
+            raise VCSException(
+                "Attempt to call Manifest.enter_context() outside of"
+                f" '{self.STAGES.entered}' stage (was in '{self._stage}' stage)"
+            )
+
         # Validate
         if type not in self._context_modules.keys():
             self._logger.warning(
@@ -106,6 +219,12 @@ class ManifestBuilder:
         )
 
     def exit_context(self):
+        if self._stage != self.STAGES.entered:
+            raise VCSException(
+                "Attempt to call Manifest.exit_context() outside of"
+                f" '{self.STAGES.entered}' stage (was in '{self._stage}' stage)"
+            )
+
         # Discard
         old_context = self._contexts.pop()
 
@@ -124,22 +243,63 @@ class ManifestBuilder:
             old_context['type']
         )
 
+    def declare_tag(self, ref, tags = None):
+        if (
+            self._stage != self.STAGES.entered and
+            len(self._context_modules) > 0
+        ):
+            raise VCSException(
+                "Attempt to call Manifest.declare_tag() outside of"
+                f" '{self.STAGES.entered}' stage with uninitialised context"
+                f" modules present (was in '{self._stage}' stage)"
+            )
+
+        # Validate
+        if ref in self._tags:
+            raise VCSException(f"Manifest item already exists with ref '{ref}'")
+
+          # Add to main item set
+        self._tags[ref] = tags if tags is not None else {}
+
     # Util for _declare_item()
     def _on_add_item_tags(self, item_ref, tags):
-        for tag_name in tags.keys():
+        for tag_name, tag_value in tags.items():
             if tag_name not in self._item_sets.keys():
                 self._item_sets[tag_name] = {}
             self._item_sets[tag_name][item_ref] = self._items[item_ref]
+
+            if (
+                tag_value is not None and
+                not ( # Value indexing not disabled for this tag
+                    tag_name in self._tags and
+                    self.TAG_OPT_CONTINUOUS in self._tags[tag_name]
+                )
+            ):
+                indexed_tag = (tag_name, tag_value)
+                if indexed_tag not in self._item_sets.keys():
+                    self._item_sets[indexed_tag] = {}
+                self._item_sets[indexed_tag][item_ref] = self._items[item_ref]
 
     # Util for _declare_item()
     def _on_remove_item_tags(self, item_ref, names):
         for tag_name in names:
             if item_ref in self._item_sets[tag_name].keys():
                 del self._item_sets[tag_name][item_ref]
+
             if len(self._item_sets[tag_name]) == 0:
                 del self._item_sets[tag_name]
 
-    def declare_item(self, ref, tags = None):
+    def declare_item(self, ref: ItemRef, tags = None):
+        if (
+            self._stage != self.STAGES.entered and
+            len(self._context_modules) > 0
+        ):
+            raise VCSException(
+                "Attempt to call Manifest.declare_item() outside of"
+                f" '{self.STAGES.entered}' stage with uninitialised context"
+                f" modules present (was in '{self._stage}' stage)"
+            )
+
         # Validate
         if ref in self._items:
             raise VCSException(f"Manifest item already exists with ref '{ref}'")
@@ -175,21 +335,49 @@ class ManifestBuilder:
         )
 
     # Util for _declare_item_set()
-    def _get_item_set(self, ref):
+    def _get_item(self, ref: str):
         return (
-            self._item_sets[ref]
-            if ref in self._item_sets
-            else {} # In case the item set isn't defined
+            self._items[ref]
+            if ref in self._items
+            else None
         )
 
     # Util for _declare_item_set()
-    def _compute_set(self, ops_btree):
+    def _get_item_set(self, ref: str, value: str | None = None):
+        if ref not in self._item_sets:
+            return None
+        elif value is None:
+            return self._item_sets[ref]
+        else:
+            return self._item_sets[(ref, value)]
+
+    # Util for _declare_item_set()
+    def _compute_set(self, ops_btree) -> ItemSet:
+        # Base Case: Empty set
         if ops_btree is None:
-            return {} # In case of an empty set
+            return {}
 
+        # Base Case: Declared or tag item set or item
         if type(ops_btree) is str:
-            return self._get_item_set(ops_btree)
+            item_set = self._get_item_set(ops_btree)
+            if item_set is not None:
+                return item_set
 
+            item = self._get_item(ops_btree)
+            if item is not None:
+                return {item['ref']: item}
+
+            return {} # Empty item set
+
+        # Base Case: Tag item set with indexed value
+        if type(ops_btree) is tuple:
+            item_set = self._get_item_set(*ops_btree)
+            if item_set is not None:
+                return item_set
+
+            return {} # Empty item set
+
+        # Recursive Case: Binary operation
         left_item_set = self._compute_set(ops_btree['left'])
         right_item_set = self._compute_set(ops_btree['right'])
 
@@ -215,7 +403,17 @@ class ManifestBuilder:
                 " computing item set"
             )
 
-    def declare_item_set(self, ref, ops_btree):
+    def declare_item_set(self, ref: ItemSetRef, ops_btree):
+        if (
+            self._stage != self.STAGES.entered and
+            len(self._context_modules) > 0
+        ):
+            raise VCSException(
+                "Attempt to call Manifest.declare_item_set() outside of"
+                f" '{self.STAGES.entered}' stage with uninitialised context"
+                f" modules present (was in '{self._stage}' stage)"
+            )
+
         # Compute
         item_set = self._compute_set(ops_btree)
 
@@ -235,10 +433,29 @@ class ManifestBuilder:
             [item_set]
         )
 
-    def finalise(self):
-        return Manifest(self._items, self._item_sets)
+    # Getters
+    # --------------------
+
+    def items(self) -> ItemSet:
+        return self._items
+
+    def item_sets(self) -> ItemSetSet:
+        return self._item_sets
+
+    def item(self, ref: ItemRef) -> Item:
+        return self._items[ref]
+
+    def item_set(self, ref: ItemSetRef) -> ItemSet:
+        return self._item_sets[ref]
+
+    def raw(self) -> dict[str, Any]:
+        return {
+            'items': self._items,
+            'item_sets': self._item_sets
+        }
 
     # Utils
+    # --------------------
 
     def _run_manifest_lifecycle_point(self, name, args):
         mods = [
@@ -286,63 +503,6 @@ class ManifestBuilder:
                         *args,
                         logger=self._logger
                     )
-
-class Manifest:
-    def __init__(self, items: ItemSet, item_sets: ItemSetSet):
-        self._items = items
-        self._item_sets = item_sets
-
-    @staticmethod
-    def from_raw(data):
-        return Manifest(data['items'], data['item_sets'])
-
-    def raw(self):
-        return {
-            'items': self._items,
-            'item_sets': self._item_sets
-        }
-
-    def items(self):
-        return self._items
-
-    def item_sets(self):
-        return self._item_sets
-
-    def item(self, ref):
-        self._items[ref]
-
-    def item_set(self, ref):
-        self._item_sets[ref]
-
-class ManifestItemTags:
-    def __init__(self, add_callback=None, remove_callback=None):
-        self._tags = {}
-        self._add_callback = add_callback
-        self._remove_callback = remove_callback
-
-    def add(self, *names, **tags):
-        for name, value in tags.items():
-            self._tags[name] = value
-            if self._add_callback is not None:
-                self._add_callback(tags)
-
-        if len(names) > 0:
-            self.add(**{name: None for name in names})
-
-    def remove(self, *names):
-        for name in names:
-            del self._tags[name]
-            if self._remove_callback is not None:
-                self._remove_callback(names)
-
-    def raw(self):
-        return self._tags
-
-    def __eq__(self, value):
-        return hasattr(value, '_tags') and self._tags == value._tags
-
-    def __contains__(self, value):
-        return value in self._tags
 
 class ManifestModule:
     """
@@ -510,13 +670,10 @@ class ManifestModule:
         self._ctx_mod_factories: dict[str, list[Callable[[], Any]]] = {}
         self._manifest_names: list[str] = []
 
-        # None is used when verifying that no attempt was made to add context
-        # modules after a manifest was parsed.
-        self._manifests: list[Manifest] | None = None
+        self._manifests: list[Manifest] = []
+        self._global_manifest: Manifest | None = None
 
-        # Used as an internal cache of the combination of all manifests
-        self._all_items_data = None
-        self._all_item_sets_data = None
+        # Internal caches
         self._all_tags_data = None
         self._all_extra_props_data = None
 
@@ -572,8 +729,24 @@ class ManifestModule:
         # Subcommands / Resolve Item Set
         item_set_parser = manifest_subparsers.add_parser('item-set')
 
+        item_set_parser.add_argument('-s', '--item-set-spec',
+            action='store_true', default=False,
+            help="""
+            Interpret the item set PATTERN as an item set spec (ie. the part
+            between `[` and `]` in an item set declaration of a manifest file).
+            This allows dynamically extracting sets of items from multiple
+            manifest files.
+
+            Note: The set is actually declared in the manifest for the duration
+            of the app run, but is created with a randomly generated ref, so is
+            effectively inaccessible.
+            """)
+
         item_set_parser.add_argument('pattern', metavar='PATTERN',
-            help='A regex pattern to resolve to an item set')
+            help="""
+            A regex pattern to resolve to an item set, or an item set spec if
+            `--set` was given (see its help for details).
+            """)
 
         # Subcommands / Resolve Item Set - Output Controls
         item_set_parser.add_argument('-L', '--lower-stage', default=None,
@@ -613,6 +786,20 @@ class ManifestModule:
         for manifest_name in self._manifest_names:
             self._load_manifest(manifest_name)
 
+        self._global_manifest = Manifest(
+            self._mod.log,
+            {
+                ref: item
+                for manifest in self._manifests
+                for ref, item in manifest.items().items()
+            },
+            {
+                ref: item_set
+                for manifest in self._manifests
+                for ref, item_set in manifest.item_sets().items()
+            }
+        )
+
     def _load_manifest(self, name):
         assert self._manifest_store is not None, 'ManifestModule._load_manifest() called before ManifestModule.configure()'
         try:
@@ -629,7 +816,10 @@ class ManifestModule:
 
         # Try cache
         try:
-            manifest = Manifest.from_raw(self._mod.cache.get(cached_name))
+            manifest = Manifest.from_raw(
+                self._mod.log,
+                self._mod.cache.get(cached_name)
+            )
 
         except KeyError:
             # Import Deps (these are slow to import, so only (re)parse the
@@ -657,19 +847,20 @@ class ManifestModule:
             tree = parser.manifest()
 
             # Start Builder
-            manifest_builder = ManifestBuilder(
+            manifest = Manifest(
                 self._mod.log,
-                context_modules,
-                [name]
+                None,
+                None,
+                [name],
+                context_modules
             )
 
             # Parse
-            listener = ManifestListenerImpl(self._mod.log, manifest_builder)
+            listener = ManifestListenerImpl(self._mod.log, manifest)
             walker = ParseTreeWalker()
             walker.walk(listener, tree)
 
-            # Finalise
-            manifest = manifest_builder.finalise()
+            # Log
             self._mod.log.info(
                 f"Loaded manifest '{name}' from '{self._manifest_store}'"
             )
@@ -678,8 +869,6 @@ class ManifestModule:
             self._mod.cache.set(cached_name, manifest.raw())
 
         # Add Manifest
-        if self._manifests is None:
-            self._manifests = []
         self._manifests.append(manifest)
 
     STAGES = [
@@ -715,7 +904,12 @@ class ManifestModule:
                 output = mod.tr.render_table(output, has_headers=True)
 
         if args.manifest_command == 'item-set':
-            output = self.get_item_set(args.pattern)
+            if args.item_set_spec:
+                ref = ''.join(random.choices(string.hexdigits, k=32))
+                self.declare_item_set(ref, args.pattern)
+                output = self.get_item_set(ref)
+            else:
+                output = self.get_item_set(args.pattern)
 
             if self._should_run_stage('flatten',
                 args.output_is_forward, args.lower_stage, args.upper_stage
@@ -755,19 +949,6 @@ class ManifestModule:
         Allows other modules to extend the manifest format with new contexts.
         """
 
-        # It is only useful to configure context modules *before* the manifest
-        # is parsed. If it's already been parsed, then registration will have no
-        # effect. As such, fail loudly to tell ModuleManager module developers
-        # that they've done something wrong.
-        if self._manifests is not None and len(modules) > 0:
-            raise VCSException(
-                f"Attempted registration of context module '{modules[0]}' after"
-                " manifest has been parsed. This was probably caused by"
-                " inappropriate use of mod.manifest.add_context_modules() by"
-                " the last ModuleManager module to be invoked (either directly"
-                " or by another MM module)."
-            )
-
         for module in modules:
             module_added = True
             if module.context_type() not in self._ctx_mod_factories:
@@ -781,7 +962,8 @@ class ManifestModule:
             if (
                 module_added and
                 hasattr(module, 'can_be_root') and
-                module.can_be_root()
+                module.can_be_root() and
+                module.context_type() not in self._manifest_names
             ):
                 self._manifest_names.append(module.context_type())
 
@@ -789,7 +971,36 @@ class ManifestModule:
     # --------------------
 
     @ModuleAccessor.invokable_as_service
+    def declare_item_set(self, ref: str, item_set_spec):
+        assert self._global_manifest is not None, '_global_manifest is initialised in STARTING phase, but this method is only run during RUNNING phase'
+
+        # This is effectively parsing a fragment of a manifest, rather than a
+        # whole manifest, but this way makes sure it goes through exactly the
+        # same process as parsing a real manifest, just with no contexts.
+
+        # Import Deps (these are slow to import, so only (re)parse the
+        # manifest if needed)
+        from antlr4 import InputStream, CommonTokenStream, ParseTreeWalker
+        from modules.manifest_lang.build.ManifestLexer import ManifestLexer
+        from modules.manifest_lang.build.ManifestParser import ManifestParser
+        from modules.manifest_lang.manifest_listener import ManifestListenerImpl
+
+        # Setup Parser
+        input_stream = InputStream(f'"""{ref}""" [{item_set_spec}]')
+        lexer = ManifestLexer(input_stream)
+        tokens = CommonTokenStream(lexer)
+        parser = ManifestParser(tokens)
+        tree = parser.itemSet()
+
+        # Parse
+        listener = ManifestListenerImpl(self._mod.log, self._global_manifest)
+        walker = ParseTreeWalker()
+        walker.walk(listener, tree)
+
+    @ModuleAccessor.invokable_as_service
     def get_item_set(self, pattern: str | None = None) -> ItemSet:
+        assert self._global_manifest is not None, '_global_manifest is initialised in STARTING phase, but this method is only run during RUNNING phase'
+
         self._mod.log.trace(
             "manifest.get_item_set("
                 +(f"{pattern}" if pattern is None else f"'{pattern}'")+
@@ -798,21 +1009,24 @@ class ManifestModule:
 
         if pattern is None:
             if self._default_item_set is None:
-                item_set = self._all_items()
+                item_set = self._global_manifest.items()
             else:
-                item_set = self._all_item_sets()[self._default_item_set]
+                item_set = self._global_manifest.item_set(self._default_item_set)
         else:
             item_set_regex = re.compile(pattern)
             try:
                 item_set = next(
-                    self._all_item_sets()[item_set_name]
-                    for item_set_name in self._all_item_sets().keys()
-                    if item_set_regex.search(item_set_name)
+                    item
+                    for ref, item in self._global_manifest.item_sets().items()
+                    if (
+                        (type(ref) == str and item_set_regex.search(ref)) or
+                        (type(ref) == tuple and item_set_regex.search(ref[0]))
+                    )
                 )
-            except (KeyError, StopIteration):
+            except (KeyError, StopIteration) as e:
                 raise VCSException(
                     f"item set not found from pattern '{pattern}'"
-                )
+                ) from e
 
         return item_set
 
@@ -823,6 +1037,8 @@ class ManifestModule:
             item_set: ItemSet | None = None,
             properties: list[str] | None = None
     ) -> Item:
+        assert self._global_manifest is not None, '_global_manifest is initialised in STARTING phase, but this method is only run during RUNNING phase'
+
         self._mod.log.trace(
             "manifest.get_item("
                 +(pattern if pattern is None else f"'{pattern}'")+","
@@ -832,14 +1048,14 @@ class ManifestModule:
         )
 
         if item_set is None:
-            item_set = self._all_items()
+            item_set = self._global_manifest.items()
 
         item_regex = re.compile(pattern)
         try:
             item = next(
-                item
-                for item in item_set.values()
-                if item_regex.search(item['ref'])
+                value
+                for name, value in self._global_manifest.items().items()
+                if item_regex.search(name)
             )
             self._mod.log.debug('found:', item)
         except StopIteration:
@@ -851,74 +1067,6 @@ class ManifestModule:
 
     # Utils
     # --------------------
-
-    # Collators
-
-    def _all_items(self):
-        assert self._manifests is not None, 'ManifestModule._all_items() called before ManifestModule._load_manifest()'
-        if self._all_items_data is None:
-            self._all_items_data = {
-                ref: item
-                for manifest in self._manifests
-                for ref, item in manifest.items().items()
-            }
-        return self._all_items_data
-
-    def _all_item_sets(self):
-        assert self._manifests is not None, 'ManifestModule._all_item_sets() called before ManifestModule._load_manifest()'
-        if self._all_item_sets_data is None:
-            self._all_item_sets_data = {
-                ref: item_set
-                for manifest in self._manifests
-                for ref, item_set in manifest.item_sets().items()
-            }
-        return self._all_item_sets_data
-
-    def _all_tags(self,
-            item_set=None,
-            with_values=False
-    ) -> list[Any]:
-        # Cache the result for all items
-
-        all_tags_data = []
-
-        if item_set is None and self._all_tags_data is not None:
-            return self._all_tags_data
-
-        # NOTE: Key/value *pairs* are unique, not keys, so return a list
-        process_items = item_set if item_set is not None else self._all_items()
-        all_tags_data = list(dict.fromkeys(
-            (tag_name, tag_value) if with_values else tag_name
-            for item in process_items.values()
-            for tag_name, tag_value in item['tags'].items()
-        ))
-
-        if item_set is None:
-            self._all_tags_data = all_tags_data
-
-        return all_tags_data
-
-    def _all_extra_props(self, item_set=None):
-        # Cache the result for all items
-
-        all_extra_props_data = []
-
-        if item_set is None and self._all_extra_props_data is not None:
-            return self._all_extra_props_data
-
-        # NOTE: Key/value *pairs* are unique, not keys, so return a list
-        process_items = item_set if item_set is not None else self._all_items()
-        all_extra_props_data = list(dict.fromkeys(
-            prop_name
-            for item in process_items.values()
-            for prop_name in item.keys()
-            if prop_name not in ('ref', 'tags')
-        ))
-
-        if item_set is None:
-            self._all_extra_props_data = all_extra_props_data
-
-        return all_extra_props_data
 
     # Stage Management
 
@@ -1001,10 +1149,68 @@ class ManifestModule:
         if 'tags' in item and tag in item['tags']:
             if item['tags'][tag] is not None:
                 return item['tags'][tag]
-            return 'O'
+            return '✓'
         return None
 
     def _format_item_prop(self, item, prop):
         if prop in item:
             return item[prop]
         return None
+
+    # Collators
+
+    def _all_tags(self,
+            item_set=None,
+            with_values=False
+    ) -> list[Any]:
+        assert self._global_manifest is not None, '_global_manifest is initialised in STARTING phase, but this method is only run during RUNNING phase'
+
+        # Cache the result for all items
+        all_tags_data = []
+
+        if item_set is None and self._all_tags_data is not None:
+            return self._all_tags_data
+
+        # NOTE: Key/value *pairs* are unique, not keys, so return a list
+        process_items = (
+            item_set
+            if item_set is not None
+            else self._global_manifest.items()
+        )
+        all_tags_data = list(dict.fromkeys(
+            (tag_name, tag_value) if with_values else tag_name
+            for item in process_items.values()
+            for tag_name, tag_value in item['tags'].items()
+        ))
+
+        if item_set is None:
+            self._all_tags_data = all_tags_data
+
+        return all_tags_data
+
+    def _all_extra_props(self, item_set=None):
+        assert self._global_manifest is not None, '_global_manifest is initialised in STARTING phase, but this method is only run during RUNNING phase'
+
+        # Cache the result for all items
+        all_extra_props_data = []
+
+        if item_set is None and self._all_extra_props_data is not None:
+            return self._all_extra_props_data
+
+        # NOTE: Key/value *pairs* are unique, not keys, so return a list
+        process_items = (
+            item_set
+            if item_set is not None
+            else self._global_manifest.items()
+        )
+        all_extra_props_data = list(dict.fromkeys(
+            prop_name
+            for item in process_items.values()
+            for prop_name in item.keys()
+            if prop_name not in ('ref', 'tags')
+        ))
+
+        if item_set is None:
+            self._all_extra_props_data = all_extra_props_data
+
+        return all_extra_props_data

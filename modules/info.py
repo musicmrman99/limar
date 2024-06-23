@@ -1,3 +1,5 @@
+import random
+import string
 import subprocess
 import shlex
 
@@ -14,7 +16,7 @@ class InfoModule:
         pass
 
     def dependencies(self):
-        return ['log', 'manifest', 'tool-manifest']
+        return ['log', 'manifest', 'command-manifest']
 
     def configure_args(self, *, parser: ArgumentParser, **_):
         parser.add_argument('entity', metavar='ENTITY',
@@ -48,23 +50,29 @@ class InfoModule:
     ]
 
     def __call__(self, *, mod: Namespace, args: Namespace, **_):
-        query_tools = mod.manifest.get_item_set('queryable')
+        ref = 'info-query-'+''.join(random.choices(string.hexdigits, k=32))
+        # FIXME: Yes, I know, this is an injection attack waiting to happen.
+        mod.manifest.declare_item_set(ref, f'query & [{args.entity}]')
+        query_command_items = mod.manifest.get_item_set(ref)
 
-        # Execute each query. Should produce a list of entity data (inc. ID) for
-        # each query executed.
+        # Execute each query. Produces a list of entity data (inc. entity ID)
+        # for each query executed.
         #   ItemSet -> list[list[dict[str, str]]]
         output: Any = [
             mod.tr.query(
-                query['parse'],
+                (
+                    item['command']['parse']
+                    if 'parse' in item['command']
+                    else '.'
+                ),
                 subprocess
                     .check_output(
-                        shlex.split(query['command'])
+                        shlex.split(item['command']['command'])
                     )
                     .decode(),
                 first=True
             )
-            for query_tool in query_tools.values()
-            for query in query_tool['commands']['queries']
+            for item in query_command_items.values()
         ]
 
         # Index and merge entity data by ID
@@ -78,6 +86,7 @@ class InfoModule:
                 tmp_output[id].update(entity_data)
         output = tmp_output
 
+        # Format
         if self._should_run_stage('tabulate',
             args.output_is_forward, args.lower_stage, args.upper_stage
         ):
@@ -88,6 +97,7 @@ class InfoModule:
         ):
             output = mod.tr.render_table(output, has_headers=True)
 
+        # Forward
         return output
 
     # Stage Management
