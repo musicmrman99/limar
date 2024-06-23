@@ -208,8 +208,9 @@ Semantic analysis of `lsblk` fields
       MAJ:MIN  major:minor device number
            RM  removable device
       HOTPLUG  removable or hotplug device (usb, pcmcia, ...)
-            ## Optional
+            ## Optional (disk/part only)
           WWN  unique storage identifier
+            ## Optional (disk only, sometimes)
        SERIAL  disk serial number
           REV  device revision
         MODEL  device identifier
