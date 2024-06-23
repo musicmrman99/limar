@@ -1020,10 +1020,10 @@ class ManifestModule:
                         (type(ref) == tuple and item_set_regex.search(ref[0]))
                     )
                 )
-            except (KeyError, StopIteration):
+            except (KeyError, StopIteration) as e:
                 raise VCSException(
                     f"item set not found from pattern '{pattern}'"
-                )
+                ) from e
 
         return item_set
 
