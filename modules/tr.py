@@ -135,6 +135,8 @@ class TrModule:
             data = data.splitlines()
         if delim is not None:
             data = [item.split(delim) for item in data]
+        if isinstance(data, dict):
+            data = data.values()
 
         # list[dict[str, Any]] -> list[list[Any]] (with optional header)
         if obj_mapping is not None:
