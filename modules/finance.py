@@ -376,12 +376,12 @@ class FinanceModule:
 
         by_account = {}
         for item_ref, item in item_group.items():
-            from_account_ref = f"{item_group_ref} / {item['from']['ref']}"
+            from_account_ref = f"{item_group_ref} / {item['from']}"
             if from_account_ref not in by_account:
                 by_account[from_account_ref] = {}
             by_account[from_account_ref][item_ref] = item
 
-            to_account_ref = f"{item_group_ref} / {item['to']['ref']}"
+            to_account_ref = f"{item_group_ref} / {item['to']}"
             if to_account_ref not in by_account:
                 by_account[to_account_ref] = {}
             by_account[to_account_ref][item_ref] = item
