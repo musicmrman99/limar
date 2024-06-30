@@ -1,5 +1,8 @@
 import jq
+from rich import box
 from rich.table import Table
+from rich.tree import Tree
+from rich.panel import Panel
 from rich.console import RenderableType
 
 from core.modulemanager import ModuleAccessor
@@ -167,6 +170,7 @@ class TrModule:
             data: list[list[Any]],
             has_headers = False,
             has_metadata = False,
+            **table_kwargs
     ):
         """
         Transform the input data into a human-readable table.
@@ -182,24 +186,38 @@ class TrModule:
             headers = data[0]
             data = data[1:]
 
-        table = Table(*headers, show_header=has_headers)
+        table = Table(*headers, show_header=has_headers, **table_kwargs)
         if has_metadata:
             for row in data:
                 table.add_row(*row[1:], **row[0])
         else:
             for row in data:
                 table.add_row(*[
-                    (
-                        item
-                        # None is renderable (as an empty cell), but for some
-                        # reason isn't an instance of RenderableType.
-                        if item is None or isinstance(item, RenderableType)
-                        else str(item)
-                    )
+                    self._render(item)
                     for item in row
                 ])
 
         return table
+
+    @ModuleAccessor.invokable_as_service
+    def render_tree(self,
+            data: Any,
+            label: str | None = None,
+            _parent: Tree | None = None,
+            **tree_kwargs
+    ):
+        if _parent is None:
+            _parent = Tree(self._render(label), **tree_kwargs)
+        if isinstance(data, dict):
+            for child_label, child_content in data.items():
+                child = _parent.add(self._render(child_label))
+                self.render_tree(child_content, _parent=child)
+        elif isinstance(data, list):
+            for child_content in data:
+                self.render_tree(child_content, _parent=_parent)
+        else:
+            _parent.add(self._render(data))
+        return _parent
 
     # Utils
     # --------------------------------------------------
@@ -224,3 +242,13 @@ class TrModule:
                 for obj in objs
             ]
         ]
+
+    def _render(self, data):
+        """Convert the given item into a form that Rich can render."""
+        if isinstance(data, RenderableType):
+            rendered = data
+        elif data is None:
+            rendered = ''
+        else:
+            rendered = str(data)
+        return rendered

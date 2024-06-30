@@ -1,6 +1,9 @@
 from argparse import ArgumentParser, Namespace
 from datetime import date, timedelta
+from dateutil.relativedelta import relativedelta, MO
+
 from core.exceptions import VCSException
+from modules.manifest import ItemSet
 from modules.manifest_modules import (
     # Generic
     tags,
@@ -10,6 +13,9 @@ from modules.manifest_modules import (
     financial_account,
     financial_transaction
 )
+
+ItemGroup = ItemSet
+ItemGroupSet = dict[str, ItemGroup]
 
 class FinanceModule:
 
@@ -70,12 +76,12 @@ class FinanceModule:
             Transactions without a cover period are not distributed.
             """)
 
-        parser.add_argument('-c', '--group-by-account',
+        parser.add_argument('-ga', '--group-by-account',
             action='store_true', default=False,
             help="""If given, group the data by account before aggregating.""")
 
-        parser.add_argument('-g', '--group-by-unit', metavar='UNIT',
-            default=None,
+        parser.add_argument('-gt', '--group-by-time', metavar='UNIT',
+            default=None, choices=('day', 'week', 'month', 'year'),
             help="""
             If given, group the data into the given calendar unit (one of 'day',
             'week', 'month', or 'year') before aggregating.
@@ -84,8 +90,9 @@ class FinanceModule:
         parser.add_argument('-a', '--aggregate', metavar='AGGREGATOR',
             default=None,
             help="""
-            If given, aggregate the final data set using the given aggregator.
-            Must be one of: sum, mean, median, min, max.
+            If given, aggregate the final data set by using the given aggregator
+            against the amount field.
+            The aggregator must be one of: sum, mean, median, min, max.
             """)
 
         # Subcommands / Resolve Item Set - Output Controls
@@ -114,6 +121,26 @@ class FinanceModule:
     ]
 
     def __call__(self, *, mod: Namespace, args: Namespace, **_):
+        # Check args
+        # if (
+        #     (
+        #         args.aggregate is not None
+        #         or args.group_by_account is True
+        #         or args.group_by_time is not None
+        #     ) and (
+        #         args.aggregate is None or (
+        #             args.group_by_account is False
+        #             and args.group_by_time is None
+        #         )
+        #     )
+        # ):
+        #     raise VCSException(
+        #         'Aggregation or grouping was requested, but not both. Similar'
+        #         ' to SQL, to aggregate you must group, and if grouping you must'
+        #         ' aggragate.'
+        #     )
+
+        # Fetch data
         output = mod.manifest.get_item_set('transaction')
 
         # Select the props we want from each item and set default cover period
@@ -233,15 +260,13 @@ class FinanceModule:
 
                 return item_set
 
-            output = [
-                distribute(ref, item)
-                for ref, item in output.items()
-            ]
-
-            # Merge the resulting item sets
+            # Distribute and merge
             output = {
                 ref: item
-                for item_set in output
+                for item_set in [
+                    distribute(ref, item)
+                    for ref, item in output.items()
+                ]
                 for ref, item in item_set.items()
             }
 
@@ -255,16 +280,155 @@ class FinanceModule:
             for ref, item in output.items()
         }
 
+        # Group
+        # Create a single group
+        groups: ItemGroupSet = {
+            min(
+                output.values(),
+                key=lambda item: item['periodStart']
+            )['coverStart']: output
+        }
+
+        if args.group_by_account is True:
+            def group_by_account(
+                    item_group_ref: str,
+                    item_group: ItemGroup
+            ) -> ItemGroupSet:
+                by_account = {}
+                for ref, item in item_group.items():
+                    from_ref = f"{item_group_ref} / {item['from']['ref']}"
+                    if from_ref not in by_account:
+                        by_account[from_ref] = {}
+                    by_account[from_ref][ref] = item
+
+                    to_ref = f"{item_group_ref} / {item['to']['ref']}"
+                    if to_ref not in by_account:
+                        by_account[to_ref] = {}
+                    by_account[to_ref][ref] = item
+
+                return by_account
+
+            # Group and merge
+            groups = {
+                new_item_group_ref: new_item_group
+                for item_groups in [
+                    group_by_account(item_group_ref, item_group)
+                    for item_group_ref, item_group in groups.items()
+                ]
+                for new_item_group_ref, new_item_group in item_groups.items()
+            }
+
+        if args.group_by_time is not None:
+            unit = args.group_by_time
+
+            def group_by_time(
+                    item_group_ref: str,
+                    item_group: ItemGroup,
+                    unit: str
+            ) -> ItemGroupSet:
+                by_time = {}
+                for ref, item in item_group.items():
+                    start: date = item['periodStart']
+
+                    start_aligned = start
+                    start_aligned_str = start_aligned.strftime('%Y-%m-%d')
+                    if unit == 'week':
+                        start_aligned = start + relativedelta(weekday=MO(-1))
+                        start_aligned_str = start_aligned.strftime(
+                            'wc. %Y-%m-%d'
+                        )
+                    elif unit == 'month':
+                        start_aligned = start + relativedelta(day=1)
+                        start_aligned_str = start_aligned.strftime('%Y-%m')
+                    elif unit == 'year':
+                        start_aligned = start + relativedelta(yearday=1)
+                        start_aligned_str = start_aligned.strftime('%Y')
+
+                    time_ref = f"{item_group_ref} / {start_aligned_str}"
+                    if time_ref not in by_time:
+                        by_time[time_ref] = {}
+                    by_time[time_ref][ref] = item
+
+                return by_time
+
+            # Group and merge
+            groups = {
+                new_item_group_ref: new_item_group
+                for item_groups in [
+                    group_by_time(item_group_ref, item_group, unit)
+                    for item_group_ref, item_group in groups.items()
+                ]
+                for new_item_group_ref, new_item_group in item_groups.items()
+            }
+
+        # Aggregate
+        # if args.aggregate is not None:
+        #     aggregator = args.aggregate
+
+        #     aggregators = {
+        #         'sum': sum,
+        #         'mean': lambda data: (
+        #             sum(data) / len(data)
+        #             if len(data) > 0
+        #             else None
+        #         ),
+        #         # Based on: https://stackoverflow.com/a/68719018/16967315
+        #         'median': lambda data: (
+        #             (lambda data_sorted:
+        #                 (
+        #                     data_sorted[ceil(len(data_sorted)/2) - 1]
+        #                     + data_sorted[-ceil(len(data_sorted)/2)]
+        #                 )
+        #                 //2
+        #             )(sorted(data))
+        #             if len(data) > 0
+        #             else None
+        #         ),
+        #         'min': min,
+        #         'max': max
+        #     }
+
+        #     output = {
+        #         ref: {
+        #             aggregators[aggregator](item_group)
+        #         }
+        #         for ref, item_group in groups
+        #     }
+
         # Format
+        # if self._should_run_stage('tabulate',
+        #     args.output_is_forward, args.lower_stage, args.upper_stage
+        # ):
+        #     output = mod.tr.tabulate(output, obj_mapping='all')
+
+        # if self._should_run_stage('render',
+        #     args.output_is_forward, args.lower_stage, args.upper_stage
+        # ):
+        #     output = mod.tr.render_table(output, has_headers=True)
+
+        output = groups
+
         if self._should_run_stage('tabulate',
             args.output_is_forward, args.lower_stage, args.upper_stage
         ):
-            output = mod.tr.tabulate(output.values(), obj_mapping='all')
+            output = {
+                ref: mod.tr.tabulate(table_data, obj_mapping='all')
+                for ref, table_data in output.items()
+            }
 
         if self._should_run_stage('render',
             args.output_is_forward, args.lower_stage, args.upper_stage
         ):
-            output = mod.tr.render_table(output, has_headers=True)
+            output = mod.tr.render_tree(
+                [
+                    mod.tr.render_table(
+                        table, has_headers=True,
+                        title=ref, title_justify='left'
+                    )
+                    for ref, table in output.items()
+                ],
+                label='Groups'
+            )
 
         # Forward
         return output
