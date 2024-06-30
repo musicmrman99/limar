@@ -1,10 +1,9 @@
 from math import ceil
-from argparse import ArgumentParser, Namespace
 from datetime import date, timedelta
-from typing import Any, Callable, Iterable
 from dateutil.relativedelta import relativedelta, MO
 
 from core.exceptions import VCSException
+from modules.finance_utils.currency_amount import CurrencyAmount
 from modules.manifest_modules import (
     # Generic
     tags,
@@ -16,6 +15,8 @@ from modules.manifest_modules import (
 )
 
 # Types
+from argparse import ArgumentParser, Namespace
+from typing import Any, Callable
 from modules.manifest import Item, ItemSet
 
 ItemGroup = ItemSet
@@ -270,9 +271,10 @@ class FinanceModule:
                     )
                 ),
                 # For retaining precision while doing calculations
-                'amount': item['amount'] | {
-                    'amount': item['amount']['amount'] * 100
-                },
+                'amount': CurrencyAmount(
+                    item['amount'].currency,
+                    item['amount'].amount * 100
+                ),
                 'for': item['for']
             }
             for ref, item in item_set.items()
@@ -335,13 +337,14 @@ class FinanceModule:
                 'ref': f'{ref}[{i}]',
                 'periodStart': period_start,
                 'periodEnd': period_end,
-                'amount': item['amount'] | {
-                    'amount': (
-                        item['amount']['amount']
+                'amount': CurrencyAmount(
+                    item['amount'].currency,
+                    (
+                        item['amount'].amount
                         * period_size
                         // cover_size
                     )
-                }
+                )
             }
 
         return item_set
@@ -359,9 +362,10 @@ class FinanceModule:
     def _finalise(self, item_set):
         return {
             ref: item | {
-                'amount': item['amount'] | {
-                    'amount': item['amount']['amount'] // 100
-                }
+                'amount': CurrencyAmount(
+                    item['amount'].currency,
+                    item['amount'].amount // 100
+                )
             }
             for ref, item in item_set.items()
         }
@@ -492,7 +496,7 @@ class FinanceModule:
                 'ref': item_group_ref,
                 'amount': aggregator_fn(
                     item_group.values(),
-                    key=lambda item: item['amount']['amount']
+                    key=lambda item: item['amount'].amount
                 )
             }
             for item_group_ref, item_group in groups.items()

@@ -4,7 +4,7 @@ from enum import Enum
 from core.exceptions import VCSException
 
 # Types
-from typing import Any
+from modules.finance_utils.currency_amount import CurrencyAmount
 from modules.manifest import Item, ItemSet
 
 class TagType(Enum):
@@ -157,10 +157,7 @@ class FinancialTransaction:
                 + int(fractional_amount)
             )
 
-            return {
-                'currency': tag_currency,
-                'amount': tag_amount
-            }
+            return CurrencyAmount(tag_currency, tag_amount)
 
         elif type == TagType.date:
             tag_value_parsed = date(*[
