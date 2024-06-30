@@ -219,7 +219,7 @@ class FinanceModule:
                         [
                             mod.tr.render_table(
                                 table, has_headers=True,
-                                title=ref, title_justify='left'
+                                title=f"[red]{ref}", title_justify='left'
                             )
                             for ref, table in output.items()
                         ],
