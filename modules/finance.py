@@ -158,6 +158,8 @@ class FinanceModule:
             )
 
             output = self._window(output, window_start, window_end)
+        else:
+            output = self._infinite_window(output)
 
         # Distribute transactions across their cover period
         if args.distribute is not None:
@@ -300,6 +302,15 @@ class FinanceModule:
                 item['coverEnd'] >= window_start
                 and item['coverStart'] <= window_end
             )
+        }
+
+    def _infinite_window(self, item_set):
+        return {
+            ref: item | {
+                'coverStartWindowed': item['coverStart'],
+                'coverEndWindowed': item['coverEnd']
+            }
+            for ref, item in item_set.items()
         }
 
     def _distribute_item(self, ref: str, item: Item, period_length: timedelta):
