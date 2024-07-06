@@ -351,10 +351,11 @@ class FinanceModule:
                 'periodEnd': period_end,
                 'amount': CurrencyAmount(
                     item['amount'].currency,
-                    (
+                    # WARNING: THIS MAY MAKE MONEY DISAPPEAR
+                    # But will be APPROXIMATELY accurate.
+                    int(
                         item['amount'].amount
-                        * period_size
-                        // cover_size
+                        * (period_size / cover_size)
                     )
                 )
             }
