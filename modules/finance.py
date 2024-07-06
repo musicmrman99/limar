@@ -396,7 +396,12 @@ class FinanceModule:
             from_account_ref = f"{item_group_ref} / {item['from']}"
             if from_account_ref not in by_account:
                 by_account[from_account_ref] = {}
-            by_account[from_account_ref][item_ref] = item
+            by_account[from_account_ref][item_ref] = item | {
+                'amount': CurrencyAmount(
+                    item['amount'].currency,
+                    -item['amount'].amount
+                )
+            }
 
             to_account_ref = f"{item_group_ref} / {item['to']}"
             if to_account_ref not in by_account:
