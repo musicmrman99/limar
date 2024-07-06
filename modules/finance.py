@@ -250,6 +250,7 @@ class FinanceModule:
     def _extract_and_prepare(self, item_set):
         return {
             ref: {
+                'ref': item['ref'],
                 'from': item['from'],
                 'to': item['to'],
                 'paid': item['paid'],
