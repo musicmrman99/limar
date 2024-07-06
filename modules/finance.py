@@ -509,16 +509,42 @@ class FinanceModule:
         }
 
         aggregator_fn = _aggregators[aggregator]
-        return {
-            item_group_ref: {
+
+        aggregation = {}
+        for item_group_ref, item_group in groups.items():
+            currency_discovery: str | None = None
+            for item in item_group.values():
+                if currency_discovery is None:
+                    currency_discovery = item['amount'].currency
+
+                if currency_discovery != item['amount'].currency:
+                    raise VCSException(
+                        f"Found different currencies '{currency_discovery}' and"
+                        f" '{item['amount'].currency}' when aggregating item"
+                        f" group '{item_group_ref}': Cannot aggregate amounts"
+                        " in different currencies"
+                    )
+
+            if currency_discovery is None:
+                # Shouldn't be possible, but it keeps the type checker happy
+                raise VCSException(
+                    "No currency found when aggregating item group"
+                    f" '{item_group_ref}'"
+                )
+            currency = currency_discovery
+
+            aggregation[item_group_ref] = {
                 'ref': item_group_ref,
-                'amount': aggregator_fn(
-                    item_group.values(),
-                    key=lambda item: item['amount'].amount
+                'amount': CurrencyAmount(
+                    currency,
+                    aggregator_fn(
+                        item_group.values(),
+                        key=lambda item: item['amount'].amount
+                    )
                 )
             }
-            for item_group_ref, item_group in groups.items()
-        }
+
+        return aggregation
 
     # Stage Management
     # --------------------------------------------------
