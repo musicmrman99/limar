@@ -101,7 +101,7 @@ class FinanceModule:
             The aggregator must be one of: sum, mean, median, min, max.
             """)
 
-        # Subcommands / Resolve Item Set - Output Controls
+        # Output Controls
         parser.add_argument('-L', '--lower-stage', default=None,
             help="""
             Specifies that all stages of processing up to the given stage should

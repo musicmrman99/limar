@@ -1,8 +1,6 @@
 import jq
-from rich import box
 from rich.table import Table
 from rich.tree import Tree
-from rich.panel import Panel
 from rich.console import RenderableType
 
 from core.modulemanager import ModuleAccessor
