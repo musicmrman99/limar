@@ -1,6 +1,7 @@
 from math import ceil
 from datetime import date, timedelta
 from dateutil.relativedelta import relativedelta, MO
+from frozendict import frozendict
 
 from core.exceptions import VCSException
 from modules.finance_utils.currency_amount import CurrencyAmount
@@ -16,11 +17,11 @@ from modules.manifest_modules import (
 
 # Types
 from argparse import ArgumentParser, Namespace
-from typing import Any, Callable
+from typing import Any, Callable, Hashable
 from modules.manifest import Item, ItemSet
 
 ItemGroup = ItemSet
-ItemGroupSet = dict[str, ItemGroup]
+ItemGroupSet = dict[frozendict[str, Hashable], ItemGroup]
 
 class FinanceModule:
 
@@ -172,12 +173,7 @@ class FinanceModule:
         # Group
         if args.group_by_account is True or args.group_by_time is not None:
             # Create a single group initially
-            groups: ItemGroupSet = {
-                min(
-                    output.values(),
-                    key=lambda item: item['periodStart']
-                )['coverStart']: output
-            }
+            groups: ItemGroupSet = {frozendict(): output}
 
             if args.group_by_account is True:
                 groups = self._group_by_account(groups)
@@ -384,7 +380,7 @@ class FinanceModule:
         }
 
     def _group_group_by_account(self,
-            item_group_ref: str,
+            item_group_ref: frozendict[str, Hashable],
             item_group: ItemGroup
     ) -> ItemGroupSet:
         """
@@ -393,7 +389,7 @@ class FinanceModule:
 
         by_account = {}
         for item_ref, item in item_group.items():
-            from_account_ref = f"{item_group_ref} / {item['from']}"
+            from_account_ref = frozendict(**item_group_ref, account=item['from'])
             if from_account_ref not in by_account:
                 by_account[from_account_ref] = {}
             by_account[from_account_ref][item_ref] = item | {
@@ -403,7 +399,7 @@ class FinanceModule:
                 )
             }
 
-            to_account_ref = f"{item_group_ref} / {item['to']}"
+            to_account_ref = frozendict(**item_group_ref, account=item['to'])
             if to_account_ref not in by_account:
                 by_account[to_account_ref] = {}
             by_account[to_account_ref][item_ref] = item
@@ -421,7 +417,7 @@ class FinanceModule:
         }
 
     def _group_group_by_time(self,
-            item_group_ref: str,
+            item_group_ref: frozendict[str, Hashable],
             item_group: ItemGroup,
             unit: str
     ) -> ItemGroupSet:
@@ -443,7 +439,7 @@ class FinanceModule:
                 start_aligned = start + relativedelta(yearday=1)
                 start_aligned_str = start_aligned.strftime('%Y')
 
-            time_ref = f"{item_group_ref} / {start_aligned_str}"
+            time_ref = frozendict(**item_group_ref, date=start_aligned_str)
             if time_ref not in by_time:
                 by_time[time_ref] = {}
             by_time[time_ref][ref] = item
@@ -533,8 +529,13 @@ class FinanceModule:
                 )
             currency = currency_discovery
 
-            aggregation[item_group_ref] = {
-                'ref': item_group_ref,
+            aggregate_ref = ' / '.join([
+                str(val)
+                for val in item_group_ref.values()
+            ])
+            aggregation[aggregate_ref] = {
+                'ref': aggregate_ref,
+                **item_group_ref,
                 'amount': CurrencyAmount(
                     currency,
                     aggregator_fn(
