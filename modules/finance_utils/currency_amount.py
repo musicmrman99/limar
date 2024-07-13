@@ -7,5 +7,6 @@ class CurrencyAmount:
         return f"{self.__class__.__name__}('{self.currency}', {self.amount})"
 
     def __str__(self):
-        amount_str = '.'.join(map(str, divmod(self.amount, 10**2)))
-        return f"{self.currency} {amount_str}"
+        quotient, remainder = divmod(self.amount, 10**2)
+        sign = '-' if quotient < 0 else ' '
+        return f"{sign}{self.currency} {abs(quotient)}.{remainder:02}"
