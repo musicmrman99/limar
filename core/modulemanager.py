@@ -962,7 +962,7 @@ class ModuleLifecycle:
     def _proceed_to_module(self, module_name: str | None):
         self._cur_mod_name = module_name
 
-    def _phase_after(self, phase):
+    def _phase_after(self, phase: Phase):
         return PHASES_ORDERED[PHASES_ORDERED.index(phase) + 1]
 
     def _is_initialised(self, name: str) -> bool:
