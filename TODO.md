@@ -5,6 +5,8 @@
 
 # Todo
 
+- make all assertion explanations use f-strings that use `[self.]function_name.__name__` references in place of literal method names (allows for easier refactoring)
+
 - TESTING
 
 Develop ModuleManager
