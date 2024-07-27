@@ -55,12 +55,8 @@ class FinancialTransaction:
 
     def _parse_and_update(self, item, items):
         # From and to accounts
-        item['from'] = self._parse_tag(
-            item, 'from', TagType.ref, items=items
-        )['ref'] # type: ignore
-        item['to'] = self._parse_tag(
-            item, 'to', TagType.ref, items=items
-        )['ref'] # type: ignore
+        item['from'] = self._parse_tag(item, 'from', TagType.ref, items=items)
+        item['to'] = self._parse_tag(item, 'to', TagType.ref, items=items)
 
         if item['from'] == item['to']:
             raise VCSException(

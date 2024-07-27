@@ -304,8 +304,8 @@ class FinanceModule:
         return {
             ref: {
                 'ref': item['ref'],
-                'from': item['from'],
-                'to': item['to'],
+                'from': item['from']['ref'],
+                'to': item['to']['ref'],
                 'paid': item['paid'],
                 'cleared': item['cleared'],
                 'coverStart': (
