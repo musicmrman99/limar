@@ -4,6 +4,9 @@ from dateutil.relativedelta import relativedelta, MO
 from frozendict import frozendict
 
 from core.exceptions import VCSException
+from core.modules.phase_utils.phase_system import PhaseSystem
+from core.modules.phase_utils.phased_process import PhasedProcess
+
 from modules.finance_utils.currency_amount import CurrencyAmount
 from modules.manifest_modules import (
     # Generic
@@ -23,6 +26,17 @@ from modules.manifest import Item, ItemSet
 ItemGroup = ItemSet
 ItemGroupSet = dict[frozendict[str, Hashable], ItemGroup]
 
+FINANCE_LIFECYCLE = PhaseSystem(
+    'finance.lifecycle',
+    (
+        'INITIALISE',
+        'GET',
+        'COMPUTE',
+        'TABULATE',
+        'RENDER'
+    )
+)
+
 class FinanceModule:
 
     # Lifecycle
@@ -39,7 +53,7 @@ class FinanceModule:
             financial_transaction.FinancialTransaction
         )
 
-    def configure_args(self, *, parser: ArgumentParser, **_):
+    def configure_args(self, *, mod: Namespace, parser: ArgumentParser, **_):
         # Filter, Group, and Distribute (inc. window param); graphically:
         #
         #   Transaction:
@@ -102,16 +116,7 @@ class FinanceModule:
             """)
 
         # Output Controls
-        parser.add_argument('-L', '--lower-stage', default=None,
-            help="""
-            Specifies that all stages of processing up to the given stage should
-            be performed, even if the result is being forwarded.
-            """)
-        parser.add_argument('-U', '--upper-stage', default=None,
-            help="""
-            Specifies that no stages of processing after the given stage should
-            be performed, even if the result isn't being forwarded.
-            """)
+        mod.phase.configure_phase_control_args(parser)
         parser.add_argument('---',
             action='store_true', default=False, dest='output_is_forward',
             help="""
@@ -119,14 +124,12 @@ class FinanceModule:
             another module. This option terminates this module call.
             """)
 
-    STAGES = [
-        'get',
-        'compute',
-        'tabulate',
-        'render'
-    ]
-
-    def __call__(self, *, mod: Namespace, args: Namespace, **_):
+    def __call__(self, *,
+            mod: Namespace,
+            args: Namespace,
+            forwarded_data: Any,
+            **_
+    ):
         # Check args
         # TODO: If argparse ever gets a way of doing this, use that.
         if (
@@ -140,79 +143,104 @@ class FinanceModule:
                 ' be done on grouped data.'
             )
 
-        # Fetch data
-        output = mod.manifest.get_item_set('transaction')
+        # Set up phase process and a common transition function
+        mod.phase.register_system(FINANCE_LIFECYCLE)
+        mod.phase.register_process(PhasedProcess(
+            'finance.lifecycle_instance',
+            FINANCE_LIFECYCLE,
+            FINANCE_LIFECYCLE.PHASES.INITIALISE
+        ))
 
-        # Select the props we want from each item and set default cover period
-        # where needed to the latest of the paid date or the cleared date.
-        output = self._extract_and_prepare(output)
-
-        # Filter out transactions not in the specified window and bound the
-        # cover period of each transaction to the window.
-        if args.window is not None:
-            window_start, window_end = (
-                date(*[
-                    int(component)
-                    for component in bound.split('-')
-                ])
-                for bound in args.window.split(':')
+        transition_to_phase = lambda phase, default=True: (
+            mod.phase.transition_to_phase(
+                'finance.lifecycle_instance', phase, args, default
             )
+        )
 
-            output = self._window(output, window_start, window_end)
-        else:
-            output = self._infinite_window(output)
+        # Start from where the forwarding chain left off
+        output = forwarded_data
 
-        # Distribute transactions across their cover period
-        if args.distribute is not None:
-            period_length = timedelta(days=int(args.distribute))
-            output = self._distribute(output, period_length)
+        # Fetch data
+        if transition_to_phase(FINANCE_LIFECYCLE.PHASES.GET):
+            output = mod.manifest.get_item_set('transaction')
 
-        # Undo the precision increase (aka. un-prepare)
-        output = self._finalise(output)
+        if transition_to_phase(FINANCE_LIFECYCLE.PHASES.COMPUTE):
+            # Select the props we want from each item and set default cover
+            # period where needed to the latest of the paid date or the cleared
+            # date.
+            output = self._extract_and_prepare(output)
 
-        # Group
+            # Filter out transactions not in the specified window and bound the
+            # cover period of each transaction to the window.
+            if args.window is not None:
+                window_start, window_end = (
+                    date(*[
+                        int(component)
+                        for component in bound.split('-')
+                    ])
+                    for bound in args.window.split(':')
+                )
+
+                output = self._window(output, window_start, window_end)
+            else:
+                output = self._infinite_window(output)
+
+            # Distribute transactions across their cover period
+            if args.distribute is not None:
+                period_length = timedelta(days=int(args.distribute))
+                output = self._distribute(output, period_length)
+
+            # Undo the precision increase (aka. un-prepare)
+            output = self._finalise(output)
+
+            # Group
+            if args.group_by_account is True or args.group_by_time is not None:
+                # Create a single group initially
+                groups: ItemGroupSet = {frozendict(): output}
+
+                if args.group_by_account is True:
+                    groups = self._group_by_account(groups)
+
+                if args.group_by_time is not None:
+                    unit = args.group_by_time
+                    groups = self._group_by_time(groups, unit)
+
+                # If no aggregation was requested, this is the final result
+                output = groups
+
+                # Aggregate
+                if args.aggregate is not None:
+                    aggregator = args.aggregate
+                    output = self._aggregate(output, aggregator)
+
+        # Format
         if args.group_by_account is True or args.group_by_time is not None:
-            # Create a single group initially
-            groups: ItemGroupSet = {frozendict(): output}
-
-            if args.group_by_account is True:
-                groups = self._group_by_account(groups)
-
-            if args.group_by_time is not None:
-                unit = args.group_by_time
-                groups = self._group_by_time(groups, unit)
-
-            # If no aggregation was requested, this is the final result
-            output = groups
-
-            # Aggregate
             if args.aggregate is not None:
-                aggregator = args.aggregate
-                output = self._aggregate(output, aggregator)
-
                 # Format - window/distribute + group + aggregate
-                if self._should_run_stage('tabulate',
-                    args.output_is_forward, args.lower_stage, args.upper_stage
+                if transition_to_phase(
+                    FINANCE_LIFECYCLE.PHASES.TABULATE,
+                    not args.output_is_forward
                 ):
                     output = mod.tr.tabulate(output, obj_mapping='all')
 
-                if self._should_run_stage('render',
-                    args.output_is_forward, args.lower_stage, args.upper_stage
+                if transition_to_phase(
+                    FINANCE_LIFECYCLE.PHASES.RENDER, not args.output_is_forward
                 ):
                     output = mod.tr.render_table(output, has_headers=True)
 
             else:
                 # Format - window/distribute + group
-                if self._should_run_stage('tabulate',
-                    args.output_is_forward, args.lower_stage, args.upper_stage
+                if transition_to_phase(
+                    FINANCE_LIFECYCLE.PHASES.TABULATE,
+                    not args.output_is_forward
                 ):
                     output = {
                         ref: mod.tr.tabulate(table_data, obj_mapping='all')
                         for ref, table_data in output.items()
                     }
 
-                if self._should_run_stage('render',
-                    args.output_is_forward, args.lower_stage, args.upper_stage
+                if transition_to_phase(
+                    FINANCE_LIFECYCLE.PHASES.RENDER, not args.output_is_forward
                 ):
                     output = mod.tr.render_tree(
                         [
@@ -227,20 +255,20 @@ class FinanceModule:
 
         else:
             # Format - window/distribute
-            if self._should_run_stage('tabulate',
-                args.output_is_forward, args.lower_stage, args.upper_stage
+            if transition_to_phase(
+                FINANCE_LIFECYCLE.PHASES.TABULATE, not args.output_is_forward
             ):
                 output = mod.tr.tabulate(output.values(), obj_mapping='all')
 
-            if self._should_run_stage('render',
-                args.output_is_forward, args.lower_stage, args.upper_stage
+            if transition_to_phase(
+                FINANCE_LIFECYCLE.PHASES.RENDER, not args.output_is_forward
             ):
                 output = mod.tr.render_table(output, has_headers=True)
 
         # Forward
         return output
 
-    # Utils
+    # Main Process
     # --------------------------------------------------
 
     def _extract_and_prepare(self, item_set):
@@ -546,33 +574,3 @@ class FinanceModule:
             }
 
         return aggregation
-
-    # Stage Management
-    # --------------------------------------------------
-
-    def _stage_is_at_or_before(self, target: str, upper: str | None):
-        if upper is None:
-            return True
-        return self.STAGES.index(target) <= self.STAGES.index(upper)
-
-    def _should_run_stage(self,
-            stage: str,
-            forwarded: bool,
-            lower_stage: str | None = None,
-            upper_stage: str | None = None
-    ):
-        include_if_not_reached_lower_stage = (
-            lower_stage is not None and
-            self._stage_is_at_or_before(stage, lower_stage)
-        )
-        include_if_not_reached_upper_stage = (
-            self._stage_is_at_or_before(stage, upper_stage)
-        )
-
-        return (
-            (
-                not forwarded or
-                include_if_not_reached_lower_stage
-            ) and
-            include_if_not_reached_upper_stage
-        )
