@@ -32,10 +32,19 @@ FINANCE_LIFECYCLE = PhaseSystem(
     (
         'INITIALISE',
         'GET',
-        'COMPUTE',
+        'PREPARE',
+        'WINDOW',
+        'DISTRIBUTE',
+        'FINALISE',
+        'GROUP',
+        'AGGREGATE',
         'TABULATE',
         'RENDER'
-    )
+    ),
+    {
+        'WINDOW': ('FINALISE',),
+        'FINALISE': ('TABULATE',)
+    }
 )
 
 class FinanceModule:
@@ -170,14 +179,15 @@ class FinanceModule:
         if transition_to_phase(FINANCE_LIFECYCLE.PHASES.GET):
             output = mod.manifest.get_item_set('transaction')
 
-        if transition_to_phase(FINANCE_LIFECYCLE.PHASES.COMPUTE):
-            # Select the props we want from each item and set default cover
-            # period where needed to the latest of the paid date or the cleared
-            # date.
+        # Select the props we want from each item and set default cover
+        # period where needed to the latest of the paid date or the cleared
+        # date.
+        if transition_to_phase(FINANCE_LIFECYCLE.PHASES.PREPARE):
             output = self._extract_and_prepare(output)
 
-            # Filter out transactions not in the specified window and bound the
-            # cover period of each transaction to the window.
+        # Filter out transactions not in the specified window and bound the
+        # cover period of each transaction to the window.
+        if transition_to_phase(FINANCE_LIFECYCLE.PHASES.WINDOW):
             if args.window is not None:
                 window_start, window_end = (
                     date(*[
@@ -191,33 +201,46 @@ class FinanceModule:
             else:
                 output = self._infinite_window(output)
 
-            # Distribute transactions across their cover period
-            if args.distribute is not None:
-                period_length = timedelta(days=int(args.distribute))
-                output = self._distribute(output, period_length)
+        # Distribute transactions across their cover period
+        if (
+            args.distribute is not None and
+            transition_to_phase(FINANCE_LIFECYCLE.PHASES.DISTRIBUTE)
+        ):
+            period_length = timedelta(days=int(args.distribute))
+            output = self._distribute(output, period_length)
 
-            # Undo the precision increase (aka. un-prepare)
+        # Undo the precision increase (aka. un-prepare)
+        if transition_to_phase(FINANCE_LIFECYCLE.PHASES.FINALISE):
             output = self._finalise(output)
 
-            # Group
-            if args.group_by_account is True or args.group_by_time is not None:
-                # Create a single group initially
-                groups: ItemGroupSet = {frozendict(): output}
+        # Group
+        if (
+            (
+                args.group_by_account is True or
+                args.group_by_time is not None
+            ) and
+            transition_to_phase(FINANCE_LIFECYCLE.PHASES.GROUP)
+        ):
+            # Create a single group initially
+            groups: ItemGroupSet = {frozendict(): output}
 
-                if args.group_by_account is True:
-                    groups = self._group_by_account(groups)
+            if args.group_by_account is True:
+                groups = self._group_by_account(groups)
 
-                if args.group_by_time is not None:
-                    unit = args.group_by_time
-                    groups = self._group_by_time(groups, unit)
+            if args.group_by_time is not None:
+                unit = args.group_by_time
+                groups = self._group_by_time(groups, unit)
 
-                # If no aggregation was requested, this is the final result
-                output = groups
+            # If no aggregation was requested, this is the final result
+            output = groups
 
-                # Aggregate
-                if args.aggregate is not None:
-                    aggregator = args.aggregate
-                    output = self._aggregate(output, aggregator)
+            # Aggregate
+            if (
+                transition_to_phase(FINANCE_LIFECYCLE.PHASES.AGGREGATE) and
+                args.aggregate is not None
+            ):
+                aggregator = args.aggregate
+                output = self._aggregate(output, aggregator)
 
         # Format
         if args.group_by_account is True or args.group_by_time is not None:
