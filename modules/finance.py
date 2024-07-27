@@ -1,5 +1,6 @@
 from math import ceil
 from datetime import date, timedelta
+import random
 from dateutil.relativedelta import relativedelta, MO
 from frozendict import frozendict
 
@@ -44,14 +45,6 @@ class FinanceModule:
 
     def dependencies(self):
         return ['manifest']
-
-    def configure(self, *, mod: Namespace, **_):
-        mod.manifest.add_context_modules(
-            tags.Tags,
-            finance.Finance,
-            financial_account.FinancialAccount,
-            financial_transaction.FinancialTransaction
-        )
 
     def configure_args(self, *, mod: Namespace, parser: ArgumentParser, **_):
         # Filter, Group, and Distribute (inc. window param); graphically:
@@ -124,6 +117,15 @@ class FinanceModule:
             another module. This option terminates this module call.
             """)
 
+    def configure(self, *, mod: Namespace, **_):
+        mod.phase.register_system(FINANCE_LIFECYCLE)
+        mod.manifest.add_context_modules(
+            tags.Tags,
+            finance.Finance,
+            financial_account.FinancialAccount,
+            financial_transaction.FinancialTransaction
+        )
+
     def __call__(self, *,
             mod: Namespace,
             args: Namespace,
@@ -144,16 +146,20 @@ class FinanceModule:
             )
 
         # Set up phase process and a common transition function
-        mod.phase.register_system(FINANCE_LIFECYCLE)
+        invokation_process_name = (
+            'finance.lifecycle_instance.' +
+            ''.join(random.choices('0123456789abcdef', k=6))
+        )
+
         mod.phase.register_process(PhasedProcess(
-            'finance.lifecycle_instance',
+            invokation_process_name,
             FINANCE_LIFECYCLE,
             FINANCE_LIFECYCLE.PHASES.INITIALISE
         ))
 
         transition_to_phase = lambda phase, default=True: (
             mod.phase.transition_to_phase(
-                'finance.lifecycle_instance', phase, args, default
+                invokation_process_name, phase, args, default
             )
         )
 

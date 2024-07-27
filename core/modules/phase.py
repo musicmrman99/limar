@@ -106,8 +106,8 @@ class PhaseModule:
         # Otherwise, run the phase only if the module defaults to it being run
         return default
 
-    @ModuleAccessor.invokable_as_service
-    def register_system(self, system: PhaseSystem):
+    @ModuleAccessor.invokable_as_config
+    def register_static_system(self, system: PhaseSystem):
         """Register a Phase System with the given name."""
 
         if system.name() in self._systems:
@@ -117,6 +117,12 @@ class PhaseModule:
             )
 
         self._systems[system.name()] = system
+
+    @ModuleAccessor.invokable_as_service
+    def register_system(self, system: PhaseSystem):
+        """Register a Phase System with the given name."""
+
+        self.register_static_system(system)
 
     @ModuleAccessor.invokable_as_service
     def register_process(self, process: PhasedProcess):
