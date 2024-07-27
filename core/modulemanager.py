@@ -62,6 +62,7 @@ RetType = TypeVar("RetType")
 
 class ModuleAccessor:
     ACCESS_TYPES = Namespace(
+        FUNCTION='FUNCTION',
         CONFIG='CONFIG',
         SERVICE='SERVICE'
     )
@@ -94,6 +95,12 @@ class ModuleAccessor:
 
         def _invoker(*args, **kwargs):
             can_access_module_as = {
+                # Functions (whether pure or impure) can be accessed in any
+                # phase, but they MUST NOT depend on the current phase or any
+                # state that is dependent on it. This is difficult to verify, so
+                # for now there are no checks performed for this access type.
+                self.ACCESS_TYPES.FUNCTION: lambda: True,
+
                 self.ACCESS_TYPES.CONFIG: lambda: (
                     self._lifecycle._has_mod(
                         self._module_name,
@@ -107,6 +114,7 @@ class ModuleAccessor:
                         LIFECYCLE.PHASES.STARTING
                     )
                 ),
+
                 self.ACCESS_TYPES.SERVICE: lambda: (
                     self._lifecycle._has_mod(
                         self._module_name,
@@ -137,6 +145,13 @@ class ModuleAccessor:
 
     # Utils
     # --------------------
+
+    @staticmethod
+    def invokable_as_function(
+            func: Callable[Concatenate[Any, Params], RetType]
+    ) -> Callable[Concatenate[Any, Params], RetType]:
+        func._access_type = ModuleAccessor.ACCESS_TYPES.FUNCTION # type: ignore
+        return func # type: ignore
 
     @staticmethod
     def invokable_as_config(
@@ -235,7 +250,11 @@ class ModuleLifecycle:
         )
 
         # Configure environment and global/root arguments
-        self.configure_environment(self._all_mods, env_parser)
+        self.configure_environment(
+            self._all_mods,
+            env_parser,
+            self._accessor_object
+        )
         self._env = self.parse_environment(
             env_parser,
             self._all_mod_names,
@@ -245,7 +264,8 @@ class ModuleLifecycle:
         self.configure_root_arguments(
             self._all_mods,
             self._env,
-            self._arg_parser
+            self._arg_parser,
+            self._accessor_object
         )
         self._root_args, self._module_full_cli_args_set = (
             self.parse_root_arguments(self._arg_parser, self._cli_args)
@@ -269,7 +289,12 @@ class ModuleLifecycle:
 
     def run(self):
         # Configure call-specific arguments
-        self.configure_arguments(self._all_mods, self._env, self._arg_parser)
+        self.configure_arguments(
+            self._all_mods,
+            self._env,
+            self._arg_parser,
+            self._accessor_object
+        )
         self._module_args_set = self.parse_arguments(
             self._arg_parser,
             self._module_full_cli_args_set
@@ -488,7 +513,8 @@ class ModuleLifecycle:
 
     def configure_environment(self,
             all_mods: dict[str, Any],
-            env_parser: EnvironmentParser
+            env_parser: EnvironmentParser,
+            accessor_object: Any
     ) -> None:
         all_mod_subproc = self._start_all_module_subprocess_for(
             LIFECYCLE.PHASES.ENVIRONMENT_CONFIGURATION
@@ -503,7 +529,8 @@ class ModuleLifecycle:
                 module_env_parser = env_parser.add_parser(name)
                 module.configure_env(
                     parser=module_env_parser,
-                    root_parser=env_parser
+                    root_parser=env_parser,
+                    mod=accessor_object
                 )
 
         all_mod_subproc.transition_to_complete()
@@ -549,7 +576,8 @@ class ModuleLifecycle:
     def configure_root_arguments(self,
             all_mods: dict[str, Any],
             envs: dict[str, Namespace],
-            arg_parser: ArgumentParser
+            arg_parser: ArgumentParser,
+            accessor_object: Any
     ) -> None:
         all_mod_subproc = self._start_all_module_subprocess_for(
             LIFECYCLE.PHASES.ROOT_ARGUMENT_CONFIGURATION
@@ -561,7 +589,11 @@ class ModuleLifecycle:
 
             if hasattr(module, 'configure_root_args'):
                 self._debug(f"Configuring root arguments for module '{name}'")
-                module.configure_root_args(env=envs[name], parser=arg_parser)
+                module.configure_root_args(
+                    env=envs[name],
+                    parser=arg_parser,
+                    mod=accessor_object
+                )
 
         all_mod_subproc.transition_to_complete()
 
@@ -673,7 +705,8 @@ class ModuleLifecycle:
     def configure_arguments(self,
             all_mods: dict[str, Any],
             envs: dict[str, Namespace],
-            arg_parser: ArgumentParser
+            arg_parser: ArgumentParser,
+            accessor_object: Any
     ) -> None:
         all_mod_subproc = self._start_all_module_subprocess_for(
             LIFECYCLE.PHASES.ARGUMENT_CONFIGURATION
@@ -690,7 +723,11 @@ class ModuleLifecycle:
 
                 self._debug(f"Configuring arguments for module '{name}'")
                 module_arg_parser = arg_subparsers.add_parser(name)
-                module.configure_args(env=envs[name], parser=module_arg_parser)
+                module.configure_args(
+                    env=envs[name],
+                    parser=module_arg_parser,
+                    mod=accessor_object
+                )
 
         all_mod_subproc.transition_to_complete()
 
