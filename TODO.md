@@ -109,6 +109,8 @@ Look at:
   - https://hackaday.com/2021/06/21/a-collection-of-linux-tools-on-steroids/
   - https://hackaday.com/2018/10/24/linux-fu-marker-is-a-command-line-menu/
 
+- https://codeql.github.com/docs/codeql-language-guides/basic-query-for-python-code/
+
 Consider How Modules are Structured and Used
 --------------------------------------------------
 
