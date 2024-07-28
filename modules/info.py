@@ -70,6 +70,7 @@ class InfoModule:
                         shlex.split(item['command']['command'])
                     )
                     .decode(),
+                lang='jq',
                 first=True
             )
             for item in query_command_items.values()

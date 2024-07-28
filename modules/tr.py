@@ -1,8 +1,11 @@
 import jq
+import yaql
+
 from rich.table import Table
 from rich.tree import Tree
 from rich.console import RenderableType
 
+from core.exceptions import VCSException
 from core.modulemanager import ModuleAccessor
 
 # Types
@@ -14,6 +17,9 @@ class TrModule:
     Transforms forwarded data in various ways.
     """
 
+    def __init__(self):
+        self.yaql_engine = yaql.factory.YaqlFactory().create()
+
     def configure_args(self, *, parser: ArgumentParser, **_):
         # Permit data forwarding
         parser.add_argument('---',
@@ -24,12 +30,27 @@ class TrModule:
             """)
 
         # Query
-        parser.add_argument('-q', '--query', default=None,
+        parser.add_argument('-jq', '--json-query', default=None,
             help="The `jq`-language query to apply.")
+
+        parser.add_argument('-pq', '--python-query', default=None,
+            help="The `yaql`-language query to apply.")
 
         parser.add_argument('-1', '--first',
             action='store_true', default=False,
-            help="Only take the first result of the queried stream.")
+            help="""
+            If doing a json query, only return the first result in the output
+            stream.
+            """)
+
+        # Index
+        parser.add_argument('-i', '--index',
+            action='store_true', default=False,
+            help="""
+            Index the data by its 'ref' attribute. This may be needed after
+            querying if the query language does not support building dicts with
+            dynamic keys.
+            """)
 
         # Tabulate
           # Data
@@ -76,8 +97,20 @@ class TrModule:
     def __call__(self, *, args: Namespace, forwarded_data: Any, **_):
         output = forwarded_data
 
-        if args.query is not None:
-            output = self.query(args.query, output, first=args.first)
+        if args.json_query is not None:
+            output = self.query(
+                args.json_query, output,
+                lang='jq', first=args.first
+            )
+
+        if args.python_query is not None:
+            output = self.query(
+                args.python_query, output,
+                lang='yaql'
+            )
+
+        if args.index is True:
+            output = self.index(output)
 
         if args.tabulate:
             output = self.tabulate(
@@ -100,9 +133,25 @@ class TrModule:
         return output
 
     @ModuleAccessor.invokable_as_service
-    def query(self, query: str, data: Any, first=False):
-        transformer = jq.first if first is True else jq.all
+    def query(self, query: str, data: Any, *, lang: str, first=False):
+        if lang == 'jq':
+            transformer = jq.first if first is True else jq.all
+
+        elif lang == 'yaql':
+            transformer = lambda qeury_, data_: (
+                self.yaql_engine(qeury_).evaluate(data=data_)
+            )
+
+        else:
+            raise VCSException(f"Unsupported query language '{lang}'")
+
         return transformer(query, data)
+
+    @ModuleAccessor.invokable_as_service
+    def index(self,
+            objs: list[dict[str, Any]]
+    ) -> dict[str, dict[str, Any]]:
+        return {obj['ref']: obj for obj in objs}
 
     @ModuleAccessor.invokable_as_service
     def tabulate(self,

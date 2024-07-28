@@ -1,3 +1,6 @@
+from yaql import yaqlization
+
+@yaqlization.yaqlize
 class CurrencyAmount:
     def __init__(self, currency: str, amount: int):
         self.currency = currency
