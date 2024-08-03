@@ -36,14 +36,22 @@ FINANCE_LIFECYCLE = PhaseSystem(
         'WINDOW',
         'DISTRIBUTE',
         'FINALISE',
-        'GROUP',
+        'GROUP_BY_ACCOUNT',
+        'GROUP_BY_TIME',
         'AGGREGATE',
         'TABULATE',
         'RENDER'
     ),
     {
         'WINDOW': ('FINALISE',),
-        'FINALISE': ('TABULATE',)
+
+        'FINALISE': (
+            'GROUP_BY_TIME',
+            'AGGREGATE',
+            'TABULATE'
+        ),
+        'GROUP_BY_ACCOUNT': ('AGGREGATE', 'TABULATE'),
+        'GROUP_BY_TIME': ('TABULATE',)
     }
 )
 
@@ -141,19 +149,6 @@ class FinanceModule:
             forwarded_data: Any,
             **_
     ):
-        # Check args
-        # TODO: If argparse ever gets a way of doing this, use that.
-        if (
-            args.aggregate is not None and (
-                args.group_by_account is False
-                and args.group_by_time is None
-            )
-        ):
-            raise VCSException(
-                'Requested aggregation without grouping. Aggregation can only'
-                ' be done on grouped data.'
-            )
-
         # Set up phase process and a common transition function
         invokation_process_name = (
             'finance.lifecycle_instance.' +
@@ -166,6 +161,7 @@ class FinanceModule:
             FINANCE_LIFECYCLE.PHASES.INITIALISE
         ))
 
+        # WARNING: THIS MUTATES STATE, even though it's used in `if` statements
         transition_to_phase = lambda phase, default=True: (
             mod.phase.transition_to_phase(
                 invokation_process_name, phase, args, default
@@ -213,34 +209,30 @@ class FinanceModule:
         if transition_to_phase(FINANCE_LIFECYCLE.PHASES.FINALISE):
             output = self._finalise(output)
 
-        # Group
+        # Create a single group initially
+        output = {frozendict(): output}
+
+        # Group by account
         if (
-            (
-                args.group_by_account is True or
-                args.group_by_time is not None
-            ) and
-            transition_to_phase(FINANCE_LIFECYCLE.PHASES.GROUP)
+            args.group_by_account is True and
+            transition_to_phase(FINANCE_LIFECYCLE.PHASES.GROUP_BY_ACCOUNT)
         ):
-            # Create a single group initially
-            groups: ItemGroupSet = {frozendict(): output}
+            output = self._group_by_account(output)
 
-            if args.group_by_account is True:
-                groups = self._group_by_account(groups)
+        # Group by time
+        if (
+            args.group_by_time is not None and
+            transition_to_phase(FINANCE_LIFECYCLE.PHASES.GROUP_BY_TIME)
+        ):
+            unit = args.group_by_time
+            output = self._group_by_time(output, unit)
 
-            if args.group_by_time is not None:
-                unit = args.group_by_time
-                groups = self._group_by_time(groups, unit)
-
-            # If no aggregation was requested, this is the final result
-            output = groups
-
-            # Aggregate
-            if (
-                transition_to_phase(FINANCE_LIFECYCLE.PHASES.AGGREGATE) and
-                args.aggregate is not None
-            ):
-                aggregator = args.aggregate
-                output = self._aggregate(output, aggregator)
+        # Aggregate the amounts in each group
+        if (
+            args.aggregate is not None and
+            transition_to_phase(FINANCE_LIFECYCLE.PHASES.AGGREGATE)
+        ):
+            output = self._aggregate(output, args.aggregate)
 
         # Format
         if args.group_by_account is True or args.group_by_time is not None:
