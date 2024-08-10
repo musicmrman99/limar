@@ -39,6 +39,7 @@ FINANCE_LIFECYCLE = PhaseSystem(
         'WRAP_IN_GROUP',
         'GROUP_BY_ACCOUNT',
         'GROUP_BY_TIME',
+        'FILTER_GROUPS',
         'AGGREGATE',
         'TABULATE',
         'RENDER'
@@ -46,11 +47,21 @@ FINANCE_LIFECYCLE = PhaseSystem(
     {
         'WINDOW': ('FINALISE',),
         'FINALISE': (
-            'GROUP_BY_ACCOUNT', 'GROUP_BY_TIME', 'AGGREGATE', 'TABULATE'
+            'GROUP_BY_ACCOUNT',
+            'GROUP_BY_TIME',
+            'FILTER_GROUPS',
+            'AGGREGATE',
+            'TABULATE'
         ),
-        'WRAP_IN_GROUP': ('GROUP_BY_TIME', 'AGGREGATE', 'TABULATE'),
-        'GROUP_BY_ACCOUNT': ('AGGREGATE', 'TABULATE'),
-        'GROUP_BY_TIME': ('TABULATE',)
+        'WRAP_IN_GROUP': (
+            'GROUP_BY_TIME',
+            'FILTER_GROUPS',
+            'AGGREGATE',
+            'TABULATE'
+        ),
+        'GROUP_BY_ACCOUNT': ('FILTER_GROUPS', 'AGGREGATE', 'TABULATE'),
+        'GROUP_BY_TIME': ('AGGREGATE', 'TABULATE'),
+        'FILTER_GROUPS': ('TABULATE',)
     }
 )
 
@@ -114,6 +125,13 @@ class FinanceModule:
             help="""
             If given, group the data into the given calendar unit (one of 'day',
             'week', 'month', or 'year') before aggregating.
+            """)
+
+        parser.add_argument('-fg', '--filter-groups', metavar='FUNCTION',
+            default=None,
+            help="""
+            If given, filter the grouped data using the given filter function
+            before aggregating.
             """)
 
         parser.add_argument('-a', '--aggregate', metavar='AGGREGATOR',
@@ -226,6 +244,13 @@ class FinanceModule:
         ):
             unit = args.group_by_time
             output = self._group_by_time(output, unit)
+
+        # Filter groups
+        if (
+            args.filter_groups is not None and
+            transition_to_phase(FINANCE_LIFECYCLE.PHASES.FILTER_GROUPS)
+        ):
+            output = self._filter_groups(output, args.filter_groups)
 
         # Aggregate the amounts in each group
         if (
@@ -462,7 +487,7 @@ class FinanceModule:
 
         return by_account
 
-    def _group_by_account(self, groups: ItemGroupSet):
+    def _group_by_account(self, groups: ItemGroupSet) -> ItemGroupSet:
         return {
             new_item_group_ref: new_item_group
             for item_groups in [
@@ -502,7 +527,7 @@ class FinanceModule:
 
         return by_time
 
-    def _group_by_time(self, groups: ItemGroupSet, unit: str):
+    def _group_by_time(self, groups: ItemGroupSet, unit: str) -> ItemGroupSet:
         # Group and merge
         return {
             new_item_group_ref: new_item_group
@@ -511,6 +536,29 @@ class FinanceModule:
                 for item_group_ref, item_group in groups.items()
             ]
             for new_item_group_ref, new_item_group in item_groups.items()
+        }
+
+    def _filter_account_type(self,
+            ref: frozendict[str, Hashable],
+            group: ItemGroup,
+            value: Any
+    ) -> bool:
+        return next(iter(group.values()))['account']['tags']['type'] == value
+
+    def _filter_groups(self, groups: ItemGroupSet, filter: str) -> ItemGroupSet:
+        _filters: dict[
+            str,
+            Callable[[frozendict[str, Hashable], ItemGroup, Any], bool]
+        ] = {
+            'account-type': self._filter_account_type
+        }
+
+        filter_name, filter_value = filter.split('=')
+
+        return {
+            item_group_ref: item_group
+            for item_group_ref, item_group in groups.items()
+            if _filters[filter_name](item_group_ref, item_group, filter_value)
         }
 
     def _aggregate_sum(self,
