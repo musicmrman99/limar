@@ -36,6 +36,7 @@ FINANCE_LIFECYCLE = PhaseSystem(
         'WINDOW',
         'DISTRIBUTE',
         'FINALISE',
+        'WRAP_IN_GROUP',
         'GROUP_BY_ACCOUNT',
         'GROUP_BY_TIME',
         'AGGREGATE',
@@ -44,12 +45,10 @@ FINANCE_LIFECYCLE = PhaseSystem(
     ),
     {
         'WINDOW': ('FINALISE',),
-
         'FINALISE': (
-            'GROUP_BY_TIME',
-            'AGGREGATE',
-            'TABULATE'
+            'GROUP_BY_ACCOUNT', 'GROUP_BY_TIME', 'AGGREGATE', 'TABULATE'
         ),
+        'WRAP_IN_GROUP': ('GROUP_BY_TIME', 'AGGREGATE', 'TABULATE'),
         'GROUP_BY_ACCOUNT': ('AGGREGATE', 'TABULATE'),
         'GROUP_BY_TIME': ('TABULATE',)
     }
@@ -210,7 +209,8 @@ class FinanceModule:
             output = self._finalise(output)
 
         # Create a single group initially
-        output = {frozendict(): output}
+        if transition_to_phase(FINANCE_LIFECYCLE.PHASES.WRAP_IN_GROUP):
+            output = {frozendict(): output}
 
         # Group by account
         if (
@@ -296,8 +296,8 @@ class FinanceModule:
         return {
             ref: {
                 'ref': item['ref'],
-                'from': item['from']['ref'],
-                'to': item['to']['ref'],
+                'from': item['from'],
+                'to': item['to'],
                 'paid': item['paid'],
                 'cleared': item['cleared'],
                 'coverStart': (
@@ -438,20 +438,27 @@ class FinanceModule:
 
         by_account = {}
         for item_ref, item in item_group.items():
-            from_account_ref = frozendict(**item_group_ref, account=item['from'])
+            from_account_ref = frozendict(**item_group_ref, account=item['from']['ref'])
             if from_account_ref not in by_account:
                 by_account[from_account_ref] = {}
             by_account[from_account_ref][item_ref] = item | {
+                'account': item['from'],
                 'amount': CurrencyAmount(
                     item['amount'].currency,
                     -item['amount'].amount
                 )
             }
+            del by_account[from_account_ref][item_ref]['from']
+            del by_account[from_account_ref][item_ref]['to']
 
-            to_account_ref = frozendict(**item_group_ref, account=item['to'])
+            to_account_ref = frozendict(**item_group_ref, account=item['to']['ref'])
             if to_account_ref not in by_account:
                 by_account[to_account_ref] = {}
-            by_account[to_account_ref][item_ref] = item
+            by_account[to_account_ref][item_ref] = item | {
+                'account': item['to']
+            }
+            del by_account[to_account_ref][item_ref]['from']
+            del by_account[to_account_ref][item_ref]['to']
 
         return by_account
 
