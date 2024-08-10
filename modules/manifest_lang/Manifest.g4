@@ -76,9 +76,10 @@ blockItemSeparator : comment? NEWLINE SPACE? ;
 
 dataOpen : DATA_OPEN comment? NEWLINE? SPACE? ;
 dataClose : NEWLINE? SPACE? DATA_CLOSE comment? ;
-dataItemSeparator : ( DATA_ITEM_SEPARATOR
-                    | comment? NEWLINE
-                    | DATA_ITEM_SEPARATOR comment? NEWLINE
+dataItemSeparator : SPACE? (
+                      DATA_ITEM_SEPARATOR
+                      | comment? NEWLINE
+                      | DATA_ITEM_SEPARATOR comment? NEWLINE
                     ) SPACE? ;
 
 setOpen : SET_OPEN comment? NEWLINE? SPACE? ;

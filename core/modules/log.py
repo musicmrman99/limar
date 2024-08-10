@@ -1,5 +1,3 @@
-import sys
-
 from core.modulemanager import ModuleAccessor
 from core.exceptions import VCSException
 

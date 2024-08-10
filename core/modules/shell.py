@@ -60,7 +60,7 @@ class ShellModule:
     def stop(self, *,
             mod: Namespace,
             start_exceptions: list[Exception | KeyboardInterrupt],
-            run_exception: Exception | KeyboardInterrupt,
+            run_exception: Exception | KeyboardInterrupt | None,
             **_
     ):
         assert self._script is not None, 'stop() run before start()'

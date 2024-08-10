@@ -5,6 +5,8 @@
 
 # Todo
 
+- make all assertion explanations use f-strings that use `[self.]function_name.__name__` references in place of literal method names (allows for easier refactoring)
+
 - TESTING
 
 Develop ModuleManager
@@ -106,6 +108,8 @@ Look at:
     - https://arcan-fe.com/2022/10/15/whipping-up-a-new-shell-lashcat9/
   - https://hackaday.com/2021/06/21/a-collection-of-linux-tools-on-steroids/
   - https://hackaday.com/2018/10/24/linux-fu-marker-is-a-command-line-menu/
+
+- https://codeql.github.com/docs/codeql-language-guides/basic-query-for-python-code/
 
 Consider How Modules are Structured and Used
 --------------------------------------------------
