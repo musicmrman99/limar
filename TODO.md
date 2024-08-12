@@ -12,6 +12,14 @@
 Develop ModuleManager
 --------------------------------------------------
 
+- add async, streamed, and branching forwarding
+  - eg. `[-\]][-/][-\[]`, where:
+    - `-` = forward, no special processing
+    - `]` / `[` = forward from/to a stream (ie. whether to keep the previous item around and run it repeatedly until it terminates by throwing StopIteration or something)
+    - `/` = async (ie. don't wait until the previous call is finished before starting the next call, and pass the data to the next call as and when the previous call makes data available to pass. This implies a temporary stream, but the previous call is still synchronous)
+
+    - Or something. This would need some thought
+
 - define appropriate custom exceptions for the different abstraction boundaries within VCS:
   - ModuleError
   - VCSError
@@ -31,7 +39,19 @@ Develop Core Modules
 Develop Existing Modules
 --------------------------------------------------
 
+- add workload context manager
+  - commit (job) [for (job)] (description)
+  - wait [job:top(jobs)]
+  - assign (user)
+  - resume [job:top(jobs)]
+  - bump (job)
+  - reorder [job:bottom(jobs)]
+    - like rebase
+
+  - two stacks - active and blocked
+
 - do something with tag values in `manifest`
+  - allow item set spec filter by tag value (or can it already to this?)
 
 - add a way of viewing the cache, like:
 ```sh
