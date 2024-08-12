@@ -1,2 +1,2 @@
-class VCSException(Exception):
+class LIMARException(Exception):
     pass

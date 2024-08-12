@@ -1,4 +1,4 @@
-from core.exceptions import VCSException
+from core.exceptions import LIMARException
 
 # Types
 from typing import Iterable
@@ -77,7 +77,7 @@ class PhasedProcess:
 
     def transition_to(self, phase: Phase):
         if not self._phase_system.can_transition(self._cur_phase, phase):
-            raise VCSException(
+            raise LIMARException(
                 f"Phased process '{self._name}' cannot transition phase from"
                 f" '{self._cur_phase}' to '{phase}'. Transition not allowed by"
                 f" phase system '{self._phase_system.name()}'."
@@ -87,7 +87,7 @@ class PhasedProcess:
             self._cur_phase in self._subprocesses and
             not self._subprocesses[self._cur_phase].is_complete()
         ):
-            raise VCSException(
+            raise LIMARException(
                 f"Phased process '{self._name}' cannot transition phase from"
                 f" '{self._cur_phase}' to '{phase}'. Subprocess"
                 f" '{self._subprocesses[phase].name()}' not yet completed."
@@ -100,7 +100,7 @@ class PhasedProcess:
 
     def transition_to_complete(self):
         if self._completed_phase is None:
-            raise VCSException(
+            raise LIMARException(
                 f"Phased process '{self._name}' does not have a completed phase"
                 " to transition to"
             )
@@ -111,7 +111,7 @@ class PhasedProcess:
 
     def start_subprocess(self, phase: Phase, process: "PhasedProcess"):
         if phase in self._subprocesses:
-            raise VCSException(
+            raise LIMARException(
                 f"Phase '{phase}' already has registered subprocess"
                 f" '{process.name()}'. Cannot register another subprocess"
                 " against that phase."
@@ -121,13 +121,13 @@ class PhasedProcess:
 
     def stop_subprocess(self, phase: Phase, force: bool = False):
         if phase not in self._subprocesses:
-            raise VCSException(
+            raise LIMARException(
                 f"Cannot stop subprocess for phase '{phase}' because no"
                 " subprocess was started for it."
             )
 
         if not force and not self._subprocesses[phase].is_complete():
-            raise VCSException(
+            raise LIMARException(
                 f"Cannot stop subprocess '{self._subprocesses[phase].name()}'"
                 f" started for phase '{phase}' because it is not complete."
                 " Developers: If it does not matter if the process is complete,"

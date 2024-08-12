@@ -1,4 +1,4 @@
-from core.exceptions import VCSException
+from core.exceptions import LIMARException
 
 class Command:
     @staticmethod
@@ -19,7 +19,7 @@ class Command:
                 'tool' not in item or
                 'command' not in item
             ):
-                raise VCSException(
+                raise LIMARException(
                     "@tool context requires a command type to be declared for"
                     f" item '{item['ref']}'"
                 )

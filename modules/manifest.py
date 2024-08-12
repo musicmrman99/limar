@@ -5,7 +5,7 @@ import string
 
 from core.store import Store
 from core.modulemanager import ModuleAccessor
-from core.exceptions import VCSException
+from core.exceptions import LIMARException
 
 # Types
 from core.modules.log import LogModule
@@ -86,7 +86,7 @@ class Manifest:
 
         `initial_contexts` is a list of context type names to enter immediately
         after entering the manifest. Enter the contexts in the order the names
-        are given, passing no options to each. Raise a VCSException if any
+        are given, passing no options to each. Raise a LIMARException if any
         module names given in `initial_contexts` are not defined in
         `context_modules`.
 
@@ -104,7 +104,7 @@ class Manifest:
         )
         for name in self._initial_contexts:
             if name not in self._context_modules:
-                raise VCSException(
+                raise LIMARException(
                     f"Initial context '{name}' not available to manifest"
                 )
 
@@ -146,7 +146,7 @@ class Manifest:
 
     def enter(self):
         if self._stage != self.STAGES.initialising:
-            raise VCSException(
+            raise LIMARException(
                 "Attempt to call Manifest.enter() outside of"
                 f" '{self.STAGES.initialising}' stage (was in '{self._stage}'"
                 f" stage)"
@@ -162,7 +162,7 @@ class Manifest:
 
     def exit(self):
         if self._stage != self.STAGES.entered:
-            raise VCSException(
+            raise LIMARException(
                 "Attempt to call Manifest.exit() outside of"
                 f" '{self.STAGES.entered}' stage (was in '{self._stage}' stage)"
             )
@@ -184,7 +184,7 @@ class Manifest:
 
     def enter_context(self, type, opts = None):
         if self._stage != self.STAGES.entered:
-            raise VCSException(
+            raise LIMARException(
                 "Attempt to call Manifest.enter_context() outside of"
                 f" '{self.STAGES.entered}' stage (was in '{self._stage}' stage)"
             )
@@ -220,7 +220,7 @@ class Manifest:
 
     def exit_context(self):
         if self._stage != self.STAGES.entered:
-            raise VCSException(
+            raise LIMARException(
                 "Attempt to call Manifest.exit_context() outside of"
                 f" '{self.STAGES.entered}' stage (was in '{self._stage}' stage)"
             )
@@ -248,7 +248,7 @@ class Manifest:
             self._stage != self.STAGES.entered and
             len(self._context_modules) > 0
         ):
-            raise VCSException(
+            raise LIMARException(
                 "Attempt to call Manifest.declare_tag() outside of"
                 f" '{self.STAGES.entered}' stage with uninitialised context"
                 f" modules present (was in '{self._stage}' stage)"
@@ -256,7 +256,7 @@ class Manifest:
 
         # Validate
         if ref in self._tags:
-            raise VCSException(f"Manifest item already exists with ref '{ref}'")
+            raise LIMARException(f"Manifest item already exists with ref '{ref}'")
 
           # Add to main item set
         self._tags[ref] = tags if tags is not None else {}
@@ -294,7 +294,7 @@ class Manifest:
             self._stage != self.STAGES.entered and
             len(self._context_modules) > 0
         ):
-            raise VCSException(
+            raise LIMARException(
                 "Attempt to call Manifest.declare_item() outside of"
                 f" '{self.STAGES.entered}' stage with uninitialised context"
                 f" modules present (was in '{self._stage}' stage)"
@@ -302,7 +302,7 @@ class Manifest:
 
         # Validate
         if ref in self._items:
-            raise VCSException(f"Manifest item already exists with ref '{ref}'")
+            raise LIMARException(f"Manifest item already exists with ref '{ref}'")
 
         # Store
         item = {
@@ -398,7 +398,7 @@ class Manifest:
             }
 
         else:
-            raise VCSException(
+            raise LIMARException(
                 f"Unsupported set operator '{ops_btree['operator']}' when"
                 " computing item set"
             )
@@ -408,7 +408,7 @@ class Manifest:
             self._stage != self.STAGES.entered and
             len(self._context_modules) > 0
         ):
-            raise VCSException(
+            raise LIMARException(
                 "Attempt to call Manifest.declare_item_set() outside of"
                 f" '{self.STAGES.entered}' stage with uninitialised context"
                 f" modules present (was in '{self._stage}' stage)"
@@ -1024,7 +1024,7 @@ class ManifestModule:
                     )
                 )
             except (KeyError, StopIteration) as e:
-                raise VCSException(
+                raise LIMARException(
                     f"item set not found from pattern '{pattern}'"
                 ) from e
 
@@ -1059,7 +1059,7 @@ class ManifestModule:
             )
             self._mod.log.debug('found:', item)
         except StopIteration:
-            raise VCSException(
+            raise LIMARException(
                 f"item not found from pattern '{pattern}'"
             )
 

@@ -4,7 +4,7 @@ from core.modules.log import LogModule
 import modules
 
 def main():
-    with ModuleManager('vcs') as module_manager:
+    with ModuleManager('limar') as module_manager:
         module_manager.register_package(modules)
         module_manager.run()
 

@@ -5,7 +5,7 @@ from rich.table import Table
 from rich.tree import Tree
 from rich.console import RenderableType
 
-from core.exceptions import VCSException
+from core.exceptions import LIMARException
 from core.modulemanager import ModuleAccessor
 
 # Types
@@ -143,7 +143,7 @@ class TrModule:
             )
 
         else:
-            raise VCSException(f"Unsupported query language '{lang}'")
+            raise LIMARException(f"Unsupported query language '{lang}'")
 
         return transformer(query, data)
 

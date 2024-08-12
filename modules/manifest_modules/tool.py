@@ -1,4 +1,4 @@
-from core.exceptions import VCSException
+from core.exceptions import LIMARException
 
 class Tool:
     @staticmethod
@@ -11,7 +11,7 @@ class Tool:
 
     def on_enter_context(self, context, *_, **__):
         if self._current_tool is not None:
-            raise VCSException(
+            raise LIMARException(
                 "Can only have one nested @tool context: tried to nest"
                 f" '{context['opts']['command']}' inside"
                 f" '{self._current_tool['command']}'"

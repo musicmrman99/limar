@@ -20,9 +20,9 @@ Develop ModuleManager
 
     - Or something. This would need some thought
 
-- define appropriate custom exceptions for the different abstraction boundaries within VCS:
+- define appropriate custom exceptions for the different abstraction boundaries within LIMAR:
   - ModuleError
-  - VCSError
+  - LIMARError
   - etc.
 
 ---
@@ -71,7 +71,7 @@ Add More Modules
 
 - add command to open the remote url of a project, or any sub-url of it, in a browser
 
-- execute management commands against multiple projects, eg. `vcs for ...`
+- execute management commands against multiple projects, eg. `limar for ...`
   - how is it best to do this? `jq`-style using FP-like branching perhaps?
 
 - Add an `alias` module
@@ -146,7 +146,7 @@ Consider How Modules are Structured and Used
 
 ### Subjects and Providers
 
-A subject is anything you may want to know about or manipulate using `vcs`, such
+A subject is anything you may want to know about or manipulate using `limar`, such
 as:
 
 - Projects

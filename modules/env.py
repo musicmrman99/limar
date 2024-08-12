@@ -1,6 +1,6 @@
 import os
 
-from core.exceptions import VCSException
+from core.exceptions import LIMARException
 
 # Types
 from argparse import ArgumentParser, Namespace
@@ -55,7 +55,7 @@ class EnvModule:
             try:
                 self._temp_proj_path = temp_proj['path']
             except KeyError:
-                raise VCSException(
+                raise LIMARException(
                     "'path' not a property of the project resolved from"
                     f" {self._temp_proj_pattern}. Are you missing the"
                     " manifest_context_uris module, or an '@uris' context in"
@@ -82,7 +82,7 @@ class EnvModule:
             try:
                 proj_path = proj['path']
             except KeyError:
-                raise VCSException(
+                raise LIMARException(
                     "'path' not a property of the project resolved from"
                     f" {proj_pattern}. Are you missing the"
                     " manifest_context_uris module, or an '@uris' context in"

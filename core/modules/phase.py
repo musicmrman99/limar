@@ -1,6 +1,6 @@
 from argparse import ArgumentParser, Namespace
 
-from core.exceptions import VCSException
+from core.exceptions import LIMARException
 from core.modulemanager import ModuleAccessor
 
 from core.modules.phase_utils.phase import Phase
@@ -111,7 +111,7 @@ class PhaseModule:
         """Register a Phase System with the given name."""
 
         if system.name() in self._systems:
-            raise VCSException(
+            raise LIMARException(
                 f"Phase system '{system.name()}' already exists. Cannot"
                 " register another phase system with that name."
             )
@@ -129,7 +129,7 @@ class PhaseModule:
         """Register a phased process with the given name."""
 
         if process.name() in self._processes:
-            raise VCSException(
+            raise LIMARException(
                 f"Phased process '{process.name()}' already exists. Cannot"
                 " register another phased process with that name."
             )

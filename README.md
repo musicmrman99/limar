@@ -1,36 +1,37 @@
-# Git Source Manager
+# Local Information Management, Architecture, and Representation (LIMAR) System
 
-Git Source Manager (though the command is called `vcs`) is a system primarily designed to manage many git repositories quickly and easily.
+LIMAR (`limar` or `lm`) is a system for discovering and managing mental contexts, tasks, projects, tools (git, git hosting provider tools, build systems, dependency managers, cloud provider tools, etc.), workflows (gitflow, github flow, custom flows), and much more.
 
 To get it installed, see [Installation](#installation).
 
 ## Overview
 
-`vcs` has a variety of sub-commands for different purposes:
+`limar` has a variety of sub-commands for different purposes:
 
-| Usable? | In Dev? | Command        | Summary                                                         |
-|---------|---------|----------------|-----------------------------------------------------------------|
-| &check; | &check; | `vcs manifest` | Manage the vcs manifest file and project references             |
-| &check; | &check; | `vcs env`      | Manage the shell environment, eg. current dir, env vars, etc.   |
-|         |         | `vcs repo`     | Get info about repositories and manage repo instances and state |
-|         |         | `vcs for`      | Execute a supported sub-command against many repos at once      |
-|         |         | `vcs git`      | Execute a raw git command against a repo                        |
-|         |         | `vcs sh`       | Execute a raw shell command against a repo                      |
+| Area    | Usable? | In Dev? | Command    | Summary                                                         |
+|---------|---------|---------|------------|-----------------------------------------------------------------|
+| Data    | &check; | &check; | `manifest` | Manage manifest files, eg. project definitions                  |
+| Meta    |         |         | `for`      | Execute a supported sub-command against many repos at once      |
+| Context | &check; | &check; | `env`      | Manage the shell environment, eg. current dir, env vars, etc.   |
+| Project |         |         | `repo`     | Get info about repositories and manage repo instances and state |
+| Project |         |         | `git`      | Execute a raw git command against a repo                        |
+| Project |         |         | `sh`       | Execute a raw shell command against a repo                      |
+| Misc    | &check; | &check; | `finance`  | Manage accounts and transactions, and run queries on them       |
 
 ## `manifest`
 
 ### Environment
 
 ```sh
-VCS_MANIFEST_PATH = "$HOME/manifest.txt"      # Required
-VCS_MANIFEST_DEFAULT_PROJECT_SET = 'some-set' # Optional, default: all projects
+LIMAR_MANIFEST_PATH = "$HOME/manifest.txt"      # Required
+LIMAR_MANIFEST_DEFAULT_PROJECT_SET = 'some-set' # Optional, default: all projects
 ```
 
 ### Synopsis
 
 ```
-vcs manifest project [-p PROPERTY] [--project-set PROJECT_SET_PATTERN] PATTERN
-vcs manifest project-set [-p PROPERTY] PATTERN
+limar manifest project [-p PROPERTY] [--project-set PROJECT_SET_PATTERN] PATTERN
+limar manifest project-set [-p PROPERTY] PATTERN
 ```
 
 ### Description
@@ -43,8 +44,8 @@ projects and sets of projects.
 ### Synopsis
 
 ```
-vcs env cd PROJECT_PATTERN
-vcs [-cd PROJECT_PATTERN] ...
+limar env cd PROJECT_PATTERN
+limar [-cd PROJECT_PATTERN] ...
 ```
 
 ### Description
@@ -61,10 +62,10 @@ Provides commands relating to the shell environment. Currently includes:
 ### Synopsis
 
 ```
-vcs repo instance [--project PROJECT_PATTERN]
-vcs repo update [--project PROJECT_PATTERN]
-vcs repo info [--project PROJECT_PATTERN]
-vcs repo (mr|pr) [--project PROJECT_PATTERN]
+limar repo instance [--project PROJECT_PATTERN]
+limar repo update [--project PROJECT_PATTERN]
+limar repo info [--project PROJECT_PATTERN]
+limar repo (mr|pr) [--project PROJECT_PATTERN]
 ```
 
 ### Description
@@ -76,7 +77,7 @@ Provides commands relating to repository management.
 ### Synopsis
 
 ```
-vcs for [-only] [-q QUANTIFIER] [-o ORDER] SET COMMAND ARGS...
+limar for [-only] [-q QUANTIFIER] [-o ORDER] SET COMMAND ARGS...
 ```
 
 ### Description
@@ -119,7 +120,7 @@ command.
 
 Example:
 ```sh
-vcs for -only -order last -at-least 5 iac git status
+limar for -only -order last -at-least 5 iac git status
 ```
 
 ## Installation
@@ -131,37 +132,37 @@ Install with:
 # Customise as you wish ...
 
 # Set the location of the repo
-VCS_REPO="$HOME/Source/vcs" # Or wherever you want it
+LIMAR_REPO="$HOME/Source/limar" # Or wherever you want it
 
-# Clone the repo
-git clone https://github.com/musicmrman99/vcs "$VCS_REPO"
+# Clone the repo (TODO: rename project to `limar`)
+git clone https://github.com/musicmrman99/vcs "$LIMAR_REPO"
 
 # Set up to enable on shell startup
 cat <<EOF >> "$HOME/.bashrc" # Or .zshrc, etc.
 
-# Git Source Manger (aka. \`vcs\`)
-export VCS_REPO="$VCS_REPO"
-export VCS_MANIFEST="$VCS_REPO/manifest"
-export VCS_PYTHON='python3'
-export VCS_PIP='pip3'
+# LIMAR
+export LIMAR_REPO="$LIMAR_REPO"
+export LIMAR_MANIFEST="$LIMAR_REPO/manifest"
+export LIMAR_PYTHON='python3'
+export LIMAR_PIP='pip3'
 
-. "\$VCS_REPO/vcs.def.sh"
+. "\$LIMAR_REPO/limar.def.sh"
 EOF
 
 # Re-source your shell init file
 . "$HOME/.bashrc" # Or .zshrc, etc.
 
-# Initialise vcs (install dependencies, check environment, etc.)
+# Initialise LIMAR (install dependencies, check environment, etc.)
 # If you need to customise the initialisation more than just python version,
-# then edit the `vcs.def.sh` script.
-vcs init
+# then edit the `limar.def.sh` script.
+limar init
 ```
 
 ## Development
 
 ### Building from Source
 
-To build the ANTLR4 language (after installing the packages in `requirements.txt` with `vcs init`):
+To build the ANTLR4 language (after installing the packages in `requirements.txt` with `limar init`):
 
 ```sh
 cd modules/manifest_lang && \
