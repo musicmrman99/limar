@@ -1384,7 +1384,8 @@ class ModuleManager:
                     )
                 except ImportError as e:
                     raise LIMARException(
-                        f"Python module '{py_module_name}' in __all__ not found"
+                        f"Python module '{py_module_name}' in __all__ failed to"
+                        " load"
                     ) from e
 
                 try:
