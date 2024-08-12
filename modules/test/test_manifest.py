@@ -2,7 +2,7 @@ from unittest import TestCase
 from unittest.mock import MagicMock, Mock, call, mock_open, patch
 
 # Util
-from core.exceptions import VCSException
+from core.exceptions import LIMARException
 
 # Test Fixtures
 from modules.manifest_modules import uris_local, uris_remote
@@ -34,9 +34,9 @@ class TestManifest(TestCase):
         self.mock_mod.cache.return_value=cache_module
 
         self.mock_env = Mock()
-        self.mock_env.VCS_MANIFEST_DEFAULT_ITEM_SET = None
-        self.mock_env.VCS_MANIFEST_ROOT = '/manifests'
-        self.mock_env.VCS_CACHE_ROOT = '/cache'
+        self.mock_env.LIMAR_MANIFEST_DEFAULT_ITEM_SET = None
+        self.mock_env.LIMAR_MANIFEST_ROOT = '/manifests'
+        self.mock_env.LIMAR_CACHE_ROOT = '/cache'
 
     def test_item_basic(self):
         # Input

@@ -18,7 +18,7 @@ from graphlib import CycleError, TopologicalSorter
 from argparse import ArgumentParser, Namespace
 
 from core.envparse import EnvironmentParser
-from core.exceptions import VCSException
+from core.exceptions import LIMARException
 import core.modules as core_module_package
 
 from core.modules.phase_utils.phase import Phase
@@ -88,7 +88,7 @@ class ModuleAccessor:
         # static methods below that adds the needed metadata. Any methods that
         # aren't decorated aren't invokable.
         if not hasattr(invokation_target, '_access_type'):
-            raise VCSException(
+            raise LIMARException(
                 f"Attempt to retreive inaccessible method '{name}' from module"
                 f" '{self._module_name}'"
             )
@@ -130,7 +130,7 @@ class ModuleAccessor:
             }
 
             if (not can_access_module_as[invokation_target._access_type]()):
-                raise VCSException(
+                raise LIMARException(
                     "A module attempted to invoke"
                     f" {invokation_target._access_type} method '{name}' of"
                     f" module '{self._module_name}' outside of valid invokation"
@@ -401,7 +401,7 @@ class ModuleLifecycle:
             factory = mod_factories[name]
 
             if not callable(factory):
-                raise VCSException(
+                raise LIMARException(
                     f"Initialisation failed: module '{name}' could not be"
                     " initialised because it is not callable"
                 )
@@ -410,7 +410,7 @@ class ModuleLifecycle:
                 mods[name] = factory()
                 self._debug(f"Initialised module '{name}' as {mods[name]}")
             except RecursionError as e:
-                raise VCSException(
+                raise LIMARException(
                     f"Initialisation failed: '{name}' could not be initialised:"
                     " probable infinite recursion in __init__() of module"
                 ) from e
@@ -455,7 +455,7 @@ class ModuleLifecycle:
         try:
             sorted_mod_names = tuple(sorter.static_order())
         except CycleError:
-            raise VCSException(
+            raise LIMARException(
                 f"Resolve Dependencies failed: Modules have circular"
                 " dependencies"
             )
@@ -478,7 +478,7 @@ class ModuleLifecycle:
                     for check_name, check_deps in module_deps.items()
                     if name in check_deps
                 ]
-                raise VCSException(
+                raise LIMARException(
                     f"Resolve Dependencies failed: Module '{name}' depended on"
                     f" by modules {missing_module_rev_deps} not registered"
                 )
@@ -814,7 +814,7 @@ class ModuleLifecycle:
                 # true.
                 module = self._invoke_module(name)
                 if not callable(module):
-                    raise VCSException(f"Module not callable: '{name}'")
+                    raise LIMARException(f"Module not callable: '{name}'")
 
                 self._debug(f"Forwarded data:", forwarded_data)
                 forwarded_data: Any = module(
@@ -932,11 +932,11 @@ class ModuleLifecycle:
         """
         Invoke and return the instance of the module with the given name.
 
-        If the named module has not been initialised, raise a VCSException.
+        If the named module has not been initialised, raise a LIMARException.
         """
 
         if not name in self._all_mods:
-            raise VCSException(
+            raise LIMARException(
                 f"Attempt to invoke uninitialised module '{name}'"
             )
 
@@ -1007,7 +1007,7 @@ class ModuleLifecycle:
             )
 
         else:
-            raise VCSException(
+            raise LIMARException(
                 f"Requested the phase of unregistered module '{mod_name}'"
             )
 
@@ -1135,7 +1135,7 @@ class ModuleManager:
 
     Allows the app to add modules to ModuleManager's store using the
     `register_module()` and `register_package()` methods. Any attempt to
-    register a module after the registration phase will raise a VCSException.
+    register a module after the registration phase will raise a LIMARException.
 
     ### Initialisation
     `__init__()`
@@ -1152,7 +1152,7 @@ class ModuleManager:
     the main list of modules into a run order. All subsequent lifecycle phases
     run against each module in this order.
 
-    Note: Circular or unregistered dependencies will raise a VCSException.
+    Note: Circular or unregistered dependencies will raise a LIMARException.
 
     ### Environment Configuration
     `configure_env(parser: EnvironmentParser, root_parser: EnvironmentParser) -> None`
@@ -1383,14 +1383,14 @@ class ModuleManager:
                         f'{package.__package__}.{py_module_name}'
                     )
                 except ImportError as e:
-                    raise VCSException(
+                    raise LIMARException(
                         f"Python module '{py_module_name}' in __all__ not found"
                     ) from e
 
                 try:
                     mm_module = getattr(py_module, mm_class_name)
                 except AttributeError as e:
-                    raise VCSException(
+                    raise LIMARException(
                         f"Python module '{py_module_name}' in __all__ does not"
                         f" contain a ModuleManager module: '{mm_class_name}'"
                         " not found"

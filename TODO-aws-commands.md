@@ -26,3 +26,10 @@
 
 - **Monitoring & Alerting** - Reports & Escalation
   - CloudWatch
+
+## Purposes
+
+- find which resources are 'orphaned'
+  - by allocating every resource to a system, or systems (where it's a connection between two systems)
+
+- visualise the relationships between AWS resources *on a CLI* (ie. not as a static graph, because that would be too complex to read or interact with)

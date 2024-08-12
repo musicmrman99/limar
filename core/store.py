@@ -1,7 +1,7 @@
 from pathlib import Path
 import pickle
 
-from core.exceptions import VCSException
+from core.exceptions import LIMARException
 
 class Store:
     def __init__(self, persist_dir='/tmp'):
@@ -118,7 +118,7 @@ class Store:
         key_path = Path(key)
 
         if '..' in key_path.parts:
-            raise VCSException(
+            raise LIMARException(
                 "Store keys must not contain the special path fragment '..':"
                 f" found in key '{key_path}'")
 

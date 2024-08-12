@@ -40,7 +40,7 @@ class ShellModule:
         return ['log']
 
     def configure_root_args(self, *, parser: ArgumentParser, **_) -> None:
-        parser.add_argument('--shell-script', default='/tmp/vcs-source',
+        parser.add_argument('--shell-script', default='/tmp/limar-source',
             help="""
             The path to a temporary script file that will be sourced in the
             parent shell (outside of this python app). When using this module,

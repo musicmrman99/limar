@@ -1,6 +1,6 @@
 from argparse import Namespace
 
-from core.exceptions import VCSException
+from core.exceptions import LIMARException
 
 # Types
 from core.modules.phase_utils.phase import Phase
@@ -46,11 +46,11 @@ class PhaseSystem:
         Return the signed number of steps needed to get from from_phase to
         to_phase.
 
-        Raise VCSException if the PhaseSystem isn't linear.
+        Raise LIMARException if the PhaseSystem isn't linear.
         """
 
         if not self._is_linear:
-            raise VCSException(
+            raise LIMARException(
                 f"Cannot get delta from phase '{from_phase}' to phase"
                 f" '{to_phase}': Phase system is not linear"
             )
@@ -65,11 +65,11 @@ class PhaseSystem:
         Return the resulting phase from making the given signed number of steps
         starting from from_phase.
 
-        Raise VCSException if the PhaseSystem isn't linear.
+        Raise LIMARException if the PhaseSystem isn't linear.
         """
 
         if not self._is_linear:
-            raise VCSException(
+            raise LIMARException(
                 f"Cannot apply delta ({delta:+}) to phase '{from_phase}':"
                 f" Phase system is not linear"
             )

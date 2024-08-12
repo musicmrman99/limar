@@ -1,7 +1,7 @@
 from datetime import date
 from enum import Enum
 
-from core.exceptions import VCSException
+from core.exceptions import LIMARException
 
 # Types
 from modules.finance_utils.currency_amount import CurrencyAmount
@@ -59,7 +59,7 @@ class FinancialTransaction:
         item['to'] = self._parse_tag(item, 'to', TagType.ref, items=items)
 
         if item['from'] == item['to']:
-            raise VCSException(
+            raise LIMARException(
                 f"Cannot create transaction '{item['ref']}' from and to the"
                 " same account"
             )
@@ -73,7 +73,7 @@ class FinancialTransaction:
         )
 
         if item['paid'] is None and item['cleared'] is None:
-            raise VCSException(
+            raise LIMARException(
                 f"Transaction '{item['ref']}' missing both a paid and cleared"
                 " date (at least one is required)"
             )

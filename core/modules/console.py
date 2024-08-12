@@ -1,7 +1,7 @@
 from rich.console import Console
 
 from core.modulemanager import ModuleAccessor
-from core.exceptions import VCSException
+from core.exceptions import LIMARException
 
 # Types
 from argparse import ArgumentParser, Namespace
@@ -48,7 +48,7 @@ class ConsoleModule:
         """
 
         if name in self._consoles:
-            raise VCSException(
+            raise LIMARException(
                 f"Attempt to register already-registered console '{name}' for"
                 f" output to file '{path}'"
             )

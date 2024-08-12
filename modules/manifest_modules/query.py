@@ -1,4 +1,4 @@
-from core.exceptions import VCSException
+from core.exceptions import LIMARException
 
 class Query:
     @staticmethod
@@ -10,12 +10,12 @@ class Query:
 
     def on_enter_context(self, context, *_, **__):
         if 'command' not in context['opts']:
-            raise VCSException(
+            raise LIMARException(
                 "@query context must be given a `command` to execute"
             )
 
         if self._current_query is not None:
-            raise VCSException(
+            raise LIMARException(
                 "Can only have one nested @query context: tried to nest"
                 f" '{context['opts']['command']}' inside"
                 f" '{self._current_query['command']}'"

@@ -1,5 +1,5 @@
 from core.modulemanager import ModuleAccessor
-from core.exceptions import VCSException
+from core.exceptions import LIMARException
 
 # Types
 from core.envparse import EnvironmentParser
@@ -73,7 +73,7 @@ class LogModule:
     @ModuleAccessor.invokable_as_service
     def log(self, *objs, error=False, level=LEVELS.INFO):
         if level not in self.LEVELS_ORDERED:
-            raise VCSException(
+            raise LIMARException(
                 f"Log level '{level}' not recognised. Should be a level from"
                 " LogModule.LEVELS"
             )

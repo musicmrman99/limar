@@ -1,7 +1,7 @@
 import os
 from argparse import Namespace
 
-from core.exceptions import VCSException
+from core.exceptions import LIMARException
 
 # Types
 from typing import Any
@@ -30,7 +30,7 @@ class EnvironmentParser:
         full_name = self._prefix + self._in_env_case(name)
 
         if full_name in self._spec:
-            raise VCSException(
+            raise LIMARException(
                 "Attempt to add environment variable to spec that is already"
                 " configured"
             )
@@ -87,11 +87,11 @@ class EnvironmentParser:
                 if 'default' in opts:
                     env_vars[collapsed_name] = opts['default']
                 else:
-                    raise VCSException(
+                    raise LIMARException(
                         f"Required environment variable '{name}' not set"
                     ) from e
             except ValueError as e:
-                raise VCSException(
+                raise LIMARException(
                     f"Environment variable '{name}' not parsable as"
                     f" '{type.__name__}"
                 ) from e

@@ -4,7 +4,7 @@ import random
 from dateutil.relativedelta import relativedelta, MO
 from frozendict import frozendict
 
-from core.exceptions import VCSException
+from core.exceptions import LIMARException
 from core.modules.phase_utils.phase_system import PhaseSystem
 from core.modules.phase_utils.phased_process import PhasedProcess
 
@@ -357,7 +357,7 @@ class FinanceModule:
         # Throw an error in case this was accidental. This would always
         # return zero results if we didn't catch it.
         if window_start > window_end:
-            raise VCSException(
+            raise LIMARException(
                 f"Given window start '{window_start}' is after window end"
                 f" '{window_end}'"
             )
@@ -618,7 +618,7 @@ class FinanceModule:
                     currency_discovery = item['amount'].currency
 
                 if currency_discovery != item['amount'].currency:
-                    raise VCSException(
+                    raise LIMARException(
                         f"Found different currencies '{currency_discovery}' and"
                         f" '{item['amount'].currency}' when aggregating item"
                         f" group '{item_group_ref}': Cannot aggregate amounts"
@@ -627,7 +627,7 @@ class FinanceModule:
 
             if currency_discovery is None:
                 # Shouldn't be possible, but it keeps the type checker happy
-                raise VCSException(
+                raise LIMARException(
                     "No currency found when aggregating item group"
                     f" '{item_group_ref}'"
                 )
