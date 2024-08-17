@@ -125,38 +125,66 @@ limar for -only -order last -at-least 5 iac git status
 
 ## Installation
 
-Requires Python 3.9+
+**Note**: LIMAR requires Python 3.9+
 
-Install with:
+To install, run the following in a new terminal (customise as you wish):
 ```sh
-# Customise as you wish ...
-
-# Set the location of the repo
-LIMAR_REPO="$HOME/Source/limar" # Or wherever you want it
+# Set the location of the repo, and optionally where you want the LIMAR data
+# directory to be.
+export LIMAR__REPO="$HOME/Source/limar"
+#export LIMAR__DATA_DIR="$HOME/.limar" # This is the default
 
 # Clone the repo (TODO: rename project to `limar`)
-git clone https://github.com/musicmrman99/vcs "$LIMAR_REPO"
+git clone https://github.com/musicmrman99/vcs "$LIMAR__REPO"
 
-# Set up to enable on shell startup
+# Initialise LIMAR (check environment, install dependencies, link to repo paths,
+# etc.). If you need to customise the initialisation more than changing the
+# python version, then edit the `limar.def.sh` script's `/init` command.
+export PATH="$LIMAR__REPO/scripts:$PATH"
+. "$LIMAR__REPO/limar.def.sh"
+limar /init
+
+# Set up LIMAR on shell startup
 cat <<EOF >> "$HOME/.bashrc" # Or .zshrc, etc.
 
 # LIMAR
-export LIMAR_REPO="$LIMAR_REPO"
-export LIMAR_MANIFEST="$LIMAR_REPO/manifest"
-export LIMAR_PYTHON='python3'
-export LIMAR_PIP='pip3'
+# Global overrides (may be required, depending on your setup):
+# - If \`limar init\` said you needed to add this (ie. if you're using a shell for which LIMAR can't automatically set the location), then set this.
+#export LIMAR__REPO="$LIMAR__REPO"
+# - If you need something different, then set these as needed.
+#export LIMAR__PYTHON='$LIMAR__PYTHON'
+#export LIMAR__PIP='$LIMAR__PIP'
+#export LIMAR__DATA_DIR='$LIMAR__DATA_DIR'
+# - If you want to profile LIMAR's performance, then set this to true
+#export LIMAR__PERFORMANCE_PROFILING_ENABLED='false'
 
-. "\$LIMAR_REPO/limar.def.sh"
+# Any module-specific environment variables go here ...
+
+. "$LIMAR__DATA_DIR/bin/limar.def.sh"
 EOF
-
-# Re-source your shell init file
-. "$HOME/.bashrc" # Or .zshrc, etc.
-
-# Initialise LIMAR (install dependencies, check environment, etc.)
-# If you need to customise the initialisation more than just python version,
-# then edit the `limar.def.sh` script.
-limar init
 ```
+
+Test the setup by opening a new terminal and running `limar /env`.
+
+### Moving Data Directory
+
+If you ever want to move the data directory, you only have to move the directory and update your shell startup script (.bashrc, .zshrc, etc.) to point to the new location when sourcing `limar.def.sh`.
+
+### Moving Repo Directory
+
+If you ever want to use a different LIMAR repo directory (eg. with a different checked-out version of LIMAR), then run:
+```sh
+limar /link '/new/path/to/limar'
+. "$LIMAR__DATA_DIR/bin/limar.def.sh"
+```
+
+If you ever want to move an existing repo directory, then:
+
+1. Open a shell that loads LIMAR.
+2. Move the LIMAR repo directory.
+3. In the shell you opened, run the same script as above to link to the new location.
+
+If you move the repo directory without a shell with LIMAR loaded, then any new shells you start will be unable to find LIMAR's bootstrap script that is needed to run the `limar /link` command above. This is easiest to fix by moving the repo directory back and following the above process.
 
 ## Development
 
