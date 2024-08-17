@@ -7,7 +7,7 @@ from argparse import ArgumentParser, Namespace
 
 class EnvModule:
     """
-    MM module to manage the shell environment it was run from.
+    MM module to manage the shell environment that MM was run from.
     """
 
     def __init__(self):
@@ -30,17 +30,15 @@ class EnvModule:
             the given pattern, switching back once done.
             """)
 
-    def configure_args(self, *, parser: ArgumentParser, **_):
+    def configure_args(self, *, mod: Namespace, parser: ArgumentParser, **_):
         # Multiple Sub-Commands
         env_subparsers = parser.add_subparsers(dest="env_command")
 
         # Change Directory
-        cd_subparser = env_subparsers.add_parser('cd')
+        cd_subparser = env_subparsers.add_parser('cd', epilog=self._cd.__doc__)
+        mod.docs.add_docs_arg(cd_subparser)
         cd_subparser.add_argument('project_pattern', metavar="PROJECT_PATTERN",
-            help="""
-            Change directory to the root directory of the first project to match
-            the given pattern.
-            """)
+            help="""The pattern to match project names against.""")
 
     def start(self, *, mod: Namespace, args: Namespace, **_):
         # Get project path (temp)
@@ -74,24 +72,7 @@ class EnvModule:
 
     def __call__(self, *, mod: Namespace, args: Namespace, **_):
         if args.env_command == 'cd':
-            # Get project path
-            proj_pattern = args.project_pattern
-
-            item_set = mod.manifest.get_item_set('^project$')
-            proj = mod.manifest.get_item(proj_pattern, item_set=item_set)
-            try:
-                proj_path = proj['path']
-            except KeyError:
-                raise LIMARException(
-                    "'path' not a property of the project resolved from"
-                    f" {proj_pattern}. Are you missing the"
-                    " manifest_context_uris module, or an '@uris' context in"
-                    " your manifest?"
-                )
-
-            # Change dir
-            mod.log.info(f'Changing directory to: {proj_path}')
-            mod.shell.add_command(f"cd '{proj_path}'")
+            self._cd(mod, args.project_pattern)
 
     def stop(self, *, mod: Namespace, **_):
         # Change dir back (temp)
@@ -99,3 +80,26 @@ class EnvModule:
         if self._previous_dir is not None:
             os.chdir(self._previous_dir)
             mod.log.info(f'Changing directory back to: {self._previous_dir}')
+
+    def _cd(self, mod: Namespace, project_pattern: str):
+        """
+        Change directory to the root directory of the first project to match
+        the given pattern.
+        """
+
+        # Get project path
+        item_set = mod.manifest.get_item_set('^project$')
+        proj = mod.manifest.get_item(project_pattern, item_set=item_set)
+        try:
+            proj_path = proj['path']
+        except KeyError:
+            raise LIMARException(
+                "'path' not a property of the project resolved from"
+                f" {project_pattern}. Are you missing the"
+                " manifest_context_uris module, or an '@uris' context in"
+                " your manifest?"
+            )
+
+        # Change dir
+        mod.log.info(f'Changing directory to: {proj_path}')
+        mod.shell.add_command(f"cd '{proj_path}'")
