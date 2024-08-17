@@ -3,5 +3,6 @@ antlr4-tools
 antlr4-python3-runtime
 rich
 jq
+yaql
 python-dateutil
 frozendict
