@@ -693,12 +693,13 @@ class ManifestModule:
         parser.add_variable('ROOT')
         parser.add_variable('DEFAULT_ITEM_SET', default_is_none=True)
 
-    def configure_args(self, *, parser: ArgumentParser, **_):
+    def configure_args(self, *, mod: Namespace, parser: ArgumentParser, **_):
         # Subcommands
         manifest_subparsers = parser.add_subparsers(dest="manifest_command")
 
         # Subcommands / Resolve Item
         item_parser = manifest_subparsers.add_parser('item')
+        mod.docs.add_docs_arg(item_parser)
 
         item_parser.add_argument('pattern', metavar='PATTERN',
             help='A regex pattern to resolve to an item')
@@ -737,6 +738,7 @@ class ManifestModule:
 
         # Subcommands / Resolve Item Set
         item_set_parser = manifest_subparsers.add_parser('item-set')
+        mod.docs.add_docs_arg(item_set_parser)
 
         item_set_parser.add_argument('-s', '--item-set-spec',
             action='store_true', default=False,

@@ -1,8 +1,8 @@
-from argparse import HelpFormatter
+from argparse import RawDescriptionHelpFormatter
 
 # Based on: https://github.com/byexamples/byexample/blob/master/byexample/cmdline.py
 # From: https://discuss.python.org/t/advanced-help-for-argparse/20319/8
-class MMHelpFormatter(HelpFormatter):
+class MMHelpFormatter(RawDescriptionHelpFormatter):
     __extended_enabled = False
 
     @classmethod
@@ -15,4 +15,4 @@ class MMHelpFormatter(HelpFormatter):
 
     def add_text(self, text, *args, **kwargs):
         if MMHelpFormatter.__extended_enabled:
-            HelpFormatter.add_text(self, text, *args, **kwargs)
+            RawDescriptionHelpFormatter.add_text(self, text, *args, **kwargs)

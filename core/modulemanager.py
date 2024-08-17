@@ -21,7 +21,7 @@ from core.envparse import EnvironmentParser
 from core.exceptions import LIMARException
 import core.modules as core_module_package
 
-from core.modules.docs_utils.docs_arg import add_docs_arg
+from core.modules.docs_utils.docs_arg import docs_for, add_docs_arg
 
 from core.modules.phase_utils.phase import Phase
 from core.modules.phase_utils.phase_system import PhaseSystem
@@ -174,15 +174,15 @@ class ModuleLifecycle:
     # --------------------
 
     def __init__(self,
+            app: Callable,
             app_name: str,
-            app_description: str,
             mod_factories: dict[str, Callable],
             cli_env: dict[str, str] | None = None,
             cli_args: list[str] | None = None,
             parent_lifecycle: ModuleLifecycle | None = None
     ):
+        self._app = app
         self._app_name = app_name
-        self._app_description = app_description
         self._mod_factories = mod_factories
         self._cli_env = cli_env
         self._cli_args = cli_args
@@ -206,15 +206,15 @@ class ModuleLifecycle:
         self._run_exception = None
 
     def create_sublifecycle(self,
+            app: Callable,
             app_name: str,
-            app_description: str,
             mod_factories: dict[str, Callable],
             cli_env: dict[str, str] | None = None,
             cli_args: list[str] | None = None
     ) -> ModuleLifecycle:
         return ModuleLifecycle(
+            app=app,
             app_name=app_name,
-            app_description=app_description,
             mod_factories=mod_factories,
             cli_env=cli_env,
             cli_args=cli_args,
@@ -228,7 +228,7 @@ class ModuleLifecycle:
         env_parser = EnvironmentParser(self._app_name)
         self._arg_parser = ArgumentParser(
             prog=self._app_name,
-            epilog=self._app_description,
+            epilog=docs_for(self._app),
             add_help=False
         )
 
@@ -735,7 +735,7 @@ class ModuleLifecycle:
                 self._debug(f"Configuring arguments for module '{name}'")
                 module_arg_parser = arg_subparsers.add_parser(
                     name,
-                    epilog=module.__doc__
+                    epilog=docs_for(module)
                 )
                 add_docs_arg(module_arg_parser)
                 module.configure_args(
@@ -1313,9 +1313,9 @@ class ModuleManager:
     # Initialisation
     # --------------------
 
-    def __init__(self, app_name: str, app_description: str, mm_cli_args: list[str] | None = None):
+    def __init__(self, app: Callable, app_name: str, mm_cli_args: list[str] | None = None):
+        self._app = app
         self._app_name = app_name
-        self._app_description = app_description
         self._mm_cli_args = mm_cli_args
 
         self._registered_mods = {}
@@ -1336,8 +1336,8 @@ class ModuleManager:
         # Not a full lifecycle - only exists to delegate initialised core mods
         # to the main lifecycle and clean them up after the main lifecycle.
         self._core_lifecycle = ModuleLifecycle(
+            self._app,
             self._app_name,
-            self._app_description,
             self._registered_mods,
             cli_args=self._mm_cli_args
         )
@@ -1362,8 +1362,8 @@ class ModuleManager:
 
         assert self._core_lifecycle is not None, 'run() run before __enter__()'
         self._main_lifecycle = self._core_lifecycle.create_sublifecycle(
+            app=self._app,
             app_name=self._app_name,
-            app_description=self._app_description,
             mod_factories=self._registered_mods,
             cli_env=cli_env,
             cli_args=cli_args

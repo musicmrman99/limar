@@ -1,5 +1,10 @@
 from argparse import ArgumentParser, Action
-from core.helpformatter import MMHelpFormatter
+from textwrap import dedent
+
+from core.modules.docs_utils.helpformatter import MMHelpFormatter
+
+# Types
+from typing import Callable
 
 # See MMHelpFormatter for how this works. Yes, this is a somewhat ugly hack, but
 # is better than needing two parse passes and varying the argument help text
@@ -25,3 +30,10 @@ def add_docs_arg(parser: ArgumentParser):
     parser.formatter_class = MMHelpFormatter
     parser.add_argument('--docs', action=DocsAction,
         help="""Show help text with the extended documentation included.""")
+
+def docs_for(processor: Callable):
+    return (
+        dedent(processor.__doc__)
+        if processor.__doc__ is not None
+        else None
+    )
