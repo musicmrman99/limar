@@ -46,11 +46,11 @@ sets of items. Items and items sets are named.
 
 `manifest item-set` returns the first item set whose name (aka. ref) matches the
 given `PATTERN`. If `-s` (or `--item-set-spec`) is given, then interpret
-`PATTERN` as the specification for a new temporary item set, and output the
-items included in a new temporary item set declared using that specification in
-the context of *all* items from *all* manifests. This option allows complex
-runtime querying of the global manifest. See the "Declarations" section of
-`limar manifest --docs` for details on the format of an item set specification.
+`PATTERN` as an item set specification and output the items included in a new
+temporary item set declared using that specification in the context of *all*
+items from *all* manifests. This option allows complex runtime querying of the
+global manifest. See the "Declarations" section of `limar manifest --docs` for
+details on the format of an item set specification.
 
 For details about how to write a manifest file to declare items and item sets,
 see `limar manifest --docs`. To find what manifest files there are, see the
