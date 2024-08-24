@@ -15,11 +15,18 @@ class Command:
     def on_exit_manifest(self, items, item_sets, *_, **__):
         # Verify that required contexts were declared for all commands
         for item in items.values():
-            if 'command' in item['tags'] and (
-                'tool' not in item or
-                'command' not in item
+            if (
+                'command' in item['tags'] and
+                all(tag not in item['tags'] for tag in [
+                    'UNUSED',
+                    'TODO'
+                ]) and
+                (
+                    'tool' not in item or
+                    'command' not in item
+                )
             ):
                 raise LIMARException(
-                    "@tool context requires a command type to be declared for"
+                    "@command context requires a command type to be declared for"
                     f" item '{item['ref']}'"
                 )
