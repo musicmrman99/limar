@@ -29,7 +29,7 @@ from core.modules.phase_utils.phased_process import PhasedProcess
 
 # LIFECYCLE_PHASE_SYSTEM, but with a shorter name because it's used so often
 LIFECYCLE = PhaseSystem(
-    'modulemanager.lifecycle',
+    f'{__name__}:lifecycle',
     (
         'CREATED',
         'GET_MANAGED_MODULES',
@@ -190,10 +190,7 @@ class ModuleLifecycle:
         self._cli_args = cli_args
         self._parent_lifecycle = parent_lifecycle
 
-        self._controller = PhasedProcess(
-            'modulemanager.lifecycle_instance',
-            LIFECYCLE
-        )
+        self._controller = PhasedProcess(LIFECYCLE, id_length=0)
         self._managed_mod_names = None
         self._all_mod_names = None
         self._mods = {}
@@ -329,7 +326,7 @@ class ModuleLifecycle:
             for name, module in reversed(self._mods.items())
         }
         self._MODULE_PHASE_SYSTEM = self._create_subsystem(
-            'reversed_sorted_modules',
+            f'{__name__}:reversed_sorted_modules',
             tuple(self._mods.keys())
         )
 
@@ -374,7 +371,7 @@ class ModuleLifecycle:
                 managed_mods.append(name)
 
         module_lifecycle = self._create_subsystem(
-            'unsorted_modules',
+            f'{__name__}:unsorted_modules',
             tuple(managed_mods)
         )
 
@@ -387,7 +384,7 @@ class ModuleLifecycle:
         self._proceed_to_phase(LIFECYCLE.PHASES.GET_ALL_MODULES)
 
         all_module_lifecycle = self._create_subsystem(
-            'unsorted_all_modules',
+            f'{__name__}:unsorted_all_modules',
             (*inherited_mods.keys(), *mod_names)
         )
 
@@ -495,7 +492,7 @@ class ModuleLifecycle:
 
         own_sorted_mod_names = list(sorted_mods.keys())
         sorted_module_lifecycle = self._create_subsystem(
-            'sorted_modules',
+            f'{__name__}:sorted_modules',
             tuple(own_sorted_mod_names)
         )
 
@@ -750,17 +747,15 @@ class ModuleLifecycle:
             arg_parser: ArgumentParser,
             module_full_cli_args_set: list[tuple[str, list[str]]]
     ) -> list[tuple[str, Namespace]]:
-        raw_invokations_subsystem = self._create_subsystem(
-            'raw_invokations',
+        raw_invokations_sys = self._create_subsystem(
+            f'{__name__}:raw_invokations',
             tuple(
                 f'{invokation_index}-{name}'
                 for invokation_index, (name, _) in
                     enumerate(module_full_cli_args_set)
             )
         )
-        raw_invokations_process = self._create_subprocess(
-            'raw_invokations', raw_invokations_subsystem
-        )
+        raw_invokations_process = self._create_subprocess(raw_invokations_sys)
         self._start_subprocess(
             LIFECYCLE.PHASES.ARGUMENT_PARSING,
             raw_invokations_process
@@ -797,14 +792,13 @@ class ModuleLifecycle:
             accessor_object: Any
     ) -> Exception | KeyboardInterrupt | None:
         invokations_subsystem = self._create_subsystem(
-            'invokations', tuple(
+            f'{__name__}:invokations',
+            tuple(
                 f'{invokation_index}-{name}'
                 for invokation_index, (name, _) in enumerate(module_args_set)
             )
         )
-        invokations_process = self._create_subprocess(
-            'invokations', invokations_subsystem
-        )
+        invokations_process = self._create_subprocess(invokations_subsystem)
         self._start_subprocess(LIFECYCLE.PHASES.RUNNING, invokations_process)
         self._proceed_to_phase(LIFECYCLE.PHASES.RUNNING)
 
@@ -1031,17 +1025,14 @@ class ModuleLifecycle:
 
     def _create_subsystem(self, name: str, items: tuple[str, ...]):
         return PhaseSystem(
-            f'modulemanager.{name}',
+            name,
             ('STARTED', *items, 'COMPLETED'),
             initial_phase='STARTED',
             completed_phase='COMPLETED'
         )
 
-    def _create_subprocess(self, name: str, subsystem: PhaseSystem):
-        return PhasedProcess(
-            f'modulemanager.{name}_process',
-            subsystem
-        )
+    def _create_subprocess(self, subsystem: PhaseSystem, singular=True):
+        return PhasedProcess(subsystem, id_length=(0 if singular else None))
 
     def _start_subprocess(self, phase: Phase, process: PhasedProcess):
         self._controller.start_subprocess(phase, process)
@@ -1059,7 +1050,7 @@ class ModuleLifecycle:
 
         assert self._MODULE_PHASE_SYSTEM is not None, '_start_module_subprocess_for() called before get_managed_modules()'
         module_subprocess = self._create_subprocess(
-            'modules', self._MODULE_PHASE_SYSTEM
+            self._MODULE_PHASE_SYSTEM, singular=False
         )
         self._start_subprocess(phase, module_subprocess)
         return module_subprocess
@@ -1072,7 +1063,7 @@ class ModuleLifecycle:
 
         assert self._ALL_MODULE_PHASE_SYSTEM is not None, '_start_all_module_subprocess_for() called before get_managed_modules()'
         all_module_subprocess = self._create_subprocess(
-            'all_modules', self._ALL_MODULE_PHASE_SYSTEM
+            self._ALL_MODULE_PHASE_SYSTEM, singular=False
         )
         self._start_subprocess(phase, all_module_subprocess)
         return all_module_subprocess

@@ -1,6 +1,5 @@
 from math import ceil
 from datetime import date, timedelta
-import random
 from dateutil.relativedelta import relativedelta, MO
 from frozendict import frozendict
 
@@ -28,7 +27,7 @@ ItemGroup = ItemSet
 ItemGroupSet = dict[frozendict[str, Hashable], ItemGroup]
 
 FINANCE_LIFECYCLE = PhaseSystem(
-    'finance.lifecycle',
+    f'{__name__}:lifecycle',
     (
         'INITIALISE',
         'GET',
@@ -171,20 +170,12 @@ class FinanceModule:
             **_
     ):
         # Set up phase process and a common transition function
-        invokation_process_name = (
-            'finance.lifecycle_instance.' +
-            ''.join(random.choices('0123456789abcdef', k=6))
-        )
-
-        mod.phase.register_process(PhasedProcess(
-            invokation_process_name,
-            FINANCE_LIFECYCLE
-        ))
-
+        invokation_process = PhasedProcess(FINANCE_LIFECYCLE)
+        mod.phase.register_process(invokation_process)
         # WARNING: THIS MUTATES STATE, even though it's used in `if` statements
-        transition_to_phase = lambda phase, default=True: (
+        transition_to_phase = lambda phase, run_by_default=True: (
             mod.phase.transition_to_phase(
-                invokation_process_name, phase, args, default
+                invokation_process.name(), phase, args, run_by_default
             )
         )
 

@@ -55,12 +55,50 @@ class PhaseModule:
             default is no constraints.
             """)
 
+    @ModuleAccessor.invokable_as_config
+    def register_static_system(self, system: PhaseSystem):
+        """Register a Phase System with the given name."""
+
+        if system.name() in self._systems:
+            raise LIMARException(
+                f"Phase system '{system.name()}' already exists. Cannot"
+                " register another phase system with that name."
+            )
+
+        self._systems[system.name()] = system
+
+    @ModuleAccessor.invokable_as_service
+    def register_system(self, system: PhaseSystem):
+        """Register a Phase System with the given name."""
+
+        self.register_static_system(system)
+
+    @ModuleAccessor.invokable_as_service
+    def register_process(self, process: PhasedProcess):
+        """Register a phased process with the given name."""
+
+        if process.name() in self._processes:
+            raise LIMARException(
+                f"Phased process '{process.name()}' already exists. Cannot"
+                " register another phased process with that name."
+            )
+
+        self._processes[process.name()] = process
+
+    @ModuleAccessor.invokable_as_service
+    def get_system(self, name: str):
+        return self._systems[name]
+
+    @ModuleAccessor.invokable_as_service
+    def get_process(self, name: str):
+        return self._processes[name]
+
     @ModuleAccessor.invokable_as_service
     def transition_to_phase(self,
             process_name: str,
             phase: Phase,
             args: Namespace,
-            default: bool | None = None
+            run_by_default: bool | None = None
     ):
         """
         Transition to the given phase of the given registered process, then
@@ -107,42 +145,4 @@ class PhaseModule:
             return True
 
         # Otherwise, run the phase only if the module defaults to it being run
-        return default
-
-    @ModuleAccessor.invokable_as_config
-    def register_static_system(self, system: PhaseSystem):
-        """Register a Phase System with the given name."""
-
-        if system.name() in self._systems:
-            raise LIMARException(
-                f"Phase system '{system.name()}' already exists. Cannot"
-                " register another phase system with that name."
-            )
-
-        self._systems[system.name()] = system
-
-    @ModuleAccessor.invokable_as_service
-    def register_system(self, system: PhaseSystem):
-        """Register a Phase System with the given name."""
-
-        self.register_static_system(system)
-
-    @ModuleAccessor.invokable_as_service
-    def register_process(self, process: PhasedProcess):
-        """Register a phased process with the given name."""
-
-        if process.name() in self._processes:
-            raise LIMARException(
-                f"Phased process '{process.name()}' already exists. Cannot"
-                " register another phased process with that name."
-            )
-
-        self._processes[process.name()] = process
-
-    @ModuleAccessor.invokable_as_service
-    def get_system(self, name: str):
-        return self._systems[name]
-
-    @ModuleAccessor.invokable_as_service
-    def get_process(self, name: str):
-        return self._processes[name]
+        return run_by_default

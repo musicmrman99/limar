@@ -1,3 +1,4 @@
+import random
 from core.exceptions import LIMARException
 
 # Types
@@ -9,16 +10,58 @@ class PhasedProcess:
     """
     Tracks the current phase of a process and allows inspection and mutation of
     that phase according to the rules of the phase system it uses.
+
+    The name of a phased process is the same as the name of the phase system it
+    uses. If you have multiple statically identifiable sets of processes that
+    use the same phase system, you should override the process 'name' when
+    creating the phased process to make it easier for users to differentiate
+    between them. For all of those sets that will only ever contain a single
+    process instance, then you should set the 'id_length' to 0 when creating the
+    phased processes with those names to enforce only a single instance of the
+    process with each of those names. For example:
+
+        # A system with one process instance.
+        system_a = PhaseSystem(f'{__name__}:system_a', ['a', 'b', 'c'])
+        sA_proc = PhasedProcess(system_b, id_length=0)
+
+        # A system with one statically identifiable process type, which has
+        # potentially multiple instances.
+        system_a = PhaseSystem(f'{__name__}:system_b', ['a', 'b', 'c'])
+        sB_p1 = PhasedProcess(system_a)
+        sB_p2 = PhasedProcess(system_a)
+        sB_p2 = PhasedProcess(system_a)
+
+        # A system with two statically identifiable process types (A and B),
+        # where A has a single instance, and B has potentially multiple
+        # instances.
+        system_c = PhaseSystem(f'{__name__}:system_c', ['a', 'b', 'c'])
+        sC_pA = PhasedProcess(system_c, name=f'{__name__}:main.a', id_length=0)
+        sC_pB1 = PhasedProcess(system_c, name=f'{__name__}:main.b')
+        sC_pB2 = PhasedProcess(system_c, name=f'{__name__}:main.b')
+        sC_pB3 = PhasedProcess(system_c, name=f'{__name__}:main.b')
+
+    If you try to register multiple phase processes with the same name with the
+    PhaseModule, it will raise an error. The longer the id_length is, the lower
+    the chance of conflicts. 8 is the default, as and id_length of >=8 makes
+    conflicts rare enough for a small number of processes.
     """
 
     def __init__(self,
-            name: str,
             phase_system: PhaseSystem,
+            *,
             initial_phase: Phase | None = None,
-            completed_phase: Phase | None = None
+            completed_phase: Phase | None = None,
+            name: str | None = None,
+            id_length: int | None = None
     ):
-        self._name = name
         self._phase_system = phase_system
+
+        if name is None:
+            name = phase_system.name()
+        if id_length is None:
+            id_length = 8
+        process_id = f'{random.getrandbits(4*id_length):0{id_length}x}'
+        self._name = f'{name}({process_id})'
 
         self._cur_phase = phase_system.initial_phase()
         if initial_phase is not None:
@@ -83,8 +126,6 @@ class PhasedProcess:
 
     def transition_to(self, phase: Phase):
         if not self._phase_system.can_transition(self._cur_phase, phase):
-            print(self._phase_system._phases)
-            print(self._completed_phase)
             raise LIMARException(
                 f"Phased process '{self._name}' cannot transition phase from"
                 f" '{self._cur_phase}' to '{phase}'. Transition not allowed by"
