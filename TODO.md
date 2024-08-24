@@ -3,11 +3,11 @@
 - ./ add tag indexing options (index if categorical, don't if continuous)
 - ./ allow item set spec to contain tag value filters
 - ./ make all modules use the `docs` module
+- ./ make all modules that need to use the `phase` module
 
 # Todo
 
 - make all assertion explanations use f-strings that use `[self.]function_name.__name__` references in place of literal method names (allows for easier refactoring)
-- make all modules that need to use the `phase` module
 
 - TESTING
 
