@@ -66,6 +66,9 @@ FINANCE_LIFECYCLE = PhaseSystem(
 )
 
 class FinanceModule:
+    """
+    MM module for managing financial accounts and transactions.
+    """
 
     # Lifecycle
     # --------------------------------------------------

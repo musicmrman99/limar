@@ -110,8 +110,8 @@ repo = git log --abbrev-commit --format=oneline --graph --all
 repo-l = git log --abbrev-commit --format=oneline --graph --all
 repo-b = git log --oneline --graph default_branch..HEAD
 
-repo-d = git log --oneline --graph --all --format='%C(yellow)%<|(15)%h %C(cyan)%<|(30)%ad %C(yellow)%<|(50)%an %C(reset)%s%C(auto)%d'
-repo-ld = git log --oneline --graph --format='%C(yellow)%<|(15)%h %C(cyan)%<|(30)%ad %C(yellow)%<|(50)%an %C(reset)%s%C(auto)%d'
+repo-d = git log --oneline --graph --all --date=short --format='%C(yellow)%<|(15)%h %C(cyan)%<|(30)%ad %C(yellow)%<|(50)%an %C(reset)%s%C(auto)%d'
+repo-ld = git log --oneline --graph --date=short --format='%C(yellow)%<|(15)%h %C(cyan)%<|(30)%ad %C(yellow)%<|(50)%an %C(reset)%s%C(auto)%d'
 
 diff = diff-l
 diff-s = git diff --stat

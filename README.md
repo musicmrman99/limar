@@ -1,17 +1,18 @@
-# Local Information Management, Architecture, and Representation (LIMAR) System
+# LIMAR
 
-LIMAR (`limar` or `lm`) is a system for discovering and managing mental contexts, tasks, projects, tools (git, git hosting provider tools, build systems, dependency managers, cloud provider tools, etc.), workflows (gitflow, github flow, custom flows), and much more.
+LIMAR (the Local Information Management, Architecture, and Representation System; `limar` or `lm`) is an easy-to-use system for discovering and managing contexts, tasks, projects, tools (git, git hosting provider tools, build systems, dependency managers, cloud provider tools, etc.), workflows (gitflow, github flow, etc.), and much more.
 
 To get it installed, see [Installation](#installation).
 
 ## Overview
 
-`limar` has a variety of sub-commands for different purposes:
+LIMAR has a variety of sub-commands for different purposes:
 
 | Area    | Usable? | In Dev? | Command    | Summary                                                         |
 |---------|---------|---------|------------|-----------------------------------------------------------------|
 | Data    | &check; | &check; | `manifest` | Manage manifest files, eg. project definitions                  |
-| Meta    |         |         | `for`      | Execute a supported sub-command against many repos at once      |
+| Util    |         |         | `for`      | Execute a supported sub-command against many repos at once      |
+| Util    | &check; | &check; | `tr`       | Transforms data using any of various available tools            |
 | Context | &check; | &check; | `env`      | Manage the shell environment, eg. current dir, env vars, etc.   |
 | Project |         |         | `repo`     | Get info about repositories and manage repo instances and state |
 | Project |         |         | `git`      | Execute a raw git command against a repo                        |
@@ -30,14 +31,33 @@ LIMAR_MANIFEST_DEFAULT_PROJECT_SET = 'some-set' # Optional, default: all project
 ### Synopsis
 
 ```
-limar manifest project [-p PROPERTY] [--project-set PROJECT_SET_PATTERN] PATTERN
-limar manifest project-set [-p PROPERTY] PATTERN
+limar manifest item [--item-set PATTERN] PATTERN
+limar manifest item-set [-s] PATTERN
 ```
 
 ### Description
 
 Provides commands and plumbing methods for accessing declared information about
-projects and sets of projects.
+items (which can be various kinds of things, eg. commands, projects, etc.) and
+sets of items. Items and items sets are named.
+
+`manifest item` returns the first item whose name (aka. ref) matches the given
+`PATTERN`.
+
+`manifest item-set` returns the first item set whose name (aka. ref) matches the
+given `PATTERN`. If `-s` (or `--item-set-spec`) is given, then interpret
+`PATTERN` as an item set specification and output the items included in a new
+temporary item set declared using that specification in the context of *all*
+items from *all* manifests. This option allows complex runtime querying of the
+global manifest. See the "Declarations" section of `limar manifest --docs` for
+details on the format of an item set specification.
+
+For details about how to write a manifest file to declare items and item sets,
+see `limar manifest --docs`. To find what manifest files there are, see the
+manifest root directory (which is given in the `LIMAR_MANIFEST_ROOT` environment
+variable). To find how the items, item sets, and contexts of each manifest are
+interpreted, see the docs of the module(s) that interpret the relevant
+manifest(s) using the `--docs` option of those modules.
 
 ## `env`
 

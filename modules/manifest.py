@@ -529,38 +529,49 @@ class ManifestModule:
     separated by a comma, a newline, or both.
 
     Item sets declare a named set of things to exist. Item set declarations must
-    include an expression stating what other item sets this item set includes.
-    An implicit item set exists for each unique tag defined (on any item), which
-    includes all items with that tag. Item set expressions consist of the names
-    of these sets, as well as `&` (and/intersection) and `|` (or/union)
-    operators between these names to combine the sets in different ways. Nested
-    item set expressions with operators between them are also supported.
+    include an expression stating what other items and item sets this item set
+    includes. An implicit item set exists for each unique tag associated with
+    any item, which includes all items with that tag. Item set expressions
+    consist of the names of items, implicit item sets, and explicit item sets,
+    with each name separated by either the `&` (and/intersection) or `|`
+    (or/union) operators to combine the referenced sets in the relevant ways.
+    Nested item set expressions with operators between them are also supported.
+
+    All items are declared in a single global scope. They must all have
+    different refs, even across files. All items in a file up to the declaration
+    of an item set may be included in that set.
 
     ## Context Modules
 
-    After the configuration phase, other MM modules can register 'context
-    modules' with the ManifestModule. Context modules are used to extend the
-    manifest format by defining custom contexts. Contexts are usually applied to
-    items by specifying them by type in a manifest file by using the syntax
-    `@context-type`, where `context-type` may be any valid context type name.
+    During the configuration phase (as long as it's after manifest's own
+    configuration), other MM modules can register 'context modules' with the
+    ManifestModule. Context modules are used to extend the manifest format by
+    implementing custom 'context types'. Each context module declares itself as
+    being of a single context type. In a manifest file, a context of a given
+    type is 'applied' by using the syntax `@context-type` (where `context-type`
+    may be any valid context type name), which gives all context modules
+    declared as being of that type an opportunity to customise the data
+    generated from all items and item sets that the context applies to, usually
+    to extend items with custom tags and fields.
 
     A context applies to all declarations up to the first blank line after it,
-    or to all declarations within a pair of braces after the context type. The
-    set of declarations a context applies to is called the 'context content'.
-    Each declaration within the context content must be on a separate line.
-    Nested contexts are supported. The semantics/behaviour of nested contexts
-    depends on the context modules registered for the involved context type(s).
+    or to all declarations within a pair of braces after the context type and
+    zero or more spaces. The set of declarations that a context applies to is
+    called the 'context content'. Each declaration within the context content
+    must be on a separate line. Nested contexts are supported. The
+    semantics/behaviour of nested contexts depends on the context modules
+    registered for the nested context type(s) being applied.
 
     Contexts may also take options. Options are specified by placing key-value
     pairs (where the value is optional and defaults to 'None' if omitted) within
-    a pair of brackets between the context type and the context content. Options
+    a pair of brackets after the context type and zero or more spaces. Options
     are separated either by a comma, a newline, or both.
 
-    Some contexts are also 'root' contexts, which define the names of the
-    manifest files that ManifestModule reads (usually the plural of each root
-    context module's context type). The context type of a root context is
-    applied by default when reading the manifest file it defines, and applies to
-    all declarations in the file.
+    Some context types are also 'root' context types. ManifestModule reads all
+    manifest files from the manifest root directory that have the same names as
+    the registered root context types with the '.manifest.txt' file extension.
+    For each manifest file that is read, the corresponding root context type is
+    applied by default to all declarations within the file.
 
     ## Implementing a Context Module
 
@@ -568,19 +579,19 @@ class ManifestModule:
     method:
 
     - `context_type()`
-      - Return the context type that module is for as a string.
+      - Return the context type (a string) for this context module.
 
     It may also define an additional class method:
 
     - `can_be_root()`
       - Return True if the context type supports being used as a root context,
         otherwise return False. Only one context module for a context type
-        needs to return True for this method for that context type be applied.
-        This method not being defined for a context module is equivalent to it
-        returning False.
+        needs to return True for this method for that context type to be
+        applied. This method not being defined for a context module is
+        equivalent to it returning False.
 
-    It may define any of the following method-based hooks (at least one should
-    be defined to make the context module do anything):
+    It may define any of the following method-based hooks (at least one must be
+    defined to make the context module do anything):
 
     - `on_enter_manifest()`
       - TODO
@@ -629,9 +640,7 @@ class ManifestModule:
     # Refs can contain anything except tripple quote if tripple quoted
     \"\"\"!"£$%^&*()_+-=[]{};:'@#~,<.>/?\\|\"\"\" (yay)
 
-    # All items are defined in the global scope, they must all have different
-    # refs, but they can all be accessed by any item set defined *after* the
-    # items it references are defined (order matters).
+    # Can now declare a set containing items declared above it.
     item-set-example [thing-typeB | other]
 
     # Items can be anything - contexts may add data to them, possibly pulling it
@@ -684,12 +693,13 @@ class ManifestModule:
         parser.add_variable('ROOT')
         parser.add_variable('DEFAULT_ITEM_SET', default_is_none=True)
 
-    def configure_args(self, *, parser: ArgumentParser, **_):
+    def configure_args(self, *, mod: Namespace, parser: ArgumentParser, **_):
         # Subcommands
         manifest_subparsers = parser.add_subparsers(dest="manifest_command")
 
         # Subcommands / Resolve Item
         item_parser = manifest_subparsers.add_parser('item')
+        mod.docs.add_docs_arg(item_parser)
 
         item_parser.add_argument('pattern', metavar='PATTERN',
             help='A regex pattern to resolve to an item')
@@ -728,6 +738,7 @@ class ManifestModule:
 
         # Subcommands / Resolve Item Set
         item_set_parser = manifest_subparsers.add_parser('item-set')
+        mod.docs.add_docs_arg(item_set_parser)
 
         item_set_parser.add_argument('-s', '--item-set-spec',
             action='store_true', default=False,

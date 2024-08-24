@@ -1,10 +1,14 @@
 from core.modulemanager import ModuleManager
+from core.modules.docs_utils.docs_arg import docs_for
 
-from core.modules.log import LogModule
 import modules
 
 def main():
-    with ModuleManager('limar') as module_manager:
+    """
+    LIMAR is an information management tool.
+    """
+
+    with ModuleManager(main, 'limar') as module_manager:
         module_manager.register_package(modules)
         module_manager.run()
 

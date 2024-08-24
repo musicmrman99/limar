@@ -1,5 +1,3 @@
-from argparse import ArgumentParser, Namespace
-
 from core.exceptions import LIMARException
 from core.modulemanager import ModuleAccessor
 
@@ -7,10 +5,15 @@ from core.modules.phase_utils.phase import Phase
 from core.modules.phase_utils.phase_system import PhaseSystem
 from core.modules.phase_utils.phased_process import PhasedProcess
 
+# Types
+from argparse import ArgumentParser, Namespace
+
 class PhaseModule:
     """
-    Allows modules to interact with the ModuleManager phasing system, as well as
-    to define their own phasing systems.
+    MM module that allows other MM modules to interact with the ModuleManager
+    phasing system, as well as to define their own phasing systems. Also
+    provides standard command-line options for controling which phases of a
+    module are run.
     """
 
     def __init__(self):
