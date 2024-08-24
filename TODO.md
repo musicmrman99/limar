@@ -5,6 +5,19 @@
 - ./ make all modules use the `docs` module
 - ./ make all modules that need to use the `phase` module
 
+- ./ add a way of viewing the cache, like:
+```sh
+python -c '
+import glob, pathlib, pickle, json
+glob_path = "manifest/project.manifest.*.pickle"
+path = glob.glob(glob_path)[0]
+data_txt = pathlib.Path(path).read_bytes()
+data_py = pickle.loads(data_txt)
+data_json = json.dumps(data_py)
+print(data_json)
+'
+```
+
 # Todo
 
 - make all assertion explanations use f-strings that use `[self.]function_name.__name__` references in place of literal method names (allows for easier refactoring)
@@ -30,6 +43,9 @@ Develop ModuleManager
 ---
 
 - only load modules depended on (directly or indirectly) by the directly-called module
+- allow LIMAR to be run as a 'server', so that it starts up, waits for calls, then shuts down when asked (or when the shell terminates)
+  - note that this is similar to a REPL, but allows backgrounding the process
+  - this should be doable using the shell's built-in job control, though ofc. it depends on which shell the user has
 
 Develop Core Modules
 --------------------------------------------------
@@ -54,19 +70,6 @@ Develop Existing Modules
 
 - do something with tag values in `manifest`
   - allow item set spec filter by tag value (or can it already to this?)
-
-- add a way of viewing the cache, like:
-```sh
-python -c '
-import glob, pathlib, pickle, json
-glob_path = "manifest/project.manifest.*.pickle"
-path = glob.glob(glob_path)[0]
-data_txt = pathlib.Path(path).read_bytes()
-data_py = pickle.loads(data_txt)
-data_json = json.dumps(data_py)
-print(data_json)
-'
-```
 
 Add More Modules
 --------------------------------------------------

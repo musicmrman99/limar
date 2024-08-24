@@ -38,10 +38,14 @@ class Store:
 
     # Content Methods
 
-    def set(self, key, value):
-        self._cache[key] = value
-        if key in self._marked_for_removal:
-            self._marked_for_removal.remove(key)
+    def list(self, read_persistent=True) -> list[str]:
+        known_entries = set(self._cache.keys())
+        if read_persistent is True:
+            known_entries.update(
+                str(self._key_for(entry))
+                for entry in self._persist_dir.iterdir()
+            )
+        return sorted(known_entries)
 
     def get(self, key, read_persistent=True):
         if key not in self._cache and read_persistent:
@@ -54,6 +58,11 @@ class Store:
             except OSError as e:
                 raise KeyError(f"Key '{key}' not found in this store") from e
         return self._cache[key]
+
+    def set(self, key, value):
+        self._cache[key] = value
+        if key in self._marked_for_removal:
+            self._marked_for_removal.remove(key)
 
     def delete(self, key):
         if key in self._cache:
@@ -123,3 +132,14 @@ class Store:
                 f" found in key '{key_path}'")
 
         return (self._persist_dir / key_path).resolve()
+
+    def _key_for(self, key_path: Path):
+        key_path_resolved = key_path.resolve()
+
+        if not key_path_resolved.is_relative_to(self._persist_dir):
+            raise LIMARException(
+                "Paths to Store keys must be within the store directory"
+                f" ('{self._persist_dir}')"
+            )
+
+        return key_path_resolved.relative_to(self._persist_dir)

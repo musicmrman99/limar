@@ -22,7 +22,7 @@ LIMAR has a variety of sub-commands for different purposes:
 
 It also has various other modules that provide configuration and supporting services to the commands above. Some of these modules require configuration, and so have been included in the below list.
 
-## Cache (non-executable)
+## `cache`
 
 ### Environment
 
@@ -30,10 +30,24 @@ It also has various other modules that provide configuration and supporting serv
 export LIMAR_CACHE_ROOT="$HOME/Documents/LIMAR/cache` # Required
 ```
 
+### Synopsis
+
+```
+limar cache list
+limar cache get ENTRY_NAME
+limar cache delete ENTRY_NAME
+limar cache clear
+```
+
 ### Description
 
 Provides storage services to other modules. Configuration of this module is
 required for any modules that use it to function.
+
+Has commands for listing, showing, and deleting the resulting cached data. Has
+no command for setting cached data because no modules would use new files, and
+the structure of existing files is considered an implementation detail of the
+modules that create them.
 
 ## `manifest`
 
