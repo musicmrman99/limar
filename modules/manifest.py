@@ -1,7 +1,6 @@
 from hashlib import md5
 import re
 import random
-import string
 
 from core.store import Store
 from core.modulemanager import ModuleAccessor
@@ -916,7 +915,7 @@ class ManifestModule:
 
         if args.manifest_command == 'item-set':
             if args.item_set_spec:
-                ref = ''.join(random.choices(string.hexdigits, k=32))
+                ref = f'{random.getrandbits(4*32):0{32}x}'
                 self.declare_item_set(ref, args.pattern)
                 output = self.get_item_set(ref)
             else:
