@@ -95,10 +95,7 @@ fi
 if [ "$LIMAR__STARTUP_FAILED" = 'false' ]; then
     limar__link_file() {
         echo "'$1' -> '$2'"
-        if [ -f "$1" ]; then
-            rm "$1"
-        fi
-        ln -s "$2" "$1"
+        ln -sf "$2" "$1"
     }
 
     limar() {
