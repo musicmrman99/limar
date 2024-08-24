@@ -17,16 +17,33 @@ class PhaseSystem:
             phases: tuple[Phase, ...],
             phase_jumps: PhaseJumps | None = None,
             *,
+            initial_phase: str | None = None,
+            completed_phase: str | None = None,
             is_linear: bool = True,
     ):
         self._name = name
-        self._phases = phases
+        self._is_linear = is_linear
 
+        # Initial and completed phases
+        self._initial_phase = 'INITIALISE'
+        if initial_phase is not None:
+            self._initial_phase = initial_phase
+        self._completed_phase = completed_phase
+
+        # Phases
+        self._phases = phases
+        if self._initial_phase not in self._phases:
+            self._phases = (self._initial_phase, *self._phases)
+        if (
+            self._completed_phase is not None and
+            completed_phase not in self._phases
+        ):
+            self._phases = (*self._phases, self._completed_phase)
+
+        # Phase Jumps
         self._phase_jumps = {}
         if phase_jumps is not None:
             self._phase_jumps = phase_jumps
-
-        self._is_linear = is_linear
 
         # For user convenience
         self.PHASES = Namespace(**{name: name for name in phases})
@@ -35,6 +52,12 @@ class PhaseSystem:
 
     def name(self) -> str:
         return self._name
+
+    def initial_phase(self) -> str:
+        return self._initial_phase
+
+    def completed_phase(self) -> str | None:
+        return self._completed_phase
 
     # Queries
 

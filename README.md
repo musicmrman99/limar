@@ -10,8 +10,9 @@ LIMAR has a variety of sub-commands for different purposes:
 
 | Area    | Usable? | In Dev? | Command    | Summary                                                         |
 |---------|---------|---------|------------|-----------------------------------------------------------------|
-| Data    | &check; | &check; | `manifest` | Manage manifest files, eg. project definitions                  |
-| Util    |         |         | `for`      | Execute a supported sub-command against many repos at once      |
+| Data    | &check; | &check; | `manifest` | Manage data declared in manifest files, eg. project definitions |
+| Data    | &check; | &check; | `info`     | Manage data discoverable using available commands               |
+| Util    |         |         | `for`      | Execute a supported LIMAR against many repos at once            |
 | Util    | &check; | &check; | `tr`       | Transforms data using any of various available tools            |
 | Context | &check; | &check; | `env`      | Manage the shell environment, eg. current dir, env vars, etc.   |
 | Project |         |         | `repo`     | Get info about repositories and manage repo instances and state |
@@ -19,13 +20,28 @@ LIMAR has a variety of sub-commands for different purposes:
 | Project |         |         | `sh`       | Execute a raw shell command against a repo                      |
 | Misc    | &check; | &check; | `finance`  | Manage accounts and transactions, and run queries on them       |
 
+It also has various other modules that provide configuration and supporting services to the commands above. Some of these modules require configuration, and so have been included in the below list.
+
+## Cache (non-executable)
+
+### Environment
+
+```sh
+export LIMAR_CACHE_ROOT="$HOME/Documents/LIMAR/cache` # Required
+```
+
+### Description
+
+Provides storage services to other modules. Configuration of this module is
+required for any modules that use it to function.
+
 ## `manifest`
 
 ### Environment
 
 ```sh
-LIMAR_MANIFEST_PATH = "$HOME/manifest.txt"      # Required
-LIMAR_MANIFEST_DEFAULT_PROJECT_SET = 'some-set' # Optional, default: all projects
+export LIMAR_MANIFEST_ROOT="$HOME/Documents/LIMAR/manifest" # Required
+export LIMAR_MANIFEST_DEFAULT_PROJECT_SET='some-set'        # Optional, default: all projects
 ```
 
 ### Synopsis

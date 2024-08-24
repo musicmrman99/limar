@@ -1,12 +1,10 @@
 from math import ceil
 from datetime import date, timedelta
-import random
 from dateutil.relativedelta import relativedelta, MO
 from frozendict import frozendict
 
 from core.exceptions import LIMARException
 from core.modules.phase_utils.phase_system import PhaseSystem
-from core.modules.phase_utils.phased_process import PhasedProcess
 
 from modules.finance_utils.currency_amount import CurrencyAmount
 from modules.manifest_modules import (
@@ -28,7 +26,7 @@ ItemGroup = ItemSet
 ItemGroupSet = dict[frozendict[str, Hashable], ItemGroup]
 
 FINANCE_LIFECYCLE = PhaseSystem(
-    'finance.lifecycle',
+    f'{__name__}:lifecycle',
     (
         'INITIALISE',
         'GET',
@@ -62,7 +60,8 @@ FINANCE_LIFECYCLE = PhaseSystem(
         'GROUP_BY_ACCOUNT': ('FILTER_GROUPS', 'AGGREGATE', 'TABULATE'),
         'GROUP_BY_TIME': ('AGGREGATE', 'TABULATE'),
         'FILTER_GROUPS': ('TABULATE',)
-    }
+    },
+    initial_phase='INITIALISE'
 )
 
 class FinanceModule:
@@ -74,7 +73,7 @@ class FinanceModule:
     # --------------------------------------------------
 
     def dependencies(self):
-        return ['manifest']
+        return ['phase', 'manifest']
 
     def configure_args(self, *, mod: Namespace, parser: ArgumentParser, **_):
         # Filter, Group, and Distribute (inc. window param); graphically:
@@ -170,23 +169,8 @@ class FinanceModule:
             **_
     ):
         # Set up phase process and a common transition function
-        invokation_process_name = (
-            'finance.lifecycle_instance.' +
-            ''.join(random.choices('0123456789abcdef', k=6))
-        )
-
-        mod.phase.register_process(PhasedProcess(
-            invokation_process_name,
-            FINANCE_LIFECYCLE,
-            FINANCE_LIFECYCLE.PHASES.INITIALISE
-        ))
-
         # WARNING: THIS MUTATES STATE, even though it's used in `if` statements
-        transition_to_phase = lambda phase, default=True: (
-            mod.phase.transition_to_phase(
-                invokation_process_name, phase, args, default
-            )
-        )
+        transition_to_phase = mod.phase.create_process(FINANCE_LIFECYCLE, args)
 
         # Start from where the forwarding chain left off
         output = forwarded_data
