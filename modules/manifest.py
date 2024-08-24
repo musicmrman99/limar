@@ -5,6 +5,7 @@ import random
 from core.store import Store
 from core.modulemanager import ModuleAccessor
 from core.exceptions import LIMARException
+from core.modules.phase_utils.phase_system import PhaseSystem
 
 # Types
 from core.modules.log import LogModule
@@ -503,6 +504,18 @@ class Manifest:
                         logger=self._logger
                     )
 
+MANIFEST_LIFECYCLE = PhaseSystem(
+    f'{__name__}:lifecycle',
+    (
+        'INITIALISE',
+        'GET',
+        'FLATTEN',
+        'TABULATE',
+        'RENDER'
+    ),
+    initial_phase='INITIALISE'
+)
+
 class ManifestModule:
     """
     MM module to parse all manifest files declared by added context modules and
@@ -686,7 +699,7 @@ class ManifestModule:
         self._all_extra_props_data = None
 
     def dependencies(self):
-        return ['log', 'cache', 'tr']
+        return ['log', 'phase', 'cache', 'tr']
 
     def configure_env(self, *, parser: EnvironmentParser, **_):
         parser.add_variable('ROOT')
@@ -709,30 +722,20 @@ class ManifestModule:
             A pattern that matches the item set to use to resolve the item
             """)
 
-        # Subcommands / Resolve Item Set - Output Controls
-        item_parser.add_argument('-L', '--lower-stage', default=None,
-            help="""
-            Specifies that all stages of processing up to the given stage should
-            be performed, even if the result is being forwarded.
-            """)
-        item_parser.add_argument('-U', '--upper-stage', default=None,
-            help="""
-            Specifies that no stages of processing after the given stage should
-            be performed, even if the result isn't being forwarded.
-            """)
-        item_parser.add_argument('---',
-            action='store_true', default=False, dest='output_is_forward',
-            help="""
-            Specifies that the result of this module call should be forwarded to
-            another module. This option terminates this module call.
-            """)
-
-          # Non-standard
+        # Subcommands / Resolve Item - Output Controls
         item_parser.add_argument('-P', '--extra-properties',
             action=BooleanOptionalAction, default=False,
             help="""
             Specifies that all item properties should be included in the output.
             The default is False, so only item `ref` and `tags` are shown.
+            """)
+
+        mod.phase.configure_phase_control_args(item_parser)
+        item_parser.add_argument('---',
+            action='store_true', default=False, dest='output_is_forward',
+            help="""
+            Specifies that the result of this module call should be forwarded to
+            another module. This option terminates this module call.
             """)
 
         # Subcommands / Resolve Item Set
@@ -759,29 +762,19 @@ class ManifestModule:
             """)
 
         # Subcommands / Resolve Item Set - Output Controls
-        item_set_parser.add_argument('-L', '--lower-stage', default=None,
-            help="""
-            Specifies that all stages of processing up to the given stage should
-            be performed, even if the result is being forwarded.
-            """)
-        item_set_parser.add_argument('-U', '--upper-stage', default=None,
-            help="""
-            Specifies that no stages of processing after the given stage should
-            be performed, even if the result isn't being forwarded.
-            """)
-        item_set_parser.add_argument('---',
-            action='store_true', default=False, dest='output_is_forward',
-            help="""
-            Specifies that the result of this module call should be forwarded to
-            another module. This option terminates this module call.
-            """)
-
-          # Non-standard
         item_set_parser.add_argument('-P', '--extra-properties',
             action=BooleanOptionalAction, default=False,
             help="""
             Specifies that all item properties should be included in the output.
             The default is False, so only item `ref` and `tags` are shown.
+            """)
+
+        mod.phase.configure_phase_control_args(item_set_parser)
+        item_set_parser.add_argument('---',
+            action='store_true', default=False, dest='output_is_forward',
+            help="""
+            Specifies that the result of this module call should be forwarded to
+            another module. This option terminates this module call.
             """)
 
     def configure(self, *, mod: Namespace, env: Namespace, **_):
@@ -881,61 +874,62 @@ class ManifestModule:
         # Add Manifest
         self._manifests.append(manifest)
 
-    STAGES = [
-        'get',
-        'flatten',
-        'tabulate',
-        'render'
-    ]
-
     def __call__(self, *, mod: Namespace, args: Namespace, **_):
         mod.log.trace(f"manifest(args={args})")
 
-        if args.manifest_command == 'item':
-            item_set = self.get_item_set(args.item_set)
-            output = self.get_item(args.pattern, item_set=item_set)
+        # Set up phase process and a common transition function
+        # WARNING: THIS MUTATES STATE, even though it's used in `if` statements
+        transition_to_phase = mod.phase.create_process(MANIFEST_LIFECYCLE, args)
 
-            if self._should_run_stage('flatten',
-                args.output_is_forward, args.lower_stage, args.upper_stage
+        output: Any = None
+
+        if args.manifest_command == 'item':
+            if transition_to_phase(MANIFEST_LIFECYCLE.PHASES.GET):
+                item_set = self.get_item_set(args.item_set)
+                output = self.get_item(args.pattern, item_set=item_set)
+
+            if transition_to_phase(
+                MANIFEST_LIFECYCLE.PHASES.FLATTEN, not args.output_is_forward
             ):
                 output = self._list_flattened_items(
                     {'': output},
                     include_extra_props=args.extra_properties
                 )
 
-            if self._should_run_stage('tabulate',
-                args.output_is_forward, args.lower_stage, args.upper_stage
+            if transition_to_phase(
+                MANIFEST_LIFECYCLE.PHASES.TABULATE, not args.output_is_forward
             ):
                 output = mod.tr.tabulate(output, obj_mapping='all')
 
-            if self._should_run_stage('render',
-                args.output_is_forward, args.lower_stage, args.upper_stage
+            if transition_to_phase(
+                MANIFEST_LIFECYCLE.PHASES.RENDER, not args.output_is_forward
             ):
                 output = mod.tr.render_table(output, has_headers=True)
 
-        if args.manifest_command == 'item-set':
-            if args.item_set_spec:
-                ref = f'{random.getrandbits(4*32):0{32}x}'
-                self.declare_item_set(ref, args.pattern)
-                output = self.get_item_set(ref)
-            else:
-                output = self.get_item_set(args.pattern)
+        elif args.manifest_command == 'item-set':
+            if transition_to_phase(MANIFEST_LIFECYCLE.PHASES.GET):
+                if args.item_set_spec:
+                    ref = f'{random.getrandbits(4*32):0{32}x}'
+                    self.declare_item_set(ref, args.pattern)
+                    output = self.get_item_set(ref)
+                else:
+                    output = self.get_item_set(args.pattern)
 
-            if self._should_run_stage('flatten',
-                args.output_is_forward, args.lower_stage, args.upper_stage
+            if transition_to_phase(
+                MANIFEST_LIFECYCLE.PHASES.FLATTEN, not args.output_is_forward
             ):
                 output = self._list_flattened_items(
                     output,
                     include_extra_props=args.extra_properties
                 )
 
-            if self._should_run_stage('tabulate',
-                args.output_is_forward, args.lower_stage, args.upper_stage
+            if transition_to_phase(
+                MANIFEST_LIFECYCLE.PHASES.TABULATE, not args.output_is_forward
             ):
                 output = mod.tr.tabulate(output, obj_mapping='all')
 
-            if self._should_run_stage('render',
-                args.output_is_forward, args.lower_stage, args.upper_stage
+            if transition_to_phase(
+                MANIFEST_LIFECYCLE.PHASES.RENDER, not args.output_is_forward
             ):
                 output = mod.tr.render_table(output, has_headers=True)
 
@@ -1077,35 +1071,6 @@ class ManifestModule:
 
     # Utils
     # --------------------
-
-    # Stage Management
-
-    def _stage_is_at_or_before(self, target: str, upper: str | None):
-        if upper is None:
-            return True
-        return self.STAGES.index(target) <= self.STAGES.index(upper)
-
-    def _should_run_stage(self,
-            stage: str,
-            forwarded: bool,
-            lower_stage: str | None = None,
-            upper_stage: str | None = None
-    ):
-        include_if_not_reached_lower_stage = (
-            lower_stage is not None and
-            self._stage_is_at_or_before(stage, lower_stage)
-        )
-        include_if_not_reached_upper_stage = (
-            self._stage_is_at_or_before(stage, upper_stage)
-        )
-
-        return (
-            (
-                not forwarded or
-                include_if_not_reached_lower_stage
-            ) and
-            include_if_not_reached_upper_stage
-        )
 
     # Transformation Stage
 
