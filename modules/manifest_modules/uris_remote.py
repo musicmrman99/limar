@@ -8,35 +8,35 @@ class UrisRemote:
         return 'uris'
 
     def on_declare_item(self, contexts, item, *, logger: LogModule):
-        if 'project' not in item:
+        if 'project' not in item['tags']:
             return
 
         # Remote protocol
         try:
-            item['protocol'] = next(
-                context['opts']['protocol']
+            item['remoteProtocol'] = next(
+                context['opts']['remote-protocol']
                 for context in reversed(contexts)
-                if 'protocol' in context['opts']
+                if 'remote-protocol' in context['opts']
             )
         except StopIteration:
             logger.warning(
-                "@uris (remote): Protocol not given in any parent context of"
-                f" item '{item['ref']}'. Remote interaction will not be usable"
-                " on this item."
+                "@uris (remote): `remote-protocol` not given in any parent"
+                f" context of item '{item['ref']}'. Remote interaction will not"
+                " be usable on this item."
             )
 
         # Remote host
         try:
-            item['host'] = next(
-                context['opts']['host']
+            item['remoteHost'] = next(
+                context['opts']['remote-host']
                 for context in reversed(contexts)
-                if 'host' in context['opts']
+                if 'remote-host' in context['opts']
             )
         except StopIteration:
             logger.warning( # TODO: Make this use the log module
-                "@uris (remote): Remote host not given in any parent context of"
-                f" item '{item['ref']}'. Remote interaction will not be usable"
-                " on this item."
+                "@uris (remote): `remote-host` not given in any parent context"
+                f" of item '{item['ref']}'. Remote interaction will not be"
+                " usable on this item."
             )
 
         # Remote path
