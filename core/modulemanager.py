@@ -707,7 +707,11 @@ class ModuleLifecycle:
                     # an error.
                     break
 
-        mod_subproc.transition_to_complete()
+        if len(exceptions) == 0:
+            mod_subproc.transition_to_complete()
+        else:
+            self._stop_subprocess(LIFECYCLE.PHASES.STARTING)
+
         return started_modules, exceptions
 
     def configure_arguments(self,
@@ -791,6 +795,12 @@ class ModuleLifecycle:
             start_exceptions: list[Exception | KeyboardInterrupt],
             accessor_object: Any
     ) -> Exception | KeyboardInterrupt | None:
+        if len(start_exceptions) > 0:
+            self._warning(
+                'Skipped running because exception(s) were raised during start'
+            )
+            return
+
         invokations_subsystem = self._create_subsystem(
             f'{__name__}:invokations',
             tuple(
@@ -801,12 +811,6 @@ class ModuleLifecycle:
         invokations_process = self._create_subprocess(invokations_subsystem)
         self._start_subprocess(LIFECYCLE.PHASES.RUNNING, invokations_process)
         self._proceed_to_phase(LIFECYCLE.PHASES.RUNNING)
-
-        if len(start_exceptions) > 0:
-            self._warning(
-                'Skipped running because exception(s) were raised during start'
-            )
-            return
 
         forwarded_data: Any = None
         if not sys.stdin.isatty():
