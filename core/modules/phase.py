@@ -6,6 +6,7 @@ from core.modules.phase_utils.phase_system import PhaseSystem
 from core.modules.phase_utils.phased_process import PhasedProcess
 
 # Types
+from typing import Callable
 from argparse import ArgumentParser, Namespace
 
 class PhaseModule:
@@ -57,7 +58,7 @@ class PhaseModule:
 
     @ModuleAccessor.invokable_as_config
     def register_static_system(self, system: PhaseSystem):
-        """Register a Phase System with the given name."""
+        """Register the given phase system."""
 
         if system.name() in self._systems:
             raise LIMARException(
@@ -69,7 +70,7 @@ class PhaseModule:
 
     @ModuleAccessor.invokable_as_service
     def register_system(self, system: PhaseSystem):
-        """Register a Phase System with the given name."""
+        """Register the given phase system."""
 
         self.register_static_system(system)
 
@@ -86,6 +87,33 @@ class PhaseModule:
         self._processes[process.name()] = process
 
     @ModuleAccessor.invokable_as_service
+    def create_process(self,
+            system: PhaseSystem,
+            args: Namespace
+    ) -> Callable[[Phase, bool], bool]:
+        """
+        Create and register a phased process that uses the given system.
+
+        Return a lambda that acts like this module's `transition_to_phase()`
+        service method, but has most of its parameters bound. Its signature is:
+
+            def transition_to_phase(phase, run_by_default=True) -> should_run_phase:
+                \"\"\"
+                Transition to the given phase of the process upon whose creation
+                this function was returned.
+
+                `phase` and `run_by_default` have the same meanings as for
+                PhaseModule.transition_to_phase().
+                \"\"\"
+        """
+
+        proc = PhasedProcess(system)
+        self.register_process(proc)
+        return lambda phase, run_by_default=None: (
+            self.transition_to_phase(proc.name(), phase, args, run_by_default)
+        )
+
+    @ModuleAccessor.invokable_as_service
     def get_system(self, name: str):
         return self._systems[name]
 
@@ -99,14 +127,26 @@ class PhaseModule:
             phase: Phase,
             args: Namespace,
             run_by_default: bool | None = None
-    ):
+    ) -> bool:
         """
-        Transition to the given phase of the given registered process, then
-        return whether that phase should run, depending on the args passed.
+        Transition to the given phase of the registered process with the given
+        name, then return whether that phase should run, depending on the args
+        passed.
+
+        This function is expected to be called in an `if` statement to
+        conditionally run the code associated with this phase.
+
+        If `run_by_default` is given, then return its value (or True if it is
+        omitted) if no command-line options were given that would force the
+        given phase to run or not to run.
 
         Use `configure_phasing_args()` in the `configure_args()` MM lifecycle
-        method to configure the args that this service interprets.
+        method of other modules to configure the args that this service
+        interprets for those modules.
         """
+
+        if run_by_default is None:
+            run_by_default = True
 
         mod_subproc = self._processes[process_name]
         mod_subproc.transition_to(phase)

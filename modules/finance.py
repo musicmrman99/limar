@@ -5,7 +5,6 @@ from frozendict import frozendict
 
 from core.exceptions import LIMARException
 from core.modules.phase_utils.phase_system import PhaseSystem
-from core.modules.phase_utils.phased_process import PhasedProcess
 
 from modules.finance_utils.currency_amount import CurrencyAmount
 from modules.manifest_modules import (
@@ -74,7 +73,7 @@ class FinanceModule:
     # --------------------------------------------------
 
     def dependencies(self):
-        return ['manifest']
+        return ['phase', 'manifest']
 
     def configure_args(self, *, mod: Namespace, parser: ArgumentParser, **_):
         # Filter, Group, and Distribute (inc. window param); graphically:
@@ -170,14 +169,8 @@ class FinanceModule:
             **_
     ):
         # Set up phase process and a common transition function
-        invokation_process = PhasedProcess(FINANCE_LIFECYCLE)
-        mod.phase.register_process(invokation_process)
         # WARNING: THIS MUTATES STATE, even though it's used in `if` statements
-        transition_to_phase = lambda phase, run_by_default=True: (
-            mod.phase.transition_to_phase(
-                invokation_process.name(), phase, args, run_by_default
-            )
-        )
+        transition_to_phase = mod.phase.create_process(FINANCE_LIFECYCLE, args)
 
         # Start from where the forwarding chain left off
         output = forwarded_data
