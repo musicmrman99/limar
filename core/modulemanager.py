@@ -56,7 +56,9 @@ LIFECYCLE = PhaseSystem(
     {
         'STARTING': ('STOPPING',),
         'ARGUMENT_PARSING': ('STOPPING',),
-    }
+    },
+    initial_phase='CREATED',
+    completed_phase='STOPPED'
 )
 
 Params = ParamSpec("Params")
@@ -190,9 +192,7 @@ class ModuleLifecycle:
 
         self._controller = PhasedProcess(
             'modulemanager.lifecycle_instance',
-            LIFECYCLE,
-            LIFECYCLE.PHASES.CREATED,
-            LIFECYCLE.PHASES.STOPPED
+            LIFECYCLE
         )
         self._managed_mod_names = None
         self._all_mod_names = None
@@ -328,9 +328,9 @@ class ModuleLifecycle:
             name: module
             for name, module in reversed(self._mods.items())
         }
-        self._MODULE_PHASE_SYSTEM = PhaseSystem(
-            'modulemanager.modules',
-            ('STARTED', *self._mods.keys(), 'COMPLETED')
+        self._MODULE_PHASE_SYSTEM = self._create_subsystem(
+            'reversed_sorted_modules',
+            tuple(self._mods.keys())
         )
 
         # Stop modules (WARNING: can mutate module state)
@@ -373,9 +373,9 @@ class ModuleLifecycle:
             else:
                 managed_mods.append(name)
 
-        module_lifecycle = PhaseSystem(
-            'modulemanager.modules',
-            ('STARTED', *managed_mods, 'COMPLETED')
+        module_lifecycle = self._create_subsystem(
+            'unsorted_modules',
+            tuple(managed_mods)
         )
 
         return tuple(managed_mods), module_lifecycle
@@ -386,9 +386,9 @@ class ModuleLifecycle:
     ) -> tuple[tuple[str, ...], PhaseSystem]:
         self._proceed_to_phase(LIFECYCLE.PHASES.GET_ALL_MODULES)
 
-        all_module_lifecycle = PhaseSystem(
-            'modulemanager.all_modules',
-            ('STARTED', *inherited_mods.keys(), *mod_names, 'COMPLETED')
+        all_module_lifecycle = self._create_subsystem(
+            'unsorted_all_modules',
+            (*inherited_mods.keys(), *mod_names)
         )
 
         return (*inherited_mods.keys(), *mod_names), all_module_lifecycle
@@ -494,9 +494,9 @@ class ModuleLifecycle:
                 )
 
         own_sorted_mod_names = list(sorted_mods.keys())
-        sorted_module_lifecycle = PhaseSystem(
-            'modulemanager.modules',
-            ('STARTED', *own_sorted_mod_names, 'COMPLETED')
+        sorted_module_lifecycle = self._create_subsystem(
+            'sorted_modules',
+            tuple(own_sorted_mod_names)
         )
 
         self._debug('Modules (dependencies resolved):', sorted_mod_names)
@@ -751,7 +751,8 @@ class ModuleLifecycle:
             module_full_cli_args_set: list[tuple[str, list[str]]]
     ) -> list[tuple[str, Namespace]]:
         raw_invokations_subsystem = self._create_subsystem(
-            'raw_invokations', tuple(
+            'raw_invokations',
+            tuple(
                 f'{invokation_index}-{name}'
                 for invokation_index, (name, _) in
                     enumerate(module_full_cli_args_set)
@@ -1031,15 +1032,15 @@ class ModuleLifecycle:
     def _create_subsystem(self, name: str, items: tuple[str, ...]):
         return PhaseSystem(
             f'modulemanager.{name}',
-            ('STARTED', *items, 'COMPLETED')
+            ('STARTED', *items, 'COMPLETED'),
+            initial_phase='STARTED',
+            completed_phase='COMPLETED'
         )
 
     def _create_subprocess(self, name: str, subsystem: PhaseSystem):
         return PhasedProcess(
             f'modulemanager.{name}_process',
-            subsystem,
-            subsystem.PHASES.STARTED,
-            subsystem.PHASES.COMPLETED
+            subsystem
         )
 
     def _start_subprocess(self, phase: Phase, process: PhasedProcess):

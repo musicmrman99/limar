@@ -62,7 +62,8 @@ FINANCE_LIFECYCLE = PhaseSystem(
         'GROUP_BY_ACCOUNT': ('FILTER_GROUPS', 'AGGREGATE', 'TABULATE'),
         'GROUP_BY_TIME': ('AGGREGATE', 'TABULATE'),
         'FILTER_GROUPS': ('TABULATE',)
-    }
+    },
+    initial_phase='INITIALISE'
 )
 
 class FinanceModule:
@@ -177,8 +178,7 @@ class FinanceModule:
 
         mod.phase.register_process(PhasedProcess(
             invokation_process_name,
-            FINANCE_LIFECYCLE,
-            FINANCE_LIFECYCLE.PHASES.INITIALISE
+            FINANCE_LIFECYCLE
         ))
 
         # WARNING: THIS MUTATES STATE, even though it's used in `if` statements

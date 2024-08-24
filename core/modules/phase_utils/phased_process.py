@@ -14,13 +14,19 @@ class PhasedProcess:
     def __init__(self,
             name: str,
             phase_system: PhaseSystem,
-            initial_phase: Phase,
+            initial_phase: Phase | None = None,
             completed_phase: Phase | None = None
     ):
         self._name = name
         self._phase_system = phase_system
-        self._cur_phase = initial_phase
-        self._completed_phase = completed_phase
+
+        self._cur_phase = phase_system.initial_phase()
+        if initial_phase is not None:
+            self._cur_phase = initial_phase
+
+        self._completed_phase = phase_system.completed_phase()
+        if completed_phase is not None:
+            self._completed_phase = completed_phase
 
         self._subprocesses: dict[Phase, PhasedProcess] = {}
 
@@ -77,6 +83,8 @@ class PhasedProcess:
 
     def transition_to(self, phase: Phase):
         if not self._phase_system.can_transition(self._cur_phase, phase):
+            print(self._phase_system._phases)
+            print(self._completed_phase)
             raise LIMARException(
                 f"Phased process '{self._name}' cannot transition phase from"
                 f" '{self._cur_phase}' to '{phase}'. Transition not allowed by"
