@@ -30,7 +30,7 @@ It also has various other modules that provide configuration and supporting serv
 
 ```
 limar phase list
-limar phase get PHASE_SYSTEM_NAME
+limar phase show PHASE_SYSTEM_NAME
 ```
 
 ### Description
@@ -53,7 +53,7 @@ export LIMAR_CACHE_ROOT="$HOME/Documents/LIMAR/cache` # Required
 
 ```
 limar cache list
-limar cache get ENTRY_NAME
+limar cache show ENTRY_NAME
 limar cache delete ENTRY_NAME
 limar cache clear
 ```

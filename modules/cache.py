@@ -51,13 +51,13 @@ class CacheModule:
             epilog=docs_for(self.list))
         mod.docs.add_docs_arg(list_parser)
 
-        # Subcommands / Get Cache Entry
-        get_parser = cache_subparsers.add_parser('get',
+        # Subcommands / Show Cache Entry
+        show_parser = cache_subparsers.add_parser('show',
             epilog=docs_for(self.get))
-        mod.docs.add_docs_arg(get_parser)
+        mod.docs.add_docs_arg(show_parser)
 
-        get_parser.add_argument('entry_name', metavar='ENTRY_NAME',
-            help="""Name of the entry to get the contents of.""")
+        show_parser.add_argument('entry_name', metavar='ENTRY_NAME',
+            help="""Name of the entry to show the contents of.""")
 
         # Subcommands / Delete Cache Entry
         delete_parser = cache_subparsers.add_parser('delete',
@@ -112,7 +112,7 @@ class CacheModule:
         if args.cache_command == 'list':
             output = self.list()
 
-        elif args.cache_command == 'get':
+        elif args.cache_command == 'show':
             output = self.get(args.entry_name)
 
         elif args.cache_command == 'delete':
