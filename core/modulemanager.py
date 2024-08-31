@@ -106,12 +106,13 @@ class ModuleAccessor:
                 self.ACCESS_TYPES.FUNCTION: lambda: True,
 
                 self.ACCESS_TYPES.CONFIG: lambda: (
+                    # If the target module has completed configuration
                     self._lifecycle._has_mod(
                         self._module_name,
                         'completed',
                         LIFECYCLE.PHASES.CONFIGURATION
                     ) and
-                    # If ALL modules haven't completed configuration
+                    # If ANY module hasn't completed configuration
                     not self._lifecycle._has_mod(
                         self._module_name,
                         'started',
