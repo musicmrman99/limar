@@ -189,6 +189,8 @@ class CacheModule:
         if enabled.
         """
 
+        assert self._store is not None, f'{self.set_and_persist.__name__}() called before {self.configure.__name__}()'
+
         self.set(name, data)
         if self._write_cache:
             self._store.persist()
@@ -211,6 +213,9 @@ class CacheModule:
         """
         Delete the cache entry with the given name, and persist if enabled.
         """
+
+        assert self._store is not None, f'{self.delete_and_persist.__name__}() called before {self.configure.__name__}()'
+
         self.delete(name)
         if self._write_cache:
             self._store.persist()
@@ -228,6 +233,8 @@ class CacheModule:
     @ModuleAccessor.invokable_as_service
     def clear_and_persist(self):
         """Delete all cache entries, and persist if enabled."""
+
+        assert self._store is not None, f'{self.clear_and_persist.__name__}() called before {self.configure.__name__}()'
 
         self.clear()
         if self._write_cache:
