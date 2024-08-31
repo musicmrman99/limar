@@ -22,3 +22,13 @@ def modules_adjacent_to(file):
         for module in modules
         if isfile(module) and not basename(module).startswith('__')
     ]
+
+
+def list_split(list_, sep):
+    lists = [[]]
+    for item in list_:
+        if item == sep:
+            lists.append([])
+        else:
+            lists[-1].append(item)
+    return lists

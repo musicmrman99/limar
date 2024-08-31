@@ -18,6 +18,7 @@ from graphlib import CycleError, TopologicalSorter
 from argparse import ArgumentParser, Namespace
 
 from core.envparse import EnvironmentParser
+from core.utils import list_split
 from core.exceptions import LIMARException
 import core.modules as core_module_package
 
@@ -630,7 +631,7 @@ class ModuleLifecycle:
         # on '---', and prefix with the root arguments so that every module
         # invokation will also have all global args available to it.
         root_cli_args = cli_args[:-len(remaining_args)]
-        module_cli_args_set = self._list_split(remaining_args, '---')
+        module_cli_args_set = list_split(remaining_args, '---')
 
         module_full_cli_args_set = [
             (
@@ -1076,18 +1077,6 @@ class ModuleLifecycle:
     def _proceed_to_phase(self, phase: Phase):
         self._controller.transition_to(phase)
         self._info(f"{'-'*5} {phase} {'-'*(43-len(phase))}")
-
-    # Utils
-    # --------------------
-
-    def _list_split(self, list_, sep):
-        lists = [[]]
-        for item in list_:
-            if item == sep:
-                lists.append([])
-            else:
-                lists[-1].append(item)
-        return lists
 
 class ModuleManager:
     """
