@@ -24,6 +24,23 @@ LIMAR has a variety of sub-commands for different purposes:
 
 It also has various other modules that provide configuration and supporting services to the commands above. Some of these modules require configuration, and so have been included in the below list.
 
+## `phase`
+
+### Synopsis
+
+```
+limar phase list
+limar phase get PHASE_SYSTEM_NAME
+```
+
+### Description
+
+Provides standardised phasing command-line options and provides phasing services
+to other modules.
+
+Has commands for listing registered phase systems and showing phase information
+for them.
+
 ## `cache`
 
 ### Environment
