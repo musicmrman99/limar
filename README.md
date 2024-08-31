@@ -10,10 +10,12 @@ LIMAR has a variety of sub-commands for different purposes:
 
 | Area    | Usable? | In Dev? | Command    | Summary                                                         |
 |---------|---------|---------|------------|-----------------------------------------------------------------|
-| Data    | &check; | &check; | `manifest` | Manage data declared in manifest files, eg. project definitions |
+| Data    | &check; | &check; | `phase`    | \[**INTERNAL**\] List phase systems and show their phases       |
+| Data    | &check; |         | `cache`    | Manage data stored in the LIMAR cache                           |
+| Data    | &check; |         | `manifest` | Manage data declared in manifest files, eg. project definitions |
 | Data    | &check; | &check; | `info`     | Manage data discoverable using available commands               |
 | Util    |         |         | `for`      | Execute a supported LIMAR against many repos at once            |
-| Util    | &check; | &check; | `tr`       | Transforms data using any of various available tools            |
+| Util    | &check; |         | `tr`       | Transforms data using any of various available tools            |
 | Context | &check; | &check; | `env`      | Manage the shell environment, eg. current dir, env vars, etc.   |
 | Project |         |         | `repo`     | Get info about repositories and manage repo instances and state |
 | Project |         |         | `git`      | Execute a raw git command against a repo                        |

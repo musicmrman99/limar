@@ -53,11 +53,20 @@ class PhaseSystem:
     def name(self) -> str:
         return self._name
 
+    def phases(self) -> tuple[Phase, ...]:
+        return self._phases
+
+    def phase_jumps(self) -> PhaseJumps:
+        return self._phase_jumps
+
     def initial_phase(self) -> str:
         return self._initial_phase
 
     def completed_phase(self) -> str | None:
         return self._completed_phase
+
+    def is_linear(self) -> bool:
+        return self._is_linear
 
     # Queries
 

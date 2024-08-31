@@ -48,6 +48,9 @@ class InfoModule:
             another module. This option terminates this module call.
             """)
 
+    def configure(self, *, mod: Namespace, **_):
+        mod.phase.register_system(INFO_LIFECYCLE)
+
     def __call__(self, *,
             mod: Namespace,
             args: Namespace,

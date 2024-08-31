@@ -1,6 +1,7 @@
 from core.exceptions import LIMARException
 from core.modulemanager import ModuleAccessor
 
+from core.modules.docs_utils.docs_arg import docs_for
 from core.modules.phase_utils.phase import Phase
 from core.modules.phase_utils.phase_system import PhaseSystem
 from core.modules.phase_utils.phased_process import PhasedProcess
@@ -11,15 +12,59 @@ from argparse import ArgumentParser, Namespace
 
 class PhaseModule:
     """
-    MM module that allows other MM modules to interact with the ModuleManager
-    phasing system, as well as to define their own phasing systems. Also
-    provides standard command-line options for controling which phases of a
-    module are run.
+    MM module that provides standard command-line options for controling which
+    phases of a module should be run, and provides services to other MM modules
+    to act on these options, as well as allowing interaction with the MM-defined
+    phasing systems.
+
+    Also provides the `phase` command to get help on what values can be passed
+    for the standard command-line options mentioned above.
     """
+
+    # Lifecycle
+    # --------------------
 
     def __init__(self):
         self._systems: dict[str, PhaseSystem] = {}
         self._processes: dict[str, PhasedProcess] = {}
+
+    def dependencies(self):
+        return ['docs']
+
+    def configure_args(self, *, mod: Namespace, parser: ArgumentParser, **_):
+        # Subcommands
+        phase_subparsers = parser.add_subparsers(dest="phase_command")
+
+        # Subcommands / List Phase Systems
+        list_parser = phase_subparsers.add_parser('list',
+            epilog=docs_for(self.list_systems))
+        mod.docs.add_docs_arg(list_parser)
+
+        # Subcommands / Show Phases of Phase System
+        get_parser = phase_subparsers.add_parser('get',
+            epilog=docs_for(self.get_system))
+        mod.docs.add_docs_arg(get_parser)
+
+        get_parser.add_argument('system_name', metavar='SYSTEM_NAME',
+            help="""
+            Name of the phase system to list the phases of.
+
+            Conventions:
+            - Modules that need any phasing at all should have a top-level phase
+              system called '<module_name>:lifecycle', where <module_name> is
+              the LIMAR module name.
+            """)
+
+    def __call__(self, *, mod: Namespace, args: Namespace, **_):
+        output = None
+
+        if args.phase_command == 'list':
+            output = self.list_systems()
+
+        if args.phase_command == 'get':
+            output = self.get_system(args.system_name).phases()
+
+        return output
 
     # Invokation
     # --------------------
@@ -75,6 +120,12 @@ class PhaseModule:
         self.register_static_system(system)
 
     @ModuleAccessor.invokable_as_service
+    def list_systems(self):
+        """List the names of all registered phase systems."""
+
+        return list(self._systems.keys())
+
+    @ModuleAccessor.invokable_as_service
     def register_process(self, process: PhasedProcess):
         """Register a phased process with the given name."""
 
@@ -115,10 +166,14 @@ class PhaseModule:
 
     @ModuleAccessor.invokable_as_service
     def get_system(self, name: str):
+        """Return the phase system with the given name."""
+
         return self._systems[name]
 
     @ModuleAccessor.invokable_as_service
     def get_process(self, name: str):
+        """Return the phased process with the given name."""
+
         return self._processes[name]
 
     @ModuleAccessor.invokable_as_service

@@ -780,6 +780,8 @@ class ManifestModule:
     def configure(self, *, mod: Namespace, env: Namespace, **_):
         self._mod = mod # For methods that aren't directly given it
 
+        mod.phase.register_system(MANIFEST_LIFECYCLE)
+
         if self._manifest_store is None:
             self._manifest_store = Store(env.ROOT)
 
