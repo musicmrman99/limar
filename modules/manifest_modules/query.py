@@ -1,7 +1,7 @@
 from core.exceptions import LIMARException
 import shlex
 
-from core.utils import list_split
+from core.utils import list_split, list_strip
 
 class Query:
     @staticmethod
@@ -17,14 +17,23 @@ class Query:
                 "@query context must be given a `command` to execute"
             )
 
-        commands = list_split(
-            shlex.split(context['opts']['command']),
-            '&&'
-        )
+        commands = [
+            {
+                'command': list_strip(command, '!!'),
+                'ignoreStatus': len(command) > 0 and command[-1] == '!!'
+            }
+            for command in list_split(
+                shlex.split(context['opts']['command']),
+                '&&'
+            )
+        ]
 
         if self._current_query is not None:
             fmt_commands = lambda commands: (
-                ' && '.join(' '.join(command) for command in commands)
+                ' && '.join(
+                    ' '.join(command['command'])
+                    for command in commands
+                )
             )
             raise LIMARException(
                 "Can only have one nested @query context: tried to nest"

@@ -68,7 +68,7 @@ class InfoModule:
             # FIXME: Yes, I know, this is an injection attack waiting to happen.
             mod.manifest.declare_item_set(ref, f'query & [{args.entity}]')
             query_command_items = mod.manifest.get_item_set(ref)
-            mod.log.error(f'Output:', query_command_items)
+            mod.log.debug(f'Matched manifest items:', query_command_items)
 
         # Execute each query. Produces a list of entity data (inc. entity ID)
         # for each query executed.
@@ -76,21 +76,36 @@ class InfoModule:
         if transition_to_phase(INFO_LIFECYCLE.PHASES.GET):
             output = []
             for item in query_command_items.values():
+                command_query = (
+                    item['command']['parse']
+                    if 'parse' in item['command']
+                    else '.'
+                )
+
+                command_outputs = []
+                for command in item['command']['commands']:
+                    try:
+                        command_outputs.append(
+                            subprocess
+                                .check_output(command['command'])
+                                .decode()
+                                .strip()
+                        )
+                    except subprocess.CalledProcessError as e:
+                        if not command['ignoreStatus']:
+                            raise e
+                        command_outputs.append('')
+
+                all_output = '\n'.join(command_outputs)
+
                 output.append(mod.tr.query(
-                    (
-                        item['command']['parse']
-                        if 'parse' in item['command']
-                        else '.'
-                    ),
-                    '\n'.join(
-                        subprocess.check_output(command).decode().strip()
-                        for command in item['command']['commands']
-                    ),
+                    command_query,
+                    all_output,
                     lang='jq',
                     first=True
                 ))
 
-            mod.log.debug(f'Output:', output)
+            mod.log.debug(f'Query output:', output)
 
         # Index and merge entity data by ID
         #   list[list[dict[str, str]]] -> dict[str, dict[str, str]]
