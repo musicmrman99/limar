@@ -10,8 +10,8 @@ from core.modules.phase_utils.phase_system import PhaseSystem
 # Types
 from core.modules.log import LogModule
 from core.envparse import EnvironmentParser
-from argparse import ArgumentParser, Namespace, BooleanOptionalAction
-from typing import Any, Callable
+from argparse import ArgumentParser, Namespace
+from typing import Any, Callable, Iterable
 
 ItemRef = str
 ItemSetRef = str | tuple[str, str] # (tag_name, tag_value)
@@ -723,11 +723,19 @@ class ManifestModule:
             """)
 
         # Subcommands / Resolve Item - Output Controls
-        item_parser.add_argument('-P', '--extra-properties',
-            action=BooleanOptionalAction, default=False,
+        item_parser.add_argument('-T', '--tags', default=':all',
             help="""
-            Specifies that all item properties should be included in the output.
-            The default is False, so only item `ref` and `tags` are shown.
+            Specify a comma-separated list of item tags to include in the
+            output. Use the value ':all' to show all tags, or ':none' to show no
+            tags. The default is ':all'.
+            """)
+
+        item_parser.add_argument('-P', '--properties', default=':none',
+            help="""
+            Specify a comma-separated list of extra item properties (ie. other
+            than 'ref' and 'tags') to include in the output. Use the value
+            ':all' to show all extra properties, or ':none' to show no extra
+            properties. The default is ':none'.
             """)
 
         mod.phase.configure_phase_control_args(item_parser)
@@ -762,11 +770,19 @@ class ManifestModule:
             """)
 
         # Subcommands / Resolve Item Set - Output Controls
-        item_set_parser.add_argument('-P', '--extra-properties',
-            action=BooleanOptionalAction, default=False,
+        item_set_parser.add_argument('-T', '--tags', default=':all',
             help="""
-            Specifies that all item properties should be included in the output.
-            The default is False, so only item `ref` and `tags` are shown.
+            Specify a comma-separated list of item tags to include in the
+            output. Use the value ':all' to show all tags, or ':none' to show no
+            tags. The default is ':all'.
+            """)
+
+        item_set_parser.add_argument('-P', '--properties', default=':none',
+            help="""
+            Specify a comma-separated list of extra item properties (ie. other
+            than 'ref' and 'tags') to include in the output. Use the value
+            ':all' to show all extra properties, or ':none' to show no extra
+            properties. The default is ':none'.
             """)
 
         mod.phase.configure_phase_control_args(item_set_parser)
@@ -895,7 +911,8 @@ class ManifestModule:
             ):
                 output = self._list_flattened_items(
                     {'': output},
-                    include_extra_props=args.extra_properties
+                    filter_tags=self._filter_str_to_list(args.tags),
+                    filter_extra_props=self._filter_str_to_list(args.properties)
                 )
 
             if transition_to_phase(
@@ -922,7 +939,8 @@ class ManifestModule:
             ):
                 output = self._list_flattened_items(
                     output,
-                    include_extra_props=args.extra_properties
+                    filter_tags=self._filter_str_to_list(args.tags),
+                    filter_extra_props=self._filter_str_to_list(args.properties)
                 )
 
             if transition_to_phase(
@@ -1076,16 +1094,26 @@ class ManifestModule:
 
     # Transformation Stage
 
+    def _filter_str_to_list(self, list_: str) -> list[str] | None:
+        if list_ == ':all':
+            return None # None = no filter = all
+        elif list_ == ':none':
+            return []
+        else:
+            return list_.split(',')
+
     def _list_flattened_items(self,
             item_set: ItemSet,
-            include_extra_props: bool = False
+            filter_tags: list[str] | None = None,
+            filter_extra_props: list[str] | None = None
     ) -> list[dict[str, Any]]:
         return [
             self._flatten_item(
                 item,
                 self._all_tags(item_set),
                 self._all_extra_props(item_set),
-                include_extra_props=include_extra_props
+                filter_tags=filter_tags,
+                filter_extra_props=filter_extra_props
             )
             for item in item_set.values()
         ]
@@ -1094,30 +1122,43 @@ class ManifestModule:
             item: Item,
             all_tags: list[str] | None = None,
             all_extra_props: list[str] | None = None,
-            include_extra_props: bool = False
+            filter_tags: list[str] | None = None,
+            filter_extra_props: list[str] | None = None
     ) -> dict[str, Any]:
-        all_tags_computed: list[str] = []
+        all_tags_computed: Iterable[str] = []
         if all_tags is not None:
             all_tags_computed = all_tags
         elif 'tags' in item:
             all_tags_computed = item['tags']
 
-        all_extra_props_computed: list[str] = []
+        all_extra_props_computed: Iterable[str] = []
         if all_extra_props is not None:
             all_extra_props_computed = all_extra_props
+        else:
+            all_extra_props_computed = [
+                key
+                for key in item.keys()
+                if key not in ['ref', 'tags']
+            ]
 
         return {
             'ref': item['ref'],
-            **{
-                f':{tag}': self._format_item_tag(item, tag)
-                for tag in all_tags_computed
-            },
+            **(
+                {
+                    f':{tag}': self._format_item_tag(item, tag)
+                    for tag in all_tags_computed
+                    if filter_tags is None or tag in filter_tags
+                }
+                if filter_tags is None or len(filter_tags) > 0
+                else {}
+            ),
             **(
                 {
                     f'.{prop}': self._format_item_prop(item, prop)
                     for prop in all_extra_props_computed
+                    if filter_extra_props is None or prop in filter_extra_props
                 }
-                if include_extra_props
+                if filter_extra_props is None or len(filter_extra_props) > 0
                 else {}
             )
         }
