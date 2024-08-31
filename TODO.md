@@ -46,6 +46,7 @@ Develop ModuleManager
 - allow LIMAR to be run as a 'server', so that it starts up, waits for calls, then shuts down when asked (or when the shell terminates)
   - note that this is similar to a REPL, but allows backgrounding the process
   - this should be doable using the shell's built-in job control, though ofc. it depends on which shell the user has
+  - https://www.digitalocean.com/community/tutorials/how-to-use-bash-s-job-control-to-manage-foreground-and-background-processes
 
 Develop Core Modules
 --------------------------------------------------
