@@ -1,7 +1,6 @@
 import random
 import string
 import subprocess
-import shlex
 
 from core.modules.phase_utils.phase_system import PhaseSystem
 
@@ -69,28 +68,29 @@ class InfoModule:
             # FIXME: Yes, I know, this is an injection attack waiting to happen.
             mod.manifest.declare_item_set(ref, f'query & [{args.entity}]')
             query_command_items = mod.manifest.get_item_set(ref)
+            mod.log.error(f'Output:', query_command_items)
 
         # Execute each query. Produces a list of entity data (inc. entity ID)
         # for each query executed.
         #   ItemSet -> list[list[dict[str, str]]]
         if transition_to_phase(INFO_LIFECYCLE.PHASES.GET):
-            output = [
-                mod.tr.query(
+            output = []
+            for item in query_command_items.values():
+                output.append(mod.tr.query(
                     (
                         item['command']['parse']
                         if 'parse' in item['command']
                         else '.'
                     ),
-                    subprocess
-                        .check_output(
-                            shlex.split(item['command']['command'])
-                        )
-                        .decode(),
+                    '\n'.join(
+                        subprocess.check_output(command).decode().strip()
+                        for command in item['command']['commands']
+                    ),
                     lang='jq',
                     first=True
-                )
-                for item in query_command_items.values()
-            ]
+                ))
+
+            mod.log.debug(f'Output:', output)
 
         # Index and merge entity data by ID
         #   list[list[dict[str, str]]] -> dict[str, dict[str, str]]
