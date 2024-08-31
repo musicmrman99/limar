@@ -166,7 +166,7 @@ if [ "$LIMAR__STARTUP_FAILED" = 'false' ]; then
             else
                 "$LIMAR__PYTHON" "$LIMAR__REPO/main.py" --shell-script "$script_file" "$@"
             fi
-            source "$script_file"
+            . "$script_file"
             rm "$script_file"
         fi
     }
