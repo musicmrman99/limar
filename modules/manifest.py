@@ -302,7 +302,9 @@ class Manifest:
 
         # Validate
         if ref in self._items:
-            raise LIMARException(f"Manifest item already exists with ref '{ref}'")
+            raise LIMARException(
+                f"Manifest item already exists with ref '{ref}'"
+            )
 
         # Store
         item = {
@@ -412,6 +414,12 @@ class Manifest:
                 "Attempt to call Manifest.declare_item_set() outside of"
                 f" '{self.STAGES.entered}' stage with uninitialised context"
                 f" modules present (was in '{self._stage}' stage)"
+            )
+
+        # Validate
+        if ref in self._item_sets:
+            raise LIMARException(
+                f"Manifest item set already exists with ref '{ref}'"
             )
 
         # Compute
@@ -803,22 +811,36 @@ class ManifestModule:
 
         self._default_item_set = env.DEFAULT_ITEM_SET
 
-    def start(self, *_, **__):
+    def start(self, *_, mod: Namespace, **__):
         for manifest_name in self._manifest_names:
             self._load_manifest(manifest_name)
 
+        all_items = {}
+        for manifest in self._manifests:
+            for ref, item in manifest.items().items():
+                if ref in all_items:
+                    raise LIMARException(
+                        f"Manifest item with ref '{ref}' already declared in"
+                        " another manifest"
+                    )
+                all_items[ref] = item
+
+        all_item_sets = {}
+        for manifest in self._manifests:
+            for ref, item_set in manifest.item_sets().items():
+                if ref in all_item_sets:
+                    mod.log.warning(
+                        f"Manifest item set with ref '{ref}' already declared"
+                        " in another manifest. Merging into existing item set."
+                    )
+                    all_item_sets[ref].update(item_set)
+                else:
+                    all_item_sets[ref] = item_set
+
         self._global_manifest = Manifest(
             self._mod.log,
-            {
-                ref: item
-                for manifest in self._manifests
-                for ref, item in manifest.items().items()
-            },
-            {
-                ref: item_set
-                for manifest in self._manifests
-                for ref, item_set in manifest.item_sets().items()
-            }
+            all_items,
+            all_item_sets
         )
 
     def _load_manifest(self, name):
