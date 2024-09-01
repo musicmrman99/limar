@@ -1,5 +1,6 @@
 # IDE files
 .vscode
+*.code-workspace
 
 # Build environment files
 .venv*
