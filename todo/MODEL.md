@@ -31,7 +31,7 @@ Check Areas of Competence for anything else I might have missed
 - ./ builds
 - ./ secrets (a form of configuration)
 - test outputs
-- runtime outputs - ./configs, ? logs, ? output files
+- runtime outputs - ./ configs, ./ logs, ? output files
 
 ## Aspects of Quality (the 7 Cs)
 
