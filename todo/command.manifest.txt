@@ -398,27 +398,27 @@ rsync/remote (__TODO, sync,             file, dir, metadata, content, over: host
 #show, package, store, metadata, content
 #show, package, metadata
 #show, installation, metadata
-dpkg         (__TODO, package, global,     installation, configuration) # manage deb packages
-apt-get      (__TODO, package, global,     installation, configuration) # manage deb packages
-apt-cache    (__TODO, package, global,     installation, configuration) # manage the APT cache
-apt          (__TODO, package, global,     installation, configuration) # manage deb packages and the APT chache
-aptitute     (__TODO, package, global,     installation, configuration) # manage deb packages
-yum          (__TODO, package, global,     installation, configuration) # manage rpm packages
-rpm          (__TODO, package, global,     installation, configuration) # manage rpm packages
-pacman       (__TODO, package, global,     installation, configuration) # manage tar packages
-brew         (__TODO, package, global,     installation, configuration) # manage build scripts ('formulae') and binary packages ('bottles')
-flatpak      (__TODO, package, namespaced, installation, configuration) # manage flatpack packages
-snap         (__TODO, package, namespaced, installation, configuration) # manage snap packages
-conda        (__TODO, package, namespaced, installation, configuration, process-environment) # multi-language package and environment manager
-npm          (__TODO, package, project,    installation, configuration) # node and JS package manager
-yarn         (__TODO, package, project,    installation, configuration) # node and JS package manager
-pip          (__TODO, package, project,    installation, configuration) # python package manager
-cargo        (__TODO, package, project,    installation, configuration) # rust package manager
-gem          (__TODO, package, project,    installation, configuration) # ruby package manager
-composer     (__TODO, package, project,    installation, configuration) # PHP package manager
-maven        (__TODO, package, project,    installation, configuration) # Java package manager
-gradle       (__TODO, package, project,    installation, configuration) # Java package manager
-nuget        (__TODO, package, project,    installation, configuration) # .NET package manager
+dpkg         (__TODO, package, installation: global,     configuration) # manage deb packages
+apt-get      (__TODO, package, installation: global,     configuration) # manage deb packages
+apt-cache    (__TODO, package, installation: global,     configuration) # manage the APT cache
+apt          (__TODO, package, installation: global,     configuration) # manage deb packages and the APT chache
+aptitute     (__TODO, package, installation: global,     configuration) # manage deb packages
+yum          (__TODO, package, installation: global,     configuration) # manage rpm packages
+rpm          (__TODO, package, installation: global,     configuration) # manage rpm packages
+pacman       (__TODO, package, installation: global,     configuration) # manage tar packages
+brew         (__TODO, package, installation: global,     configuration) # manage build scripts ('formulae') and binary packages ('bottles')
+flatpak      (__TODO, package, installation: namespaced, configuration) # manage flatpack packages
+snap         (__TODO, package, installation: namespaced, configuration) # manage snap packages
+conda        (__TODO, package, installation: namespaced, configuration, process-environment) # multi-language package and environment manager
+npm          (__TODO, package, installation: project,    configuration) # node and JS package manager
+yarn         (__TODO, package, installation: project,    configuration) # node and JS package manager
+pip          (__TODO, package, installation: project,    configuration) # python package manager
+cargo        (__TODO, package, installation: project,    configuration) # rust package manager
+gem          (__TODO, package, installation: project,    configuration) # ruby package manager
+composer     (__TODO, package, installation: project,    configuration) # PHP package manager
+maven        (__TODO, package, installation: project,    configuration) # Java package manager
+gradle       (__TODO, package, installation: project,    configuration) # Java package manager
+nuget        (__TODO, package, installation: project,    configuration) # .NET package manager
 
 whereis      (__TODO, search, installation, content) # searches for binary, source, and man pages for a command
 which        (__TODO, search, installation, process-environment, content) # show where a command's program is, based on the current $PATH
@@ -437,36 +437,90 @@ docker/host-image/show   (__TODO, show,   host-image, file, metadata, content)
 ) {
   @query(
     command: """
+      pwd &&
+      git rev-parse --is-inside-work-tree !! &&
+      git rev-parse --show-toplevel !!
+    """
+    parse: """
+      [
+        {
+          id:          (.[0].stdout),
+          "git.isRepo": (.[1].stdout == "true"),
+          "git.repo.root": (if .[2].status == 0 then .[2].stdout else null end),
+        }
+      ]
+    """
+  )
+  git/repo (git, repo)
+
+  @query(
+    command: """
+      pwd &&
+      git status --porcelain &&
       git rev-parse --short HEAD &&
       git rev-parse HEAD &&
       git symbolic-ref --short -q HEAD !! &&
-      git describe --tags --exact-match !!
+      git describe --tags --exact-match !! &&
+      git rev-list --tags --max-count=1
     """
     parse: """
-      split("\n")
-      | [
+      [
         {
-          id:     (.[0]),
-          uid:    (.[1]),
-          branch: (if .[2] != "" then .[2] else null end),
-          tag:    (if .[3] != "" then .[3] else null end)
+          id:                            (.[0].stdout),
+
+          "git.isClean":                 (.[1].stdout == ""),
+
+          # Checked out commit
+          "git.current.commitId":        (.[2].stdout),
+          "git.current.commitIdFull":    (.[3].stdout),
+          "git.current.branch.name":     (if .[4].stdout != "" then .[4].stdout else null end),
+          "git.current.tag.name":        (if .[5].stdout != "" then .[5].stdout else null end),
+
+          # Latest tag at or before the current commit
+          "git.latest.tag.commitIdFull": (if .[6].stdout != "" then .[6].stdout else null end)
         }
       ]
-      """
+    """
   )
-  git/current (git, repo, current)
+  git/status (git, branch, tag)
 
-  #@query (
-  #  command: """git """
-  #  parse: """
-  #    .
-  #    """
-  #)
-  #git/branches (git, repo)
+  @query(
+    command: """
+      git branch -vv
+    """
+    # Ideas for using dynamic values:
+    # - template via `limar`      - {/ info git/status --- tr -1 -jq 'map(.)[0]."git.current.branch.name"' /}
+    # - template via `limar info` - {% git/status % .[0]."git.current.branch.name" %}
+    parse: """
+      .[0].stdout
+      | split("\n")
+      | map(
+        capture("^((?<worktree>[ \\*]) )?(?<name>[^ ]*) +(?<commitId>[^ ]*) (\\[(?<remoteInfo>[^\\]]*)\\] )?(?<commitMessage>.*)")
+        | {
+          isCurrent:     (if .worktree == "*" then "[bold]✓" elif .worktree == "+" then "✓" else null end),
+          id:            (.name),
+          commitId:      (.commitId),
+          commitMessage: (.commitMessage)
+        }
+      )
+    """
+  )
+  git/testing (git, branch)
 
   #"""
   TODO
   --------------------
+
+  # Write/Modify Commands (workflow)
+  # ----------
+
+  git clone $remote_url $local_path
+  git fetch -p
+
+  git branch $branch $source_ref
+  git branch -m # rename branch
+  git branch --unset-upstream
+  git branch -d/-D # delete / force-delete branch
 
   # Stash changes
   git stash --include-untracked # normal stash + unstaged, non-ignored files
@@ -476,16 +530,21 @@ docker/host-image/show   (__TODO, show,   host-image, file, metadata, content)
   # Change branch
   git checkout
 
+  git rebase origin/$branch
+  git rebase -i $default_branch
+  git rebase --abort
+
+  git push --force-with-lease
+  git push origin :$branch
+
+  # Requires Parameters
   # ----------
 
   # git info format
   #project | default_branch | D^< >D< >C< >C^ | num_branches | orphans
 
-  # Can use this to get the list of untracked files in the current directory
-  git status --porcelain
-
   # Branch exists?
-  git rev-parse --verify <branch-name>
+  git rev-parse --verify $branch
 
   # Get tracking branch
   branch_ref=refs/heads/$branch
@@ -497,14 +556,20 @@ docker/host-image/show   (__TODO, show,   host-image, file, metadata, content)
   # Conventional stuff, like:
   git log --format='%s' $branch_ref | grep "^[^(]*\($type\): "
 
-  # Is git repo
-  git rev-parse --is-inside-wolrk-tree 2>/dev/null # outputs 'true' if so
-
-  # Is working tree clean
-  git status --porcelain 2>/dev/null
-
   # Remote tracking branch exists
   git ls-remote --heads origin $branch_ref
+
+  # get ref of commit ID
+  git describe --tags $commit_id
+
+  # Get author date of commit at $ref
+  git log --date=format:%Y-%m-%d --pretty=format:%ad $ref
+
+  # Get formatted log of commit
+  git log -1 format=$format $ref
+
+  # Format every ref (eg. for getting branches with some patterns filtered out)
+  git for-each-ref --format=$format refs/heads
   """
 }
 
