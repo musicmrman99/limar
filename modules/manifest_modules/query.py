@@ -20,7 +20,7 @@ class Query:
         commands = [
             {
                 'command': list_strip(command, '!!'),
-                'ignoreStatus': len(command) > 0 and command[-1] == '!!'
+                'allowedToFail': len(command) > 0 and command[-1] == '!!'
             }
             for command in list_split(
                 shlex.split(context['opts']['command']),

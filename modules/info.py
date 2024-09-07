@@ -82,25 +82,30 @@ class InfoModule:
                     else '.'
                 )
 
-                command_outputs = []
+                command_outputs: list[dict[str, Any]] = []
                 for command in item['command']['commands']:
                     try:
-                        command_outputs.append(
-                            subprocess
-                                .check_output(command['command'])
-                                .decode()
-                                .strip()
+                        subproc = subprocess.Popen(
+                            command['command'],
+                            stdout=subprocess.PIPE,
+                            stderr=subprocess.PIPE
                         )
+                        stdout, stderr = subproc.communicate()
+                        command_status = 0
                     except subprocess.CalledProcessError as e:
-                        if not command['ignoreStatus']:
+                        if not command['allowedToFail']:
                             raise e
-                        command_outputs.append('')
+                        command_status = e.returncode
 
-                all_output = '\n'.join(command_outputs)
+                    command_outputs.append({
+                        'status': command_status,
+                        'stdout': stdout.decode().strip(),
+                        'stderr': stderr.decode().strip()
+                    })
 
                 output.append(mod.tr.query(
                     command_query,
-                    all_output,
+                    command_outputs,
                     lang='jq',
                     first=True
                 ))
