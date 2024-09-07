@@ -5,7 +5,9 @@
 
 ## Notes
 
-- https://www.youtube.com/watch?v=Md44rcw13k4
+- Things to look at again:
+  - https://www.youtube.com/watch?v=Md44rcw13k4
+  - https://source.android.com/docs/setup/reference/repo
 
 ---
 

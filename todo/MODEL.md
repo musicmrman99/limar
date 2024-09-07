@@ -2,36 +2,12 @@
 
 ## Subjects and Providers
 
-A **subject** is anything you may want to know about or manipulate using `limar`, such as:
-
-- Projects
-- Project Sets
-
-- Sources (source code, assets, etc.)
-- Artifacts (binaries, archives/packages, bundles, etc.)
-- Deployments (instances of a piece of software)
-- Configurations (parameter bindings for a given deployment)
-
-- Changes (file history, tagged versions, tasks, (the act of) deployments, etc.)
-- Quality (tests, validity, integrity, 7 Cs, etc.)
-- Knowledge (comments, documentation strings, readmes, licencing, design information and visualisations, etc.)
+A **subject** is anything you may want to know about or manipulate using `limar`.
 
 A **provider** is a module that adds the ability to view, modify, and otherwise
 manipulate one or more subjects using a specific tool. For example, the `git`
 provider adds various commands for manipulating git repositories, mainly within
 the `changes` subject.
-
----
-
-Check Areas of Competence for anything else I might have missed
-
-- ./ IDEs (Deployment of the IDE)
-- ./ local-only configs
-- ./ dependencies and their managers (deps are Artifacts, their managers are Deployments of the manager / tools)
-- ./ builds
-- ./ secrets (a form of configuration)
-- test outputs
-- runtime outputs - ./ configs, ./ logs, ? output files
 
 ## Aspects of Quality (the 7 Cs)
 
@@ -64,7 +40,7 @@ Check Areas of Competence for anything else I might have missed
   - evaluation (cycle)
 
 - System:
-  - Context ()
+  - Context (purpose & constraints)
   - Information (things)
   - Action (changes)
 

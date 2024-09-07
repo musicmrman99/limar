@@ -1,16 +1,10 @@
 # Todo - Unix
 Mainly Linux/Mac
 
-Tag Info (static for now)
+Entity Info (static for now)
 ================================================================================
 
 **NOTE**: Should differentiate between what a thing *is* and what a thing *operates on*.
-
-meta:
-- DUP (duplicate)
-- OLD (should no longer be used)
-
-----------
 
 ```
 /hardware
@@ -19,8 +13,8 @@ meta:
   > store-host/attachment
 /host (hardware?)
 
-/transient-data {
-  # Address of persistent-data
+/data-type {
+  # Address of data
   /path
 
   # Address of process
@@ -31,7 +25,7 @@ meta:
   /time
 }
 
-/persistent-data (store? path?) {
+/data (store? path?) {
   /host/image (project? version?)
 
   /filesystem (alias: fs)
@@ -39,9 +33,14 @@ meta:
   /file
 
   /project
-  /package (project? version?)
-  /installation (package? alias: install)
-  /configuration (package? installation (optional)? alias: config)
+  # source code, assets, etc.
+  /source (project? version?)
+  # binaries, archives/packages, bundles, disk images, etc.
+  /artifact (project? version?)
+  # running instances of an artifact
+  /deployment (artifact? alias: instance, installation)
+  # parameter and environment bindings for a given deployment
+  /configuration (artifact? deployment (optional)? alias: config, conf, cfg)
 }
 
 # I/O
@@ -89,7 +88,13 @@ meta:
 /web-resource
 /email
 /word
+
+/change # file history, tagged versions, tasks, (the act of) deployments, etc.
+/quality # tests, validity, integrity, 7 Cs, etc.
+/knowledge # comments, documentation strings, readmes, licencing, design information and visualisations, etc.
 ```
+
+Plus sets of Entities.
 
 Category Info (static for now)
 ================================================================================
@@ -124,164 +129,6 @@ System Entities - Creation, Information, Management, and Destruction (CRUD)
 - Tags without a name represent the target entities of the command
 - Unless overridden, all items are assumed to be `is: /operation`.
 
-Hardware
-====================
-
-### hardware
-- biosdecode  /hardware        - description of system's bios/uefi
-- dmidecode   /hardware        - description of system's hardware components
-- lspci       /hardware        - list PCI devices
-- lsblk       /hardware        - list block devices
-- lsusb       /hardware        - list USB devices
-
-Storage, Filesystems, Directories, and Files
-====================
-
-### filesystem
-- df          /filesystem      - show filesystem storage space, mounts, etc. info (stands for 'disk filesystem')
-- fstyp       /filesystem      - show filesystem types [only available on some systems; can usually use `mount` for this]
-
-- mkfs        /filesystem      - create a filesystem of the given type
-- cryptsetup  /filesystem      - create and set up a LUKS encrypted filesystem
-
-- growfs      /filesystem      - enlarge a ufs filesystem [bsd only]
-- tune2fs     /filesystem      - adjust filesystem parameters [ext2/3/4]
-
-- fsck        /filesystem      - check filesystem for errors and other issues, and attempt to fix them
-
-- sync        /filesystem      - flush filesystem buffers
-
-- mount       /filesystem      - show info about mounts of, mount, or unmount a filesystems
-- umount      /filesystem      - unmount a filesystem
-
-### storage space
-- du          /file            - show file/dir storage space info (stands for 'disk usage')
-
-### search
-- grep        /file            - search for files containing patterns
-- egrep       /file            - search for files containing patterns
-- find        /file, /dir      - search for files by name/pattern, attributes, etc. or list files with filters
-- ff          /file, /dir      - search for files by name (and others? anywhere on the system; stands for 'find files')
-
-### show metadata
-- ls          /file, /dir      - show file files in a directory and show file attributes
-- file        /file, /dir      - show file/dir type
-- stat        /file, /dir      - show inode metadata
-
-### show content
-- readlink    /file            - show symbolic link content
-- cat         /file            - concatenate files and output results
-- tac         /file            - cat, then reverses the order of the output [GNU only]
-- zcat        /file            - show contents of gzip compressed file
-- xzcat       /file            - show contents of xz compressed file
-- bzcat       /file            - show contents of bzip compressed file
-- zzcat       /file            - show contents of zip compressed file
-  - [and a number of others]
-
-- less        /file, is: /app  - view one or more files
-- more        /file, is: /app  - view one or more files
-
-## editors
-- ed          /file, is: /app  - edit one or more files
-- nano        /file, is: /app  - edit one or more files
-- vi / vim    /file, is: /app  - edit one or more files
-- emacs       /file, is: /app  - edit one or more files
-
-### compare
-- diff        /file, /dir      - compare files
-- cmp         /file            - compare files byte-by-byte
-- comm        /file            - compare sorted files for common/uncommon lines
-
-### create
-- mknod       /file            - create char/block device files & other special files
-- mkdir       /dir             - create dir
-- touch       /file            - create file (and set timestamps)
-- ln          /file            - create symbolic link file
-- mkfifo      /file            - create named pipe file
-
-- ar          /file            - create an archive
-- tar         /file            - create a tar archive
-- zip         /file            - package and compress files/dirs into zip (`.zip`) file
-- unzip       /file            - decompress and unpackage zip file
-- gzip        /file            - package and compress files/dirs into gzip (`.gz`) file
-- gunzip      /file            - decompress and unpackage gzip file
-- compress    /file, /dir      - compress (gzip?) file or all files in dir recursively (`-r`), adding `.Z` extension
-- uncompress  /file            - uncompress (gzip?) file or all files in dir recursively (`-r`), removing `.Z` extension
-
-### modify
-- truncate    /file            - shrink or extend size of file (`-s [+-<>/%]INT([K,M,G,T,P,E,Z,Y][B])`)
-- patch       /file            - apply a diff to a file
-- tee         /file            - both write (overwrite or append) input to a file, and output the input unchanged
-
-### copy
-- cp          /file, /dir      - copy a file/dir
-- dd          /file, /dir      - copy (and convert) a file (or dir??) (as a stream)
-
-- ftp         /file, /dir, /host/channel - transfer files/dirs to/from another host using FTP
-- sftp        /file, /dir, /host/channel - transfer files/dirs to/from another host using SFTP (FTP + SSL/TLS)
-- rcp         /file, /dir, /host/channel - transfer files/dirs to/from another host using RSH (stands for 'remote copy')
-- scp         /file, /dir, /host/channel - transfer files/dirs to/from another host using SSH (stands for 'secure copy')
-- wget        /file, /dir, /host/channel - fetch a file from another host using HTTP or HTTPS
-- curl        /file, /dir, /host/channel - fetch a file from another host using HTTP or HTTPS
-
-### move
-- mv          /file, /dir      - move a file/dir
-
-### set
-- chown       /file, /dir      - set ownership of file/dir
-- chgrp       /file, /dir      - set group ownership [use `chown` instead]
-- chmod       /file, /dir      - set mode (ie. permissions) of file/dir
-
-### delete
-- rm          /file, /dir      - delete file/dir
-- unlink      /file, /dir      - delete file/dir (lower-level version of `rm`) [use `rm` instead]
-- rmdir       /dir             - delete an empty dir [use `rm` instead]
-- shred       /file, /dir      - overwrite a file several times to hide its contents
-
-### synchronise
-- rsync       /file, /dir      - sync files/dirs (optionally over the network)
-
-Packages and Installations
-====================
-
-### system package managers
-
-#### global
-- dpkg        /package, /installation - manage deb packages
-- apt-get     /package, /installation - manage deb packages
-- apt-cache   /package, /installation - manage the APT cache
-- apt         /package, /installation - manage deb packages and the APT chache
-- aptitute    /package, /installation - manage deb packages
-- yum         /package, /installation - manage rpm packages
-- rpm         /package, /installation - manage rpm packages
-- pacman      /package, /installation - manage tar packages
-- brew        /package, /installation - manage build scripts ('formulae') and binary packages ('bottles')
-
-#### namespaced
-- flatpak     /package, /installation - manage flatpack packages
-- snap        /package, /installation - manage snap packages
-
-### language package managers
-- npm         /package, /installation - node and JS package manager
-- yarn        /package, /installation - node and JS package manager
-- pip         /package, /installation - python package manager
-- cargo       /package, /installation - rust package manager
-- gem         /package, /installation - ruby package manager
-- composer    /package, /installation - PHP package manager
-- maven       /package, /installation - Java package manager
-- gradle      /package, /installation - Java package manager
-- nuget       /package, /installation - .NET package manager
-
-### environment managers
-- conda       /package, /installation, /process/environment - multi-language package and environment manager
-
-### host image managers
-- docker      /host/image, /host - Docker container image and instance manager
-
-### search
-- whereis     /installation    - searches for binary, source, and man pages for a command
-- which       /installation, /process/environment - show where a command's program is, based on the current $PATH
-
 Commands
 ====================
 
@@ -309,9 +156,9 @@ Hosts, Kernels, and Processes
 ====================
 
 ### kernel
-- uname       /kernel/package  - show system information
-- arch        /kernel/package  - equivalent to `uname -m`
-- lsb_release /kernel/package  - release info for 'standard linux base' (LSB)
+- uname       /kernel/artifact - show system information
+- arch        /kernel/artifact - equivalent to `uname -m`
+- lsb_release /kernel/artifact - release info for 'standard linux base' (LSB)
 - modprobe    /kernel/module   - add or remove (`-r`) modules from the linux kernel
 - lsmod       /kernel/module   - list active modules in the running linux kernel
 - insmod      /kernel/module   - insert a module into the running linux kernel
@@ -320,7 +167,7 @@ Hosts, Kernels, and Processes
 - dmesg       /kernel/log      - show the contents of the kernel message buffer
 
 ### boot and service
-- service     /kernel, /service, /service/config, OLD - manage the system and services (don't use on systemd systems)
+- service     /kernel, /service, /service/config, __OLD - manage the system and services (don't use on systemd systems)
 - systemctl   /kernel, /service, /service/config - manage the system and services (see: `systemctl --help`)
 - journalctl  /kernel/log, /service/log - manage the systemd journal
 - uptime      /kernel          - show how long the system has been running
@@ -476,7 +323,7 @@ Identity and Trust
 ====================
 
 ### basic info
-- finger      /user, OLD       - show info about a given user (reads `.plan` files where available)
+- finger      /user, __OLD     - show info about a given user (reads `.plan` files where available)
 - pinky       /user            - show info about a given user (reads `.plan` files where available ??)
 - groups      /user, /group    - show groups that the current or a specified user is a member of
 - id          /user, /group    - show UID of a user and GIDs of all groups that user is a member of)

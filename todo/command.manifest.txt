@@ -1,0 +1,521 @@
+#"""
+System commands operate on the system.
+
+Operations are Creation, Representation, Management, and Destruction. These
+operations are broader than CRUD (eg. representation includes display as well as
+retreival, and management includes more than just updates).
+"""
+
+:__DUPLICATE (description: """Unused because it only contains functionality that another tool has, and may do better""")
+:__OLD (description: """Out of date, and should no longer be used""")
+:__TODO (description: """Not fully defined in the manifest yet""")
+
+@tags (system) {
+
+# Hardware
+# ----------------------------------------------------------------------------------------------------
+
+biosdecode (__TODO, hardware) # description of system's bios/uefi
+dmidecode  (__TODO, hardware) # description of system's hardware components
+
+# See:
+# - https://dassencio.org/75
+@tool (
+  command: lspci
+  description: """List PCI devices."""
+) {
+  @query (
+    command: """lspci -vvmmnn -D"""
+    parse: """
+      gsub("^\\s*|\\s*$"; "")
+      | split("\n\n")
+      | map(
+        [
+          split("\n")[]
+          | capture("^(?<key>[^:]*):\t(?<value>.*)$")
+        ]
+        | from_entries
+        | {
+          id:           (.Slot),
+
+          domain:       (.Slot | split(".")[0] | split(":")[0]),
+          bus:          (.Slot | split(".")[0] | split(":")[1]),
+          device:       (.Slot | split(".")[0] | split(":")[2]),
+          function:     (.Slot | split(".")[1]),
+
+          classId:      (.Class | sub(".* \\[(?<id>[0-9a-f]*)\\]"; "\(.id)")),
+          className:    (.Class | sub("(?<name>.*) \\[[0-9a-f]*\\]"; "\(.name)")),
+          vendorId:     (.Vendor | sub(".* \\[(?<id>[0-9a-f]*)\\]"; "\(.id)")),
+          vendorName:   (.Vendor | sub("(?<name>.*) \\[[0-9a-f]*\\]"; "\(.name)")),
+          deviceId:     (.Device | sub(".* \\[(?<id>[0-9a-f]*)\\]"; "\(.id)")),
+          deviceName:   (.Device | sub("(?<name>.*) \\[[0-9a-f]*\\]"; "\(.name)")),
+
+          physicalSlot: (.PhySlot),
+          revision:     (.Rev)
+        }
+      )
+      """
+  )
+  lspci/main (hardware, pci)
+
+  @query (
+    command: """lspci -vv"""
+    parse: """
+      gsub("^\\s*|\\s*$"; "")
+      | split("\n\n")
+      | map(
+        {
+          id: capture("^(?<id>[0-9a-f:\\.]*)").id
+        }
+        + (
+          [
+            split("\n")[]
+            | capture("^\\t(?<key>[^:]*): (?<value>.*)$")
+          ]
+          | from_entries
+          | {
+            control:      .Control,
+            status:       .Status,
+            latency:      .Latency,
+            kernelDriver: ."Kernel driver in use"
+          }
+        )
+      )
+      """
+  )
+  lspci/extras (hardware, pci)
+}
+
+# TODO: Finish this off
+# See:
+# - https://www.google.co.uk/search?q=linux+check+readahead
+# - https://www.postgresql.org/message-id/a1ec7d000809111207x3f5aefb9ybc66c556c532084b@mail.gmail.com
+# - https://www.google.co.uk/search?q=disk+readahead
+# - https://myadventuresincoding.wordpress.com/2020/10/04/cassandra-improving-disk-i-o-by-tuning-readahead/
+lsblk (__TODO, hardware)
+@tool (
+  command: lsblk
+  description: """List device, block, partition table, partition, and filesystem information."""
+) {  
+  # Entity Hierarchy:
+  #   Device (opt. Partition Table) > Block (opt. Partition) > Filesystem
+
+  @query (
+    command: """lsblk -a -bDz -Jlo MAJ:MIN,TYPE,PATH,RM,HOTPLUG,WWN,SERIAL,REV,MODEL,VENDOR,TRAN,RQ-SIZE,PHY-SEC,LOG-SEC,MIN-IO,OPT-IO,DISC-ALN,DISC-GRAN,DISC-MAX,DISC-ZERO,RAND"""
+    parse: """
+      fromjson
+      | .blockdevices
+      | map(
+        select(.type == "disk")
+        | {
+          # Identity and Relationships
+          # This uses the same IDs as blocks, because they cannot be
+          # differentiated by kernel ID without assuming too much about the
+          # kernel implementation (which is presumably why `lsblk` does not
+          # differentiate either).
+          id:                 (."maj:min"),
+          driverId:           (."maj:min" | split(":")[0]),
+          driverBlockId:      (."maj:min" | split(":")[1]),
+
+          # General Info (Optional)
+            # If uid is null, then probably not a physical device
+          uid:                (.wwn),
+          serial:             (.serial),
+          revision:           (.rev),
+          model:              (.model),
+          vendor:             (.vendor),
+
+          # General Technical Info
+          filePath:           (.path),
+
+          # Hardware Info
+          connectionType:     (.tran),
+          isRemovable:        ([.rm, .hotplug] | any),
+          isEntropySource:    (.rand),
+
+          # Hardware Sizes
+          requestQueueSize:   (."rq-size"),
+          physicalSectorSize: (."phy-sec"),
+          logicalSectorSize:  (."log-sec"),
+          minimumIOSize:      (."min-io"),
+          optimalIOSize:      (."opt-io"), # sometimes reports 0
+
+          # Trim (ie. active garbage collection; only some devices)
+              # TODO: What does this mean ???
+          trimAlignment:      (."disc-aln"),
+            # bytes; usually the physical sector size, but can be larger
+          trimGranularity:    (."disc-gran"),
+            # bytes; maximum unmappable bytes for drive
+            # see: https://www.jeffgeerling.com/blog/2020/enabling-trim-on-external-ssd-on-raspberry-pi
+          trimMaxBytes:       (."disc-max"),
+            # reports if device zero-fills on trim; some filesystems require this
+          trimDoesZeroFill:   (."disc-zero"),
+        }
+      )
+      """
+  )
+  lsblk/device (hardware, device)
+
+  @query (
+    command: """lsblk -a -bDz -Jlo MAJ:MIN,PTUUID,PTTYPE"""
+    parse: """
+      fromjson
+      | .blockdevices
+      | map(
+        # Device-to-PartitionTable = 1-to-[0,1]
+        # The data is also available on "part"-type blocks, but it is duplicate
+        # data - a disk can only have one partition table.
+        select(.type == "disk" and .ptuuid != null)
+        | {
+          # Identity and Relationships
+          id:     (."maj:min"),
+
+          # Partition Table
+          partitionTable: {
+            uid:  (.ptuuid),
+            type: (.pttype),
+          }
+        }
+      )
+      """
+  )
+  lsblk/device/partition-table (hardware, device, partition-table)
+
+  @query (
+    command: """lsblk -a -bDz -Jlo MAJ:MIN,NAME,KNAME,PATH,TYPE,SIZE,RA,ROTA,STATE,RO,OWNER,GROUP,MODE"""
+    parse: """
+      fromjson
+      | .blockdevices
+      | map({
+        # Identity and Relationships
+        id:                (."maj:min"),
+        driverId:          (."maj:min" | split(":")[0]),
+        driverBlockId:     (."maj:min" | split(":")[1]),
+
+        # General Info
+            # Does a block always have a UUID? (some do - see other queries)
+        name:              (.name),  # eg. "nvme1n1"
+        kernelName:        (.kname), # eg. "nvme1n1" (sometimes != name)
+        type:              (.type),  # eg. "loop", "disk", "part"ition
+
+        # Status (optional - disk only)
+        state:             (.state), # eg. "running" (HDD), "live" (SSD)
+
+        # Storage Space
+        storageSpaceTotal: (.size),
+
+        # Performance
+            # not the total size in bytes - it's measured in blocks, but of what size?
+        readAheadSize:     (.ra),
+        isRotationalDisk:  (.rota),
+
+        # Permissions
+        isReadOnly:        (.ro),
+        filePath:          (.path),  # eg. "/dev/nvme1n1"
+        fileOwner:         (.owner),
+        fileGroup:         (.group),
+        filePermissions:   (.mode),
+      })
+      """
+  )
+  lsblk/block (hardware, block)
+
+  @query (
+    command: """lsblk -a -bDz -Jlo MAJ:MIN,TYPE,PARTUUID,PARTLABEL,PARTTYPE,PARTTYPENAME,PARTFLAGS"""
+    parse: """
+      fromjson
+      | .blockdevices
+      | map(
+        # Block-to-Partition = subtype (therefore 1-to-[0,1])
+        select(.type == "part")
+        | {
+          # Identity and Relationships
+          id:       (."maj:min"),
+
+          partition: {
+            uid:    (.partuuid),
+            name:   (.partlabel), # ===== FIXME: if it's a subtype, why does it have two names (or types, etc.)?
+                # TODO: needed?
+            type:   (.parttypename),
+            typeId: (.parttype),
+              # Eg. "esp", "boot", "msftres", etc; pttype-specific
+            flags:  (.partflags),
+          },
+        }
+      )
+      """
+  )
+  lsblk/block/partition (hardware, block, partition)
+
+  @query (
+    command: """lsblk -a -bDz -Jlo MAJ:MIN,UUID,LABEL,FSTYPE,FSVER,FSSIZE,FSUSED,FSAVAIL,FSROOTS,MOUNTPOINTS"""
+    parse: """
+      fromjson
+      | .blockdevices
+      | map(
+        select((.type == "disk" or .type == "part") and .uuid != null)
+        | {
+          id: (."maj:min" + "/" + .uuid),
+
+          # General
+          uid:            (.uuid),
+          name:           (.label),
+          type:           (.fstype),
+          version:        (.fsver),
+
+          # Size (usually - ntfs does not have this for some reason)
+          spaceTotal:     (.fssize),
+          spaceUsed:      (.fsused),
+          spaceAvailable: (.fsavail),
+
+          # Mounts
+          # NOTE: The representation of 'none' is changing soon.
+          #       See https://github.com/util-linux/util-linux/issues/2871
+          # NOTE: They always come in pairs because each 'filesystem' has one.
+          #       See https://github.com/util-linux/util-linux/blob/master/libmount/src/fs.c#L1258
+          mounts: (
+            [
+              .fsroots,    # Where on this filesystem is considered the root directory
+              .mountpoints # Where in the system filesystem is the root directory of this filesystem attached
+            ]
+            | transpose
+            | map({
+              root: .[0],
+              mountpoint: .[1]
+            })
+          ),
+        }
+      )
+      """
+  )
+  lsblk/filesystem (hardware, filesystem)
+}
+blkid (__DUPLICATE, hardware, block) # Show block device information. Unnecessary - use `lsblk` instead.
+
+lsusb (__TODO, hardware) # List USB devices
+
+# Storage: Filesystems, Directories, and Files
+# ----------------------------------------------------------------------------------------------------
+
+# Filesystem
+# --------------------
+
+# Create and Delete
+mkfs         (__TODO, create, filesystem) # create a filesystem of the given type
+cryptsetup   (__TODO, create, filesystem) # create and set up a LUKS encrypted filesystem
+
+# Read
+mount/show   (__TODO, show,   filesystem) # show info about mounts of a filesystem
+df           (__TODO, show,   filesystem) # show filesystem storage space, mounts, etc. info (stands for 'disk filesystem')
+fstyp        (__TODO, show,   filesystem) # show filesystem types [only available on some systems; can usually use `mount` for this]
+fsck         (__TODO, verify, filesystem) # check filesystem for errors and other issues, and attempt to fix them
+# FIXME: Some other commands from `hardware` do this too, eg. lsblk
+
+# Write
+growfs       (__TODO, modify, filesystem) # enlarge a ufs filesystem [bsd only]
+tune2fs      (__TODO, modify, filesystem) # adjust filesystem parameters [ext2/3/4]
+sync         (__TODO, sync,   filesystem) # flush filesystem buffers
+mount/attach (__TODO, attach, filesystem) # mount or unmount a filesystem
+umount       (__TODO, attach, filesystem) # unmount a filesystem
+
+# File and Directory
+# --------------------
+
+# Create and Delete
+mkdir        (__TODO, create,                 dir) # create dir
+touch/create (__TODO, create,           file     ) # create file (and set timestamps)
+ln           (__TODO, create, symlink,  file     ) # create symbolic link file
+mkfifo       (__TODO, create, pipe,     file     ) # create named pipe file
+mknod        (__TODO, create, device,   file     ) # create char/block device files & other special files
+ar           (__TODO, create, archive,  file     ) # create an archive
+tar          (__TODO, create, archive,  file     ) # create a tar archive
+zip          (__TODO, create, archive,  file     ) # package and compress files/dirs into zip (`.zip`) file
+unzip        (__TODO, create,           file, dir) # decompress and unpackage zip file
+gzip         (__TODO, create, archive,  file     ) # package and compress files/dirs into gzip (`.gz`) file
+gunzip       (__TODO, create,           file, dir) # decompress and unpackage gzip file
+compress     (__TODO, create, archive,  file     ) # compress (gzip?) file or all files in dir recursively (`-r`), adding `.Z` extension
+uncompress   (__TODO, create,           file, dir) # uncompress (gzip?) file or all files in dir recursively (`-r`), removing `.Z` extension
+rm           (__TODO, delete,           file, dir) # delete file/dir
+unlink       (__TODO, delete,           file, dir) # delete file/dir (lower-level version of `rm`) [use `rm` instead]
+rmdir        (__TODO, delete,                 dir) # delete an empty dir [use `rm` instead]
+shred        (__TODO, delete,           file, dir, secure) # overwrite a file several times to hide its contents
+
+# Read
+du           (__TODO, show,             file,      metadata         ) # show file/dir storage space info (stands for 'disk usage')
+ls           (__TODO, show,             file, dir, metadata         ) # show file files in a directory and show file attributes
+file         (__TODO, show,             file, dir, metadata         ) # show file/dir type
+stat         (__TODO, show,             file, dir, metadata         ) # show inode metadata
+readlink     (__TODO, show,    symlink, file,                content) # show symbolic link content
+cat          (__TODO, show,    text,    file,                content) # concatenate files and output results
+tac          (__TODO, show,    text,    file,                content) # cat, then reverses the order of the output [GNU only]
+zcat         (__TODO, show,    archive, file,                content) # show contents of gzip compressed file
+xzcat        (__TODO, show,    archive, file,                content) # show contents of xz compressed file
+bzcat        (__TODO, show,    archive, file,                content) # show contents of bzip compressed file
+zzcat        (__TODO, show,    archive, file,                content) # show contents of zip compressed file
+less         (__TODO, show,    text,    file,                content, is: app) # view one or more files
+more         (__TODO, show,    text,    file,                content, is: app) # view one or more files
+find         (__TODO, search,           file, dir, metadata         ) # search for files by name/pattern, attributes, etc. or list files with filters
+ff           (__TODO, search,           file, dir, metadata         ) # search for files by name (and others? anywhere on the system; stands for 'find files')
+grep         (__TODO, search,           file,                content) # search for files containing patterns
+egrep        (__TODO, search,           file,                content) # search for files containing patterns
+diff         (__TODO, compare,          file, dir,           content) # compare files
+cmp          (__TODO, compare,          file,                content) # compare files byte-by-byte
+comm         (__TODO, compare, text,    file,                content) # compare sorted files for common/uncommon lines
+
+# Write
+touch/set    (__TODO, set,              file,      metadata         ) # create file (and set timestamps)
+chown        (__TODO, set,              file, dir, metadata         ) # set ownership of file/dir
+chgrp        (__TODO, set,              file, dir, metadata         ) # set group ownership [use `chown` instead]
+chmod        (__TODO, set,              file, dir, metadata         ) # set mode (ie. permissions) of file/dir
+truncate     (__TODO, set,              file,                content) # shrink or extend size of file (`-s [+-<>/%]INT([K,M,G,T,P,E,Z,Y][B])`)
+patch        (__TODO, set,              file,                content) # apply a diff to a file
+tee          (__TODO, set,              file,                content) # both write (overwrite or append) input to a file, and output the input unchanged
+ed           (__TODO, show, set, text,  file,                content, is: app) # edit one or more files
+nano         (__TODO, show, set, text,  file,                content, is: app) # edit one or more files
+vi           (__TODO, show, set, text,  file,                content, is: app) # edit one or more files
+vim          (__TODO, show, set, text,  file,                content, is: app) # edit one or more files
+emacs        (__TODO, show, set, text,  file,                content, is: app) # edit one or more files
+cp           (__TODO, copy,             file, dir, metadata, content) # copy a file/dir
+dd           (__TODO, copy,             file,      metadata, content, over: process/channel) # copy (and convert) a file (or dir??) (as a stream) to any other file, including a device file
+ftp          (__TODO, copy,             file, dir, metadata, content, over: host/channel) # transfer files/dirs to/from another host using FTP
+sftp         (__TODO, copy,             file, dir, metadata, content, over: host/channel) # transfer files/dirs to/from another host using SFTP (FTP + SSL/TLS)
+rcp          (__TODO, copy,             file, dir, metadata, content, over: host/channel) # transfer files/dirs to/from another host using RSH (stands for 'remote copy')
+scp          (__TODO, copy,             file, dir, metadata, content, over: host/channel) # transfer files/dirs to/from another host using SSH (stands for 'secure copy')
+# FIXME: This can copy more than just files - it can copy any HTTP resource
+wget         (__TODO, copy,             file, dir, metadata, content, over: host/channel) # fetch a file from another host using HTTP or HTTPS
+# FIXME: This can more than just copy files - it can send any HTTP request
+curl         (__TODO, copy,             file, dir, metadata, content, over: host/channel) # fetch a file from another host using HTTP or HTTPS
+mv           (__TODO, move,             file, dir, metadata, content) # move a file/dir
+rsync/local  (__TODO, sync,             file, dir, metadata, content) # sync files/dirs
+rsync/remote (__TODO, sync,             file, dir, metadata, content, over: host/channel) # sync files/dirs over the network
+
+# Projects: Sources, Artifacts, Deployments, and Configuration
+# ----------------------------------------------------------------------------------------------------
+
+# FIXME: Every package manager has the following variations:
+#create, installation
+#delete, installation
+#show, package, store, metadata, content
+#show, package, metadata
+#show, installation, metadata
+dpkg         (__TODO, package, global,     installation, configuration) # manage deb packages
+apt-get      (__TODO, package, global,     installation, configuration) # manage deb packages
+apt-cache    (__TODO, package, global,     installation, configuration) # manage the APT cache
+apt          (__TODO, package, global,     installation, configuration) # manage deb packages and the APT chache
+aptitute     (__TODO, package, global,     installation, configuration) # manage deb packages
+yum          (__TODO, package, global,     installation, configuration) # manage rpm packages
+rpm          (__TODO, package, global,     installation, configuration) # manage rpm packages
+pacman       (__TODO, package, global,     installation, configuration) # manage tar packages
+brew         (__TODO, package, global,     installation, configuration) # manage build scripts ('formulae') and binary packages ('bottles')
+flatpak      (__TODO, package, namespaced, installation, configuration) # manage flatpack packages
+snap         (__TODO, package, namespaced, installation, configuration) # manage snap packages
+conda        (__TODO, package, namespaced, installation, configuration, process-environment) # multi-language package and environment manager
+npm          (__TODO, package, project,    installation, configuration) # node and JS package manager
+yarn         (__TODO, package, project,    installation, configuration) # node and JS package manager
+pip          (__TODO, package, project,    installation, configuration) # python package manager
+cargo        (__TODO, package, project,    installation, configuration) # rust package manager
+gem          (__TODO, package, project,    installation, configuration) # ruby package manager
+composer     (__TODO, package, project,    installation, configuration) # PHP package manager
+maven        (__TODO, package, project,    installation, configuration) # Java package manager
+gradle       (__TODO, package, project,    installation, configuration) # Java package manager
+nuget        (__TODO, package, project,    installation, configuration) # .NET package manager
+
+whereis      (__TODO, search, installation, content) # searches for binary, source, and man pages for a command
+which        (__TODO, search, installation, process-environment, content) # show where a command's program is, based on the current $PATH
+
+# Docker container image and instance manager
+docker/host/create       (__TODO, create, host)
+docker/host/delete       (__TODO, delete, host)
+docker/host/show         (__TODO, show,   host, metadata, content)
+docker/host-image/create (__TODO, create, host-image, file)
+docker/host-image/delete (__TODO, delete, host-image, file)
+docker/host-image/show   (__TODO, show,   host-image, file, metadata, content)
+
+@tool (
+  command: git
+  description: """Manage versions and changes to files, particularly software source code."""
+) {
+  @query(
+    command: """
+      git rev-parse --short HEAD &&
+      git rev-parse HEAD &&
+      git symbolic-ref --short -q HEAD !! &&
+      git describe --tags --exact-match !!
+    """
+    parse: """
+      split("\n")
+      | [
+        {
+          id:     (.[0]),
+          uid:    (.[1]),
+          branch: (if .[2] != "" then .[2] else null end),
+          tag:    (if .[3] != "" then .[3] else null end)
+        }
+      ]
+      """
+  )
+  git/current (git, repo, current)
+
+  #@query (
+  #  command: """git """
+  #  parse: """
+  #    .
+  #    """
+  #)
+  #git/branches (git, repo)
+
+  #"""
+  TODO
+  --------------------
+
+  # Stash changes
+  git stash --include-untracked # normal stash + unstaged, non-ignored files
+  git stash --all # stash EVERYTHING
+  git stash pop --index # Re-stage changes that were staged before stash
+
+  # Change branch
+  git checkout
+
+  # ----------
+
+  # git info format
+  #project | default_branch | D^< >D< >C< >C^ | num_branches | orphans
+
+  # Can use this to get the list of untracked files in the current directory
+  git status --porcelain
+
+  # Branch exists?
+  git rev-parse --verify <branch-name>
+
+  # Get tracking branch
+  branch_ref=refs/heads/$branch
+  git for-each-ref --format='%(upstream:short)' $branch_ref
+
+  # How many commits from one branch to another
+  git rev-list --count $from_branch..$to_branch
+
+  # Conventional stuff, like:
+  git log --format='%s' $branch_ref | grep "^[^(]*\($type\): "
+
+  # Is git repo
+  git rev-parse --is-inside-wolrk-tree 2>/dev/null # outputs 'true' if so
+
+  # Is working tree clean
+  git status --porcelain 2>/dev/null
+
+  # Remote tracking branch exists
+  git ls-remote --heads origin $branch_ref
+  """
+}
+
+# Categories
+# ----------------------------------------------------------------------------------------------------
+
+artifact   [package | host-image]
+deployment [installation | instance]
+
+category/hardware [command & [hardware]]
+category/storage  [command & [filesystem | file | dir]]
+category/projects [command & [source | artifact | deployment | configuration]]
+
+}
