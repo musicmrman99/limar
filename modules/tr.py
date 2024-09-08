@@ -1,6 +1,7 @@
+from itertools import chain
+
 import jq
 import yaql
-
 from rich.table import Table
 from rich.tree import Tree
 from rich.console import RenderableType
@@ -10,7 +11,7 @@ from core.modulemanager import ModuleAccessor
 
 # Types
 from argparse import ArgumentParser, Namespace
-from typing import Any
+from typing import Any, Iterable, Mapping, Sequence, Set
 
 class TrModule:
     """
@@ -21,14 +22,6 @@ class TrModule:
         self.yaql_engine = yaql.factory.YaqlFactory().create()
 
     def configure_args(self, *, parser: ArgumentParser, **_):
-        # Permit data forwarding
-        parser.add_argument('---',
-            action='store_true', default=False, dest='output_is_forward',
-            help="""
-            Specifies that the result of this module call should be forwarded to
-            another module. This option terminates this module call.
-            """)
-
         # Query
         parser.add_argument('-jq', '--json-query', default=None,
             help="The `jq`-language query to apply.")
@@ -94,7 +87,20 @@ class TrModule:
             action='store_true', default=False,
             help="Whether to omit pretty formatting for the output data.")
 
-    def __call__(self, *, args: Namespace, forwarded_data: Any, **_):
+        parser.add_argument('-A', '--multi-output',
+            action='store_true', default=False,
+            help="""
+            Whether to destructure the output data into `mod.console.print()`
+            instead of returning it.
+            """)
+
+    def __call__(self, *,
+            mod: Namespace,
+            args: Namespace,
+            forwarded_data: Any,
+            output_is_forward: bool,
+            **_
+    ):
         output = forwarded_data
 
         if args.json_query is not None:
@@ -121,16 +127,25 @@ class TrModule:
             )
 
             has_headers_assumed = (
-                args.object_mapping == 'all' and not args.output_is_forward
+                args.object_mapping == 'all' and not output_is_forward
             )
-            if not args.output_is_forward and not args.raw_output:
+            if not output_is_forward and not args.raw_output:
                 output = self.render_table(
                     output,
                     has_metadata=args.has_metadata,
                     has_headers=args.has_headers or has_headers_assumed
                 )
 
-        return output
+        if args.multi_output:
+            if isinstance(output, Mapping):
+                mod.console.print(*chain.from_iterable(output.items()))
+            elif isinstance(output, Iterable):
+                mod.console.print(*output)
+            else:
+                mod.console.print(output)
+            return None
+        else:
+            return output
 
     @ModuleAccessor.invokable_as_service
     def query(self, query: str, data: Any, *, lang: str, first=False):

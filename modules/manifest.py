@@ -714,6 +714,14 @@ class ManifestModule:
         parser.add_variable('DEFAULT_ITEM_SET', default_is_none=True)
 
     def configure_args(self, *, mod: Namespace, parser: ArgumentParser, **_):
+        parser.add_argument('--input-format', default=None,
+            help="""
+            The format of the forwarded input. Irrelevant without using `-L` to
+            start at a phase after GET. The default is item-set, unless the
+            forwarded input contains both the `ref` and `tags` properties, in
+            which case it defaults to `item`.
+            """)
+
         # Subcommands
         manifest_subparsers = parser.add_subparsers(dest="manifest_command")
 
@@ -721,7 +729,7 @@ class ManifestModule:
         item_parser = manifest_subparsers.add_parser('item')
         mod.docs.add_docs_arg(item_parser)
 
-        item_parser.add_argument('pattern', metavar='PATTERN',
+        item_parser.add_argument('pattern', metavar='PATTERN', nargs='?',
             help='A regex pattern to resolve to an item')
 
         item_parser.add_argument('--item-set',
@@ -747,12 +755,6 @@ class ManifestModule:
             """)
 
         mod.phase.configure_phase_control_args(item_parser)
-        item_parser.add_argument('---',
-            action='store_true', default=False, dest='output_is_forward',
-            help="""
-            Specifies that the result of this module call should be forwarded to
-            another module. This option terminates this module call.
-            """)
 
         # Subcommands / Resolve Item Set
         item_set_parser = manifest_subparsers.add_parser('item-set')
@@ -771,7 +773,7 @@ class ManifestModule:
             effectively inaccessible.
             """)
 
-        item_set_parser.add_argument('pattern', metavar='PATTERN',
+        item_set_parser.add_argument('pattern', metavar='PATTERN', nargs='?',
             help="""
             A regex pattern to resolve to an item set, or an item set spec if
             `--set` was given (see its help for details).
@@ -794,12 +796,6 @@ class ManifestModule:
             """)
 
         mod.phase.configure_phase_control_args(item_set_parser)
-        item_set_parser.add_argument('---',
-            action='store_true', default=False, dest='output_is_forward',
-            help="""
-            Specifies that the result of this module call should be forwarded to
-            another module. This option terminates this module call.
-            """)
 
     def configure(self, *, mod: Namespace, env: Namespace, **_):
         self._mod = mod # For methods that aren't directly given it
@@ -914,22 +910,42 @@ class ManifestModule:
         # Add Manifest
         self._manifests.append(manifest)
 
-    def __call__(self, *, mod: Namespace, args: Namespace, **_):
+    def __call__(self, *,
+            mod: Namespace,
+            args: Namespace,
+            forwarded_data: Any,
+            output_is_forward: bool,
+            **_
+    ):
         mod.log.trace(f"manifest(args={args})")
 
         # Set up phase process and a common transition function
         # WARNING: THIS MUTATES STATE, even though it's used in `if` statements
         transition_to_phase = mod.phase.create_process(MANIFEST_LIFECYCLE, args)
 
-        output: Any = None
+        output: Any = forwarded_data
+        # Very likely to be an item, not an item set, but can be overridden with
+        # `--input-format item-set`
+        if args.input_format == 'item-set':
+            pass
+        elif (
+            args.input_format == 'item' or
+            isinstance(output, dict) and 'ref' in output and 'tags' in output
+        ):
+            output = {output['ref']: output}
 
         if args.manifest_command == 'item':
             if transition_to_phase(MANIFEST_LIFECYCLE.PHASES.GET):
+                if args.pattern is None:
+                    raise LIMARException(
+                        'PATTERN is required if running GET phase'
+                    )
+
                 item_set = self.get_item_set(args.item_set)
                 output = self.get_item(args.pattern, item_set=item_set)
 
             if transition_to_phase(
-                MANIFEST_LIFECYCLE.PHASES.FLATTEN, not args.output_is_forward
+                MANIFEST_LIFECYCLE.PHASES.FLATTEN, not output_is_forward
             ):
                 output = self._list_flattened_items(
                     {'': output},
@@ -938,17 +954,22 @@ class ManifestModule:
                 )
 
             if transition_to_phase(
-                MANIFEST_LIFECYCLE.PHASES.TABULATE, not args.output_is_forward
+                MANIFEST_LIFECYCLE.PHASES.TABULATE, not output_is_forward
             ):
                 output = mod.tr.tabulate(output, obj_mapping='all')
 
             if transition_to_phase(
-                MANIFEST_LIFECYCLE.PHASES.RENDER, not args.output_is_forward
+                MANIFEST_LIFECYCLE.PHASES.RENDER, not output_is_forward
             ):
                 output = mod.tr.render_table(output, has_headers=True)
 
         elif args.manifest_command == 'item-set':
             if transition_to_phase(MANIFEST_LIFECYCLE.PHASES.GET):
+                if args.pattern is None:
+                    raise LIMARException(
+                        'PATTERN is required if running GET phase'
+                    )
+
                 if args.item_set_spec:
                     ref = f'{random.getrandbits(4*32):0{32}x}'
                     self.declare_item_set(ref, args.pattern)
@@ -957,7 +978,7 @@ class ManifestModule:
                     output = self.get_item_set(args.pattern)
 
             if transition_to_phase(
-                MANIFEST_LIFECYCLE.PHASES.FLATTEN, not args.output_is_forward
+                MANIFEST_LIFECYCLE.PHASES.FLATTEN, not output_is_forward
             ):
                 output = self._list_flattened_items(
                     output,
@@ -966,12 +987,12 @@ class ManifestModule:
                 )
 
             if transition_to_phase(
-                MANIFEST_LIFECYCLE.PHASES.TABULATE, not args.output_is_forward
+                MANIFEST_LIFECYCLE.PHASES.TABULATE, not output_is_forward
             ):
                 output = mod.tr.tabulate(output, obj_mapping='all')
 
             if transition_to_phase(
-                MANIFEST_LIFECYCLE.PHASES.RENDER, not args.output_is_forward
+                MANIFEST_LIFECYCLE.PHASES.RENDER, not output_is_forward
             ):
                 output = mod.tr.render_table(output, has_headers=True)
 

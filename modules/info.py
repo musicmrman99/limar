@@ -40,12 +40,6 @@ class InfoModule:
 
         # Subcommands / Resolve Item Set - Output Controls
         mod.phase.configure_phase_control_args(parser)
-        parser.add_argument('---',
-            action='store_true', default=False, dest='output_is_forward',
-            help="""
-            Specifies that the result of this module call should be forwarded to
-            another module. This option terminates this module call.
-            """)
 
     def configure(self, *, mod: Namespace, **_):
         mod.phase.register_system(INFO_LIFECYCLE)
@@ -54,6 +48,7 @@ class InfoModule:
             mod: Namespace,
             args: Namespace,
             forwarded_data: Any,
+            output_is_forward: bool,
             **_
     ):
         # Set up phase process and a common transition function
@@ -126,12 +121,12 @@ class InfoModule:
 
         # Format
         if transition_to_phase(
-            INFO_LIFECYCLE.PHASES.TABULATE, not args.output_is_forward
+            INFO_LIFECYCLE.PHASES.TABULATE, not output_is_forward
         ):
             output = mod.tr.tabulate(output.values(), obj_mapping='all')
 
         if transition_to_phase(
-            INFO_LIFECYCLE.PHASES.RENDER, not args.output_is_forward
+            INFO_LIFECYCLE.PHASES.RENDER, not output_is_forward
         ):
             output = mod.tr.render_table(output, has_headers=True)
 

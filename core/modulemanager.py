@@ -5,7 +5,11 @@ from typing import (
     Callable,
     Concatenate,
     Literal,
+    Mapping,
+    MutableMapping,
+    MutableSequence,
     ParamSpec,
+    Sequence,
     TypeVar
 )
 
@@ -14,11 +18,12 @@ import sys
 import os
 import re
 import importlib
+from copy import copy
 from graphlib import CycleError, TopologicalSorter
 from argparse import ArgumentParser, Namespace
 
 from core.envparse import EnvironmentParser
-from core.utils import list_split
+from core.utils import list_split_match
 from core.exceptions import LIMARException
 import core.modules as core_module_package
 
@@ -580,7 +585,10 @@ class ModuleLifecycle:
     # NOTE: Grammar for the command line is:
     #         app_name global_opt*
     #         module_name module_opt* module_arg*
-    #         ('---' module_name module_opt* module_arg*)*
+    #         (
+    #           (('-' | ']') '-' ('-' | '['))
+    #           module_name module_opt* module_arg*
+    #         )*
 
     def configure_root_arguments(self,
             all_mods: dict[str, Any],
@@ -609,7 +617,7 @@ class ModuleLifecycle:
     def parse_root_arguments(self,
             arg_parser: ArgumentParser,
             cli_args: list[str] | None = None
-    ) -> tuple[Namespace, list[tuple[str, list[str]]]]:
+    ) -> tuple[Namespace, list[tuple[str, list[str], str | None, str | None]]]:
         self._proceed_to_phase(LIFECYCLE.PHASES.ROOT_ARGUMENT_PARSING)
 
         if cli_args is None:
@@ -628,19 +636,19 @@ class ModuleLifecycle:
         add_docs_arg(arg_parser)
 
         # Manually parse remaining args into a set of module arguments, split
-        # on '---', and prefix with the root arguments so that every module
-        # invokation will also have all global args available to it.
+        # on any forwarding operator, and prefix with the root arguments so that
+        # every module invokation will also have all global args available.
         root_cli_args = cli_args[:-len(remaining_args)]
-        module_cli_args_set = list_split(remaining_args, '---')
+        module_cli_args_set, forward_types = (
+            list_split_match(remaining_args, '[-\\]][-][-\\[]')
+        )
 
         module_full_cli_args_set = [
             (
                 module_cli_args[0], # The module name
-                [
-                    *root_cli_args,
-                    *module_cli_args,
-                    *(['---'] if i+1 < len(module_cli_args_set) else [])
-                ]
+                [*root_cli_args, *module_cli_args],
+                forward_types[i-1] if i > 0 else None,
+                forward_types[i] if i < len(module_cli_args_set) - 1 else None
             )
             for i, module_cli_args in enumerate(module_cli_args_set)
         ]
@@ -751,13 +759,15 @@ class ModuleLifecycle:
 
     def parse_arguments(self,
             arg_parser: ArgumentParser,
-            module_full_cli_args_set: list[tuple[str, list[str]]]
-    ) -> list[tuple[str, Namespace]]:
+            module_full_cli_args_set: list[
+                tuple[str, list[str], str | None, str | None]
+            ]
+    ) -> list[tuple[str, Namespace, str | None, str | None]]:
         raw_invokations_sys = self._create_subsystem(
             f'{__name__}:raw_invokations',
             tuple(
                 f'{invokation_index}-{name}'
-                for invokation_index, (name, _) in
+                for invokation_index, (name, _args, _pe_f, _po_f) in
                     enumerate(module_full_cli_args_set)
             )
         )
@@ -768,10 +778,19 @@ class ModuleLifecycle:
         )
         self._proceed_to_phase(LIFECYCLE.PHASES.ARGUMENT_PARSING)
 
-        module_args_set = []
-        for raw_invokation_index, (name, module_cli_args) in enumerate(
+        module_args_set: list[
+            tuple[str, Namespace, str | None, str | None]
+        ] = []
+        for raw_invokation_index, raw_invokation in enumerate(
                 module_full_cli_args_set
         ):
+            (
+                name,
+                module_cli_args,
+                pre_forward_type,
+                post_forward_type
+            ) = raw_invokation
+
             raw_invokations_process.transition_to(
                 f'{raw_invokation_index}-{name}'
             )
@@ -785,14 +804,22 @@ class ModuleLifecycle:
             except SystemExit as e:
                 self._stop_subprocess(LIFECYCLE.PHASES.ARGUMENT_PARSING)
                 raise e
-            module_args_set.append((name, module_args))
+
+            module_args_set.append((
+                name,
+                module_args,
+                pre_forward_type,
+                post_forward_type
+            ))
             self._trace('Result:', module_args_set[-1])
 
         raw_invokations_process.transition_to_complete()
         return module_args_set
 
     def invoke_and_call(self,
-            module_args_set: list[tuple[str, Namespace]],
+            module_args_set: list[
+                tuple[str, Namespace, str | None, str | None]
+            ],
             envs: dict[str, Namespace],
             start_exceptions: list[Exception | KeyboardInterrupt],
             accessor_object: Any
@@ -807,21 +834,37 @@ class ModuleLifecycle:
             f'{__name__}:invokations',
             tuple(
                 f'{invokation_index}-{name}'
-                for invokation_index, (name, _) in enumerate(module_args_set)
+                for invokation_index, (name, _args, _pe_f, _po_f) in enumerate(
+                    module_args_set
+                )
             )
         )
         invokations_process = self._create_subprocess(invokations_subsystem)
         self._start_subprocess(LIFECYCLE.PHASES.RUNNING, invokations_process)
         self._proceed_to_phase(LIFECYCLE.PHASES.RUNNING)
 
-        forwarded_data: Any = None
+        leaf_level: int = 1
+        forward_carry: list[Any] = [None]
         if not sys.stdin.isatty():
-            forwarded_data = sys.stdin.read()
+            forward_carry[0] = sys.stdin.read()
+            if len(module_args_set) > 0:
+                module_args_set[0] = (
+                    *module_args_set[0][:2],
+                    '---',
+                    *module_args_set[0][3:]
+                )
 
-        for invokation_index, (name, module_args) in enumerate(module_args_set):
+        for invokation_index, raw_module_args in enumerate(module_args_set):
+            (
+                name,
+                module_args,
+                pre_forward_type,
+                post_forward_type
+            ) = raw_module_args
+
             invokations_process.transition_to(f'{invokation_index}-{name}')
 
-            self._debug(f"Running module '{name}'")
+            self._info(f"--- Running Module '{name}' ----------")
             try:
                 # Eww, using object state instead of args ... yes, but modules
                 # have to be able to do this anyway (via the accessors), so it's
@@ -832,13 +875,46 @@ class ModuleLifecycle:
                 if not callable(module):
                     raise LIMARException(f"Module not callable: '{name}'")
 
-                self._debug(f"Forwarded data:", forwarded_data)
-                forwarded_data: Any = module(
-                    mod=accessor_object,
-                    env=envs[name],
-                    args=module_args,
-                    forwarded_data=forwarded_data
+                # Call module and collect output(s)
+                if pre_forward_type is None or pre_forward_type[2] == '-':
+                    pass
+                elif pre_forward_type[2] == '[':
+                    leaf_level += 1
+
+                self._debug(
+                    'All forwarded data'
+                    f' (calls are {leaf_level} [white]level(s) deep):',
+                    forward_carry
                 )
+
+                def call_module(forward_input: Any) -> Any:
+                    self._debug('Forwarded input:', forward_input)
+                    return module(
+                        mod=accessor_object,
+                        env=envs[name],
+                        args=module_args,
+                        forwarded_data=forward_input,
+                        output_is_forward=(post_forward_type is not None)
+                    )
+                forward_carry = self._map_tree_leaves(
+                    call_module,
+                    forward_carry,
+                    leaf_level
+                )
+
+                if post_forward_type is None or post_forward_type[0] == '-':
+                    pass
+                elif post_forward_type[0] == ']':
+                    leaf_level -= 1
+                    if leaf_level < 1:
+                        self._debug(
+                            "Requested forwarding contraction without a"
+                            " forwarding expansion: wrapping forwarded data in"
+                            " a list instead."
+                        )
+                        leaf_level += 1
+                        forward_carry = [forward_carry]
+
             except (Exception, KeyboardInterrupt) as e:
                 self._error(
                     f"Run of module '{name}' failed, aborting further calls"
@@ -848,8 +924,9 @@ class ModuleLifecycle:
 
         invokations_process.transition_to_complete()
 
-        if forwarded_data != None:
-            self._print(forwarded_data)
+        for output in forward_carry:
+            if output != None:
+                self._print(output)
 
     def stop(self,
             mods_to_stop: tuple[str, ...],
@@ -1077,6 +1154,55 @@ class ModuleLifecycle:
     def _proceed_to_phase(self, phase: Phase):
         self._controller.transition_to(phase)
         self._info(f"{'-'*5} {phase} {'-'*(43-len(phase))}")
+
+    # Utils
+    # --------------------
+
+    def _map_tree_leaves(self,
+            fn: Callable[[Any], Any],
+            data: Any,
+            levels: int
+    ) -> Any:
+        """
+        Clone the structure of data to one less than the given number of
+        levels deep, then apply fn to each item at levels deep. If levels is 1,
+        then this is equivalent to `map(fn, data)`. If levels is 0, then this is
+        equivalent to `fn(data)`.
+        """
+
+        # A negative number of levels are considered to mean "the level to map
+        # at was reached before this function was called", so do nothing.
+        if levels < 0:
+            output = data
+        elif levels == 0:
+            output = fn(data)
+        else:
+            if isinstance(data, MutableMapping):
+                output = copy(data)
+                for key, value in output.items():
+                    output[key] = self._map_tree_leaves(fn, value, levels-1)
+            elif isinstance(data, Mapping):
+                # TODO: Is there a way of making a new instance of the same type?
+                output = {
+                    key: self._map_tree_leaves(fn, value, levels-1)
+                    for key, value in data.items()
+                }
+            elif isinstance(data, MutableSequence):
+                output = copy(data)
+                for i, item in enumerate(output):
+                    output[i] = self._map_tree_leaves(fn, item, levels-1)
+            elif isinstance(data, Sequence):
+                # TODO: Is there a way of making a new instance of the same type?
+                output = tuple(
+                    self._map_tree_leaves(fn, item, levels-1)
+                    for item in data
+                )
+            else:
+                raise LIMARException(
+                    f"Cannot map non-sequence '{data}' at level '{levels}'"
+                    " using function '{fn.__name__}'"
+                )
+        return output
 
 class ModuleManager:
     """

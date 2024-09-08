@@ -1,7 +1,7 @@
 from core.exceptions import LIMARException
 import shlex
 
-from core.utils import list_split, list_strip
+from core.utils import list_split_eq, list_strip
 
 class Query:
     @staticmethod
@@ -22,7 +22,7 @@ class Query:
                 'command': list_strip(command, '!!'),
                 'allowedToFail': len(command) > 0 and command[-1] == '!!'
             }
-            for command in list_split(
+            for command in list_split_eq(
                 shlex.split(context['opts']['command']),
                 '&&'
             )

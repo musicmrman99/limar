@@ -1,5 +1,7 @@
 from os.path import dirname, basename, isfile, join
 import glob
+import re
+from typing import Any, Callable
 
 def modules_adjacent_to(file):
     """
@@ -23,14 +25,23 @@ def modules_adjacent_to(file):
         if isfile(module) and not basename(module).startswith('__')
     ]
 
-def list_split(list_, sep):
-    lists = [[]]
+def list_split_fn(list_: list[Any], should_split: Callable[[Any], bool]):
+    lists: list[list[Any]] = [[]]
+    splits: list[Any] = []
     for item in list_:
-        if item == sep:
+        if should_split(item):
             lists.append([])
+            splits.append(item)
         else:
             lists[-1].append(item)
-    return lists
+    return lists, splits
+
+def list_split_eq(list_, sep):
+    return list_split_fn(list_, sep.__eq__)[0]
+
+def list_split_match(list_, sep: str):
+    regex = re.compile(sep)
+    return list_split_fn(list_, lambda item: bool(regex.match(item)))
 
 def list_strip(list_, str_):
     while len(list_) > 0 and list_[0] == str_:
