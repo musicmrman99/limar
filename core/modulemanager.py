@@ -514,8 +514,8 @@ class ModuleLifecycle:
             all_mods: dict[str, Any]
     ) -> Namespace:
         """
-        For the convenience of modules, dynamically add methods to this
-        Lifecycle to invoke each module.
+        Create the namespace of accessors that modules can use to invoke other
+        modules.
         """
 
         self._proceed_to_phase(LIFECYCLE.PHASES.CREATE_MODULE_ACCESSORS)
