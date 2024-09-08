@@ -1,3 +1,12 @@
+# Done
+
+- ./ do something with tag values in `manifest`
+  - ./ allow item set spec filter by tag value (or can it already to this?)
+
+- -- add branching forwarding, eg. `[-\]]-[-\[]`, where:
+  - ./ `-` = forward, no special processing
+  - ./ `]` / `[` = expand/contract the number of items processed by decreasing/increasing the scope of what is processed, respectively
+
 # Quick Notes and Misc
 
 - make all assertion explanations use f-strings that use `[self.]function_name.__name__` references in place of literal method names (allows for easier refactoring)
@@ -16,17 +25,16 @@
 
 ## Develop ModuleManager
 
-- add async, streamed, and branching forwarding
-  - eg. `[-\]][-/][-\[]`, where:
-    - `-` = forward, no special processing
-    - `]` / `[` = forward from/to a stream (ie. whether to keep the previous item around and run it repeatedly until it terminates by throwing StopIteration or something)
-    - `/` = async (ie. don't wait until the previous call is finished before starting the next call, and pass the data to the next call as and when the previous call makes data available to pass. This implies a temporary stream, but the previous call is still synchronous)
+- add branching, async, and continuous forwarding, eg. `[-\]][-/X][-\[]`, where:
+  - `/` = async (ie. don't wait until the previous call is finished before starting the next call, and pass the data to the next call as and when the previous call makes data available to pass. This implies a temporary stream, but the previous call is still synchronous)
+  - `X` = async continuous (ie. whether to keep the previous command running (or run it repeatedly) until it terminates by throwing StopIteration or something, and continuously forwarding data to the next module in a stream)
 
-    - Or something. This would need some thought
+  - Or something. This would need some thought
 
 - define appropriate custom exceptions for the different abstraction boundaries within LIMAR:
   - ModuleError
   - LIMARError
+  - MMError
   - etc.
 
 ---
@@ -45,12 +53,13 @@
 
 ## Develop Existing Modules
 
-- do something with tag values in `manifest`
-  - allow item set spec filter by tag value (or can it already to this?)
+- `limar info`
+  - templating (perameterising) commands in the command manifests
+    - parameters from both other commands in that manifest, and other sources in LIMAR (eg. manifest, env, cache, phase, etc.)
 
 ## Add More Modules
 
-- `lm task` - add workload context manager
+- `limar task` - add workload context manager
   - commit (job) [for (job)] (description)
   - wait [job:top(jobs)]
   - assign (user)
@@ -61,7 +70,7 @@
 
   - two stacks - active and blocked
 
-- `lm open` - add command to open the remote url of a project, or any sub-url of it, in a browser
+- `limar open` - add command to open the remote url of a project, or any sub-url of it, in a browser
 
 - `limar for` - execute management commands against multiple projects
   - how is it best to do this? `jq`-style using FP-like branching perhaps?
