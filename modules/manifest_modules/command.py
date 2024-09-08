@@ -17,10 +17,10 @@ class Command:
         for item in items.values():
             if (
                 'command' in item['tags'] and
-                all(tag not in item['tags'] for tag in [
-                    'UNUSED',
-                    'TODO'
-                ]) and
+                all(
+                    not name.startswith('__')
+                    for name in item['tags'].raw().keys()
+                ) and
                 (
                     'tool' not in item or
                     'command' not in item

@@ -1,7 +1,6 @@
 import random
 import string
 import subprocess
-import shlex
 
 from core.modules.phase_utils.phase_system import PhaseSystem
 
@@ -69,28 +68,49 @@ class InfoModule:
             # FIXME: Yes, I know, this is an injection attack waiting to happen.
             mod.manifest.declare_item_set(ref, f'query & [{args.entity}]')
             query_command_items = mod.manifest.get_item_set(ref)
+            mod.log.debug(f'Matched manifest items:', query_command_items)
 
         # Execute each query. Produces a list of entity data (inc. entity ID)
         # for each query executed.
         #   ItemSet -> list[list[dict[str, str]]]
         if transition_to_phase(INFO_LIFECYCLE.PHASES.GET):
-            output = [
-                mod.tr.query(
-                    (
-                        item['command']['parse']
-                        if 'parse' in item['command']
-                        else '.'
-                    ),
-                    subprocess
-                        .check_output(
-                            shlex.split(item['command']['command'])
+            output = []
+            for item in query_command_items.values():
+                command_query = (
+                    item['command']['parse']
+                    if 'parse' in item['command']
+                    else '.'
+                )
+
+                command_outputs: list[dict[str, Any]] = []
+                for command in item['command']['commands']:
+                    try:
+                        subproc = subprocess.Popen(
+                            command['command'],
+                            stdout=subprocess.PIPE,
+                            stderr=subprocess.PIPE
                         )
-                        .decode(),
+                        stdout, stderr = subproc.communicate()
+                        command_status = 0
+                    except subprocess.CalledProcessError as e:
+                        if not command['allowedToFail']:
+                            raise e
+                        command_status = e.returncode
+
+                    command_outputs.append({
+                        'status': command_status,
+                        'stdout': stdout.decode().strip(),
+                        'stderr': stderr.decode().strip()
+                    })
+
+                output.append(mod.tr.query(
+                    command_query,
+                    command_outputs,
                     lang='jq',
                     first=True
-                )
-                for item in query_command_items.values()
-            ]
+                ))
+
+            mod.log.debug(f'Query output:', output)
 
         # Index and merge entity data by ID
         #   list[list[dict[str, str]]] -> dict[str, dict[str, str]]

@@ -41,18 +41,18 @@ class PhaseModule:
         mod.docs.add_docs_arg(list_parser)
 
         # Subcommands / Show Phases of Phase System
-        get_parser = phase_subparsers.add_parser('get',
+        show_parser = phase_subparsers.add_parser('show',
             epilog=docs_for(self.get_system))
-        mod.docs.add_docs_arg(get_parser)
+        mod.docs.add_docs_arg(show_parser)
 
-        get_parser.add_argument('system_name', metavar='SYSTEM_NAME',
+        show_parser.add_argument('phase_system_name',
+            metavar='PHASE_SYSTEM_NAME',
             help="""
             Name of the phase system to list the phases of.
 
-            Conventions:
-            - Modules that need any phasing at all should have a top-level phase
-              system called '<module_name>:lifecycle', where <module_name> is
-              the LIMAR module name.
+            It is convention for modules that need any phasing at all to have a
+            top-level phase system called '<module_name>:lifecycle', where
+            '<module_name>' is the LIMAR module name.
             """)
 
     def __call__(self, *, mod: Namespace, args: Namespace, **_):
@@ -61,8 +61,14 @@ class PhaseModule:
         if args.phase_command == 'list':
             output = self.list_systems()
 
-        if args.phase_command == 'get':
-            output = self.get_system(args.system_name).phases()
+        if args.phase_command == 'show':
+            try:
+                output = self.get_system(args.phase_system_name).phases()
+            except KeyError:
+                mod.log.error(
+                    f"No such phase system '{args.phase_system_name}'. See"
+                    " `phase list` for a list of all phase systems."
+                )
 
         return output
 

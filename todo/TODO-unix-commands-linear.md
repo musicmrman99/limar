@@ -44,9 +44,17 @@ meta:
   /configuration (package? installation (optional)? alias: config)
 }
 
+# I/O
 /channel {
-  /host/channel
-  /process/channel
+  # cross-host channel = network I/O (eg. TCP/UDP connections)
+  /host/channel {
+    /config
+  }
+
+  # cross-process channel = I/O (eg. stdin/out/err, keyboard, mouse, IPC)
+  /process/channel {
+    /config
+  }
 }
 
 /proccess (host? installation? configuration? command? identity? alias: proc) {
@@ -61,17 +69,13 @@ meta:
 
     # per-process /configuration ('pushed in')
     /parameter (alias: param)
-    # per-process context, like env vars, current dir, vfs root, etc. ('pulled in')
+    # per-process /configuration, cloned from parent process and used as needed ('pulled in'); eg. env vars, current dir, vfs root, etc.
     /environment (alias: env)
 
     # current state (including status)
     /state
     # historical state
     /log
-
-    # synchronous I/O (stdin/out/err, keyboard, mouse, etc.)
-    /input
-    /output
   }
 }
 
@@ -417,8 +421,7 @@ Applications
   /process,             # Can start processes
   /process/environment, # Can view and modify its environment (eg. vars, cd, chroot, etc.)
   /process/parameter,   # Can modify its parameters (shopt), and set those of processes
-  /process/input,       # Can set (via redirect, pipes, command substitution, etc.) the input of created processes
-  /process/output,      # Can redirect the output of created processes
+  /process/channel,     # Can set (via redirect, pipes, command substitution, etc.) the input and redirect the output of created processes
   /process/state,       # Can determine the status of processes it started (ie. if still blocking, or job status)
   is: /app
 ) {
@@ -438,11 +441,11 @@ Applications
 - telnet      /host            - remote shell
 }
 
-- read        /app/input       - reads user input from a shell and stores it in a variable
-- tmux        /app/input       - terminal multiplexer
+- read        /process/channel - reads user input from a shell and stores it in a variable
+- tmux        /process/channel - terminal multiplexer
 
-- fc          /app/input, /app/log - fix command (shell builtin), used to quickly correct a previously entered command
-- history     /app/input, /app/log - output shell command history
+- fc          /process/channel, /process/log - fix command (shell builtin), used to quickly correct a previously entered command
+- history     /process/channel, /process/log - output shell command history
 
 ### other apps
 - lynx        /web-resource, is: /app - a CLI browser
@@ -453,13 +456,13 @@ Channels
 ====================
 
 ### show configuration
-- netstat     /channel/config, /host/channel - show network connections, routing tables, interface statistics, masquerade connections, and multicast memberships
+- netstat     /host/channel, /host/channel/config - show network connections, routing tables, interface statistics, masquerade connections, and multicast memberships
 
 ### configuration
-- ifconfig    /channel/config  - show and modify network interface configuration
-- ip          /channel/config  - show and modify network interface configuration (the newer version of `ifconfig`)
-- iptables    /channel/config  - configure firewall, routing, and NAT
-- ufw         /channel/config  - show info about and configure the 'uncomplicated firewall'
+- ifconfig    /host/channel/config  - show and modify network interface configuration
+- ip          /host/channel/config  - show and modify network interface configuration (the newer version of `ifconfig`)
+- iptables    /host/channel/config  - configure firewall, routing, and NAT
+- ufw         /host/channel/config  - show info about and configure the 'uncomplicated firewall'
 
 ### discovery
 - ping        /host/channel    - repeatedly send ICMP packets to a given host and output responses

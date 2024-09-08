@@ -24,6 +24,23 @@ LIMAR has a variety of sub-commands for different purposes:
 
 It also has various other modules that provide configuration and supporting services to the commands above. Some of these modules require configuration, and so have been included in the below list.
 
+## `phase`
+
+### Synopsis
+
+```
+limar phase list
+limar phase show PHASE_SYSTEM_NAME
+```
+
+### Description
+
+Provides standardised phasing command-line options and provides phasing services
+to other modules.
+
+Has commands for listing registered phase systems and showing phase information
+for them.
+
 ## `cache`
 
 ### Environment
@@ -36,7 +53,7 @@ export LIMAR_CACHE_ROOT="$HOME/Documents/LIMAR/cache` # Required
 
 ```
 limar cache list
-limar cache get ENTRY_NAME
+limar cache show ENTRY_NAME
 limar cache delete ENTRY_NAME
 limar cache clear
 ```
