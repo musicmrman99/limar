@@ -17,11 +17,7 @@ class EnvModule:
         self._previous_dir = None
 
     def dependencies(self):
-        return [
-            'log',
-            'manifest',
-            'project-manifest'
-        ]
+        return ['log', 'manifest', 'project-manifest']
 
     def configure_root_args(self, *, parser: ArgumentParser, **_):
         parser.add_argument('-cd', '--in-project',

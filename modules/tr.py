@@ -21,6 +21,9 @@ class TrModule:
     def __init__(self):
         self.yaql_engine = yaql.factory.YaqlFactory().create()
 
+    def dependencies(self):
+        return ['console']
+
     def configure_args(self, *, parser: ArgumentParser, **_):
         # Query
         parser.add_argument('-jq', '--json-query', default=None,
