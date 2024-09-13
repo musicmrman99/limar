@@ -739,16 +739,18 @@ class ModuleLifecycle:
         for name, module in all_mods.items():
             all_mod_subproc.transition_to(name)
 
-            if hasattr(module, 'configure_args'):
+            if hasattr(module, 'configure_args') or hasattr(module, '__call__'):
                 if arg_subparsers is None:
                     arg_subparsers = arg_parser.add_subparsers(dest="module")
 
-                self._debug(f"Configuring arguments for module '{name}'")
                 module_arg_parser = arg_subparsers.add_parser(
                     name,
                     epilog=docs_for(module)
                 )
                 add_docs_arg(module_arg_parser)
+
+            if hasattr(module, 'configure_args'):
+                self._debug(f"Configuring arguments for module '{name}'")
                 module.configure_args(
                     env=envs[name],
                     parser=module_arg_parser,
