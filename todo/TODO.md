@@ -1,11 +1,6 @@
 # Done
 
-- ./ do something with tag values in `manifest`
-  - ./ allow item set spec filter by tag value (or can it already to this?)
-
-- -- add branching forwarding, eg. `[-\]]-[-\[]`, where:
-  - ./ `-` = forward, no special processing
-  - ./ `]` / `[` = expand/contract the number of items processed by decreasing/increasing the scope of what is processed, respectively
+- 
 
 # Quick Notes and Misc
 
@@ -13,15 +8,50 @@
 - TESTING
 
 - Rearrange into LIMAR (Local Information Management, Architecture, and Representation system)
-  - management - the continuous adjustment of the more mutable configuration of a system to meet the needs of its stakeholders
-  - architecture - the less mutable configuration of a system
-  - representation - the display of the configuration of a system and changes to it in a comprehensible manner
+  - goals:
+    - management - the continuous adjustment of the more mutable configuration of a system to meet the needs of its stakeholders
+    - architecture - the less mutable configuration of a system
+    - representation - the display of the configuration of a system and changes to it in a comprehensible manner
 
-  - in this context, configuration = structure and function (to meet context)
-    - as in "the configuration of the living room" (the components, their orientation, and their functions, that as a whole make the room fit for purpose)
-    - management = organising the structure and function to effectively fit into the context
+    - in this context, configuration = structure and function (to meet context)
+      - as in "the configuration of the living room" (the components, their orientation, and their functions, that as a whole make the room fit for purpose)
+      - management = organising the structure and function to effectively fit into the context
+
+  - design the LIMAR model to meet these goals in a REST-like way
+    - entity types and actions (what entities are needed for the above goals in the currently understood context?)
+    - entity relationships (how do they relate to each other?)
+    - entity identity (what uniquely distinguishes between entities of the same type?)
+
+  - understand how the existing modules and manifest declarations fit into the LIMAR model
+    - core modules and `cache` are technical support tools
+    - `manifest` manually curated input tool
+    - `info` and `env` are data collection and management tools
+    - `tr` and `finance` are data processing tools, of varying levels of specialisation (ie. information binding)
+
+    - `lspci` (done) and `lsblk` (partial)
+    - `git` (partial)
 
 # Todo
+
+## Develop Existing Modules
+
+- `limar info`
+  - templating (perameterising) commands in the command manifests using data from:
+    - CLI input (eg. command-line arguments/options)
+    - forwarded data
+    - other commands in the command  manifest
+    - other sources in LIMAR (eg. manifest, env, cache, phase, etc.)
+
+  - think about the implications of templating, ie.
+    - "parameterisation is generic, not compositional"
+    - what makes a generic component composable?
+
+    - b() {x(), y()}; a(), b(), c()
+    -   vs.
+    - b() {a(), x(), y(), c()}; b()
+
+    - the more a component 'knows' and does, the more information is bound to it, and therefore the narrower its possible context of use
+    - composable components have this characteristic to a lesser extent by *knowing less (or nothing) about the other components they can be combined with*
 
 ## Develop ModuleManager
 
@@ -50,12 +80,6 @@
 - make log module include timestamp in message output
 - rotate log + clean up old logs
 - add logging to module invokation and all other relevant points
-
-## Develop Existing Modules
-
-- `limar info`
-  - templating (perameterising) commands in the command manifests
-    - parameters from both other commands in that manifest, and other sources in LIMAR (eg. manifest, env, cache, phase, etc.)
 
 ## Add More Modules
 
