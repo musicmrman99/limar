@@ -28,7 +28,7 @@ class InfoModule:
     """
 
     def __init__(self):
-        pass
+        self._reverse_dependency_graph: dict[str, set[str]] | None = None
 
     def dependencies(self):
         return ['log', 'phase', 'manifest', 'command-manifest']
@@ -47,6 +47,33 @@ class InfoModule:
 
     def start(self, *, mod: Namespace, **_):
         self._mod = mod
+
+        command_manifest_digest = mod.manifest.get_manifest_digest('command')
+        try:
+            self._reverse_dependency_graph = mod.cache.get(
+                f'info.dependency_graph.{command_manifest_digest}.pickle'
+            )
+        except KeyError:
+            query_items = mod.manifest.get_item_set('query')
+            self._reverse_dependency_graph = {
+                ref: {
+                    item['ref']
+                    for _, item in query_items.items()
+                    # TODO: Only supports `info.get(ref...)` for now
+                    if ('info', 'get', ref) in (
+                        param[0:3] for param in item['command']['parameters']
+                    )
+                }
+                for ref, _ in query_items.items()
+            }
+            mod.cache.set(
+                f'info.dependency_graph.{command_manifest_digest}.pickle',
+                self._reverse_dependency_graph
+            )
+        mod.log.debug(
+            'reverse dependency graph:',
+            self._reverse_dependency_graph
+        )
 
     def __call__(self, *,
             mod: Namespace,

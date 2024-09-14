@@ -74,6 +74,7 @@ class Manifest:
 
     def __init__(self,
             logger: LogModule,
+            digest: str,
             initial_items: ItemSet | None = None,
             initial_item_sets: ItemSetSet | None = None,
             initial_contexts: list[str] | None = None,
@@ -96,6 +97,7 @@ class Manifest:
 
         # Inputs
         self._logger = logger
+        self._digest = digest
         self._context_modules = (
             context_modules if context_modules is not None else {}
         )
@@ -135,6 +137,7 @@ class Manifest:
     ):
         return Manifest(
             logger,
+            raw_data['digest'],
             raw_data['items'],
             raw_data['item_sets'],
             initial_contexts,
@@ -444,6 +447,9 @@ class Manifest:
     # Getters
     # --------------------
 
+    def digest(self) -> str:
+        return self._digest
+
     def items(self) -> ItemSet:
         return self._items
 
@@ -458,6 +464,7 @@ class Manifest:
 
     def raw(self) -> dict[str, Any]:
         return {
+            'digest': self._digest,
             'items': self._items,
             'item_sets': self._item_sets
         }
@@ -699,7 +706,7 @@ class ManifestModule:
         self._ctx_mod_factories: dict[str, list[Callable[[], Any]]] = {}
         self._manifest_names: list[str] = []
 
-        self._manifests: list[Manifest] = []
+        self._manifests: dict[str, Manifest] = {}
         self._global_manifest: Manifest | None = None
 
         # Internal caches
@@ -812,7 +819,7 @@ class ManifestModule:
             self._load_manifest(manifest_name)
 
         all_items = {}
-        for manifest in self._manifests:
+        for manifest in self._manifests.values():
             for ref, item in manifest.items().items():
                 if ref in all_items:
                     raise LIMARException(
@@ -822,7 +829,7 @@ class ManifestModule:
                 all_items[ref] = item
 
         all_item_sets = {}
-        for manifest in self._manifests:
+        for manifest in self._manifests.values():
             for ref, item_set in manifest.item_sets().items():
                 if ref in all_item_sets:
                     mod.log.warning(
@@ -835,6 +842,12 @@ class ManifestModule:
 
         self._global_manifest = Manifest(
             self._mod.log,
+            md5(
+                ''.join(
+                    manifest.digest()
+                    for manifest in self._manifests.values()
+                ).encode('utf-8')
+            ).hexdigest(),
             all_items,
             all_item_sets
         )
@@ -888,6 +901,7 @@ class ManifestModule:
             # Start Builder
             manifest = Manifest(
                 self._mod.log,
+                digest,
                 None,
                 None,
                 [name],
@@ -908,7 +922,7 @@ class ManifestModule:
             self._mod.cache.set(cached_name, manifest.raw())
 
         # Add Manifest
-        self._manifests.append(manifest)
+        self._manifests[name] = manifest
 
     def __call__(self, *,
             mod: Namespace,
@@ -1036,6 +1050,10 @@ class ManifestModule:
 
     # Invokation
     # --------------------
+
+    @ModuleAccessor.invokable_as_service
+    def get_manifest_digest(self, name: str) -> str:
+        return self._manifests[name].digest()
 
     @ModuleAccessor.invokable_as_service
     def declare_item_set(self, ref: str, item_set_spec):
