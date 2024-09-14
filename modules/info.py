@@ -138,7 +138,7 @@ class InfoModule:
         # for each query executed.
         #   ItemSet -> list[list[dict[str, str]]]
         query_outputs = [
-            self._run_query(item['ref'].replace('/', '_'), item['command'])
+            self._run_query(item['ref'], item['command'])
             for item in matched_queries.values()
         ]
         self._mod.log.debug('Query outputs:', query_outputs)
@@ -155,20 +155,14 @@ class InfoModule:
 
         return merged_query_output
 
-    def _run_query(self, name, query) -> list[dict[str, str]]:
-        use_cache = False
+    def _run_query(self, ref, query) -> list[dict[str, str]]:
+        name = ref.replace('/', '.')
+
         try:
-            cached_output: dict[str, Any] = (
+            query_output: list[dict[str, str]] = (
                 self._mod.cache.get(f"info.query.{name}.pickle")
             )
-            is_valid: bool = cached_output['is_valid']
-            query_output: list[dict[str, str]] = cached_output['query_output']
-            if is_valid:
-                use_cache = True
         except KeyError:
-            pass
-
-        if not use_cache:
             query_parser = (
                 query['parse']
                 if 'parse' in query
@@ -214,12 +208,35 @@ class InfoModule:
                 lang='jq',
                 first=True
             )
-            self._mod.cache.set(
-                f"info.query.{name}.pickle",
-                {
-                    'is_valid': True,
-                    'query_output': query_output
-                }
-            )
+            self._mod.cache.set(f"info.query.{name}.pickle", query_output)
+
+        # Invalidate (delete) the cached output of all commands that depend on
+        # the output of this one.
+        invalidated = self._invalidate_cache_for_query_dependents(ref)
+        self._mod.log.debug(
+            f"Invalidated cached output for dependent queries of '{ref}':",
+            invalidated
+        )
 
         return query_output
+
+    def _invalidate_cache_for_query_dependents(self,
+            query_ref,
+            invalidated: set[str] | None = None
+    ) -> set[str]:
+        assert self._reverse_dependency_graph is not None, f'{self._run_query.__name__}() called before {self.start.__name__}()'
+
+        if invalidated is None:
+            invalidated = set()
+
+        for dep_query_ref in self._reverse_dependency_graph[query_ref]:
+            if dep_query_ref not in invalidated:
+                query_name = dep_query_ref.replace('/', '.')
+                self._mod.cache.delete(f'info.query.{query_name}.pickle')
+
+                invalidated.add(dep_query_ref)
+                self._invalidate_cache_for_query_dependents(
+                    dep_query_ref, invalidated
+                )
+
+        return invalidated
