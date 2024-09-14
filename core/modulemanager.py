@@ -885,7 +885,7 @@ class ModuleLifecycle:
 
                 self._debug(
                     'All forwarded data'
-                    f' (calls are {leaf_level} [white]level(s) deep):',
+                    f' (calls are {leaf_level} [default]level(s) deep):',
                     forward_carry
                 )
 
