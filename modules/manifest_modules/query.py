@@ -1,7 +1,8 @@
+from itertools import chain
 from core.exceptions import LIMARException
-import shlex
+import re
 
-from core.utils import list_split_eq, list_strip
+from core.utils import list_strip
 
 class Query:
     @staticmethod
@@ -17,21 +18,73 @@ class Query:
                 "@query context must be given a `command` to execute"
             )
 
+        # Query requirements:
+        # - read-only (including caching, etc.)
+        # - idempotent
+        query_parameters = {
+            match.groups()
+            for match in re.finditer(
+                '\\{\\{ (?P<module>[a-z0-9-]*)\\.(?P<method>[a-z0-9_]*)\\((?P<entity>.*)\\) : (?P<query>.*) \\}\\}',
+                context['opts']['command']
+            )
+        }
+
+        raw_commands = [
+            command.strip()
+            for command in re.split(
+                '[ \\n]&&[ \\n]',
+                context['opts']['command']
+            )
+        ]
+        commands_parsed = [
+            {
+                'parameters': [
+                    match.groups()
+                    for match in re.finditer(
+                        '\\{\\{ (?P<module>[a-z0-9-]*)\\.(?P<method>[a-z0-9_]*)\\((?P<entity>.*)\\) : (?P<query>.*) \\}\\}',
+                        context['opts']['command']
+                    )
+                ],
+                'fragments': re.split(
+                    '\\{\\{ [a-z0-9-]*\\.[a-z0-9_]*\\(.*\\) : .* \\}\\}',
+                    raw_command
+                ),
+                'allowedToFail': False
+            }
+            for raw_command in raw_commands
+        ]
+        for command_parsed in commands_parsed:
+            if command_parsed['fragments'][0][:2] == '!!':
+                command_parsed['allowedToFail'] = True
+                command_parsed['fragments'][0] = (
+                    command_parsed['fragments'][0][2:].strip()
+                )
+
         commands = [
             {
-                'command': list_strip(command, '!!'),
-                'allowedToFail': len(command) > 0 and command[-1] == '!!'
+                # Cannot shlex.split() until we know all of the arguments
+                'command': list_strip([
+                    *chain.from_iterable(
+                        zip(command['fragments'], command['parameters'])
+                    ),
+                    command['fragments'][-1]
+                ], ''),
+                'allowedToFail': command['allowedToFail']
             }
-            for command in list_split_eq(
-                shlex.split(context['opts']['command']),
-                '&&'
-            )
+            for command in commands_parsed
         ]
 
         if self._current_query is not None:
             fmt_commands = lambda commands: (
                 ' && '.join(
-                    ' '.join(command['command'])
+                    ' '.join(
+                        (
+                            '{{'+', '.join(fragment)+'}}'
+                            if isinstance(fragment, tuple)
+                            else fragment
+                        )
+                        for fragment in command['command']
+                    )
                     for command in commands
                 )
             )
@@ -43,6 +96,7 @@ class Query:
 
         self._current_query = {
             'type': 'query',
+            'parameters': query_parameters,
             'commands': commands,
             'parse': context['opts']['parse']
         }

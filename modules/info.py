@@ -1,5 +1,6 @@
 import random
 import string
+import shlex
 import subprocess
 
 from core.modulemanager import ModuleAccessor
@@ -107,13 +108,24 @@ class InfoModule:
             command_outputs: list[dict[str, Any]] = []
             for command in item['command']['commands']:
                 try:
+                    command_interpolated = ''.join(
+                        fragment
+                        for fragment in command['command']
+                        if isinstance(fragment, str)
+                    )
+                    self._mod.log.info('Running command:', command_interpolated)
+
+                    command_split_args = shlex.split(command_interpolated)
+                    self._mod.log.trace('Command split:', command_split_args)
+
                     subproc = subprocess.Popen(
-                        command['command'],
+                        command_split_args,
                         stdout=subprocess.PIPE,
                         stderr=subprocess.PIPE
                     )
                     stdout, stderr = subproc.communicate()
                     command_status = 0
+
                 except subprocess.CalledProcessError as e:
                     if not command['allowedToFail']:
                         raise e
@@ -124,6 +136,7 @@ class InfoModule:
                     'stdout': stdout.decode().strip(),
                     'stderr': stderr.decode().strip()
                 })
+                self._mod.log.trace('Command output:', command_outputs[-1])
 
             query_outputs.append(self._mod.tr.query(
                 command_query,
@@ -132,7 +145,7 @@ class InfoModule:
                 first=True
             ))
 
-        self._mod.log.debug(f'Query output:', query_outputs)
+        self._mod.log.debug('Query output:', query_outputs)
 
         # Index and merge entity data by ID
         #   list[list[dict[str, str]]] -> dict[str, dict[str, str]]
