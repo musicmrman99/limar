@@ -24,7 +24,7 @@ class Query:
         query_parameters = {
             match.groups()
             for match in re.finditer(
-                '\\{\\{ (?P<module>[a-z0-9-]*)\\.(?P<method>[a-z0-9_]*)\\((?P<entity>.*)\\) : (?P<query>.*) \\}\\}',
+                '\\{\\{ (?P<module>[a-z0-9-]*)\\.(?P<method>[a-z0-9_]*)\\((?P<args>.*)\\) : (?P<transform>.*) \\}\\}',
                 context['opts']['command']
             )
         }
@@ -41,7 +41,7 @@ class Query:
                 'parameters': [
                     match.groups()
                     for match in re.finditer(
-                        '\\{\\{ (?P<module>[a-z0-9-]*)\\.(?P<method>[a-z0-9_]*)\\((?P<entity>.*)\\) : (?P<query>.*) \\}\\}',
+                        '\\{\\{ (?P<module>[a-z0-9-]*)\\.(?P<method>[a-z0-9_]*)\\((?P<args>.*)\\) : (?P<transform>.*) \\}\\}',
                         context['opts']['command']
                     )
                 ],
