@@ -3,6 +3,7 @@ import string
 import shlex
 import subprocess
 
+from core.exceptions import LIMARException
 from core.modulemanager import ModuleAccessor
 from core.modules.phase_utils.phase_system import PhaseSystem
 
@@ -85,28 +86,70 @@ class InfoModule:
         queries.
         """
 
-        query_command_items = {}
+        matched_queries = {}
 
-        # Query the command manifest
+        # Get matching commands to execute
         ref = 'info-query-'+''.join(random.choices(string.hexdigits, k=32))
-        # FIXME: Yes, I know, this is an injection attack waiting to happen.
+        # FIXME: Yes, I know this is an injection attack waiting to happen, eg.
+        #          get('unlikely] | something_evil | [unlikely')
         self._mod.manifest.declare_item_set(ref, f'query & [{entity_spec}]')
-        query_command_items = self._mod.manifest.get_item_set(ref)
-        self._mod.log.debug(f'Matched manifest items:', query_command_items)
+        matched_queries = self._mod.manifest.get_item_set(ref)
+        self._mod.log.debug(f'Matched manifest items:', matched_queries)
+
+        # Ensure all matched commands are queries
+        for item in matched_queries.values():
+            if item['command']['type'] != 'query':
+                raise LIMARException(
+                    f"The info spec '{entity_spec}' matched a non-query command"
+                    f" '{item['ref']}'. Are you using the correct tag, and are"
+                    " the tags correct in the command manifest? Run in debug"
+                    " mode (`lm -vvv ...`) to see the full list of matched"
+                    " queries."
+                )
 
         # Execute each query. Produces a list of entity data (inc. entity ID)
         # for each query executed.
         #   ItemSet -> list[list[dict[str, str]]]
-        query_outputs = []
-        for item in query_command_items.values():
-            command_query = (
-                item['command']['parse']
-                if 'parse' in item['command']
+        query_outputs = [
+            self._run_query(item['ref'].replace('/', '_'), item['command'])
+            for item in matched_queries.values()
+        ]
+        self._mod.log.debug('Query outputs:', query_outputs)
+
+        # Index and merge entity data by ID
+        #   list[list[dict[str, str]]] -> dict[str, dict[str, str]]
+        merged_query_output: dict[str, dict[str, str]] = {}
+        for entity_list in query_outputs:
+            for entity_data in entity_list:
+                id = entity_data['id']
+                if id not in merged_query_output:
+                    merged_query_output[id] = {}
+                merged_query_output[id].update(entity_data)
+
+        return merged_query_output
+
+    def _run_query(self, name, query) -> list[dict[str, str]]:
+        use_cache = False
+        try:
+            cached_output: dict[str, Any] = (
+                self._mod.cache.get(f"info.query.{name}.pickle")
+            )
+            is_valid: bool = cached_output['is_valid']
+            query_output: list[dict[str, str]] = cached_output['query_output']
+            if is_valid:
+                use_cache = True
+        except KeyError:
+            pass
+
+        if not use_cache:
+            query_parser = (
+                query['parse']
+                if 'parse' in query
                 else '.'
             )
 
             command_outputs: list[dict[str, Any]] = []
-            for command in item['command']['commands']:
+            for command in query['commands']:
                 try:
                     command_interpolated = ''.join(
                         fragment
@@ -138,23 +181,18 @@ class InfoModule:
                 })
                 self._mod.log.trace('Command output:', command_outputs[-1])
 
-            query_outputs.append(self._mod.tr.query(
-                command_query,
+            query_output: list[dict[str, str]] = self._mod.tr.query(
+                query_parser,
                 command_outputs,
                 lang='jq',
                 first=True
-            ))
+            )
+            self._mod.cache.set(
+                f"info.query.{name}.pickle",
+                {
+                    'is_valid': True,
+                    'query_output': query_output
+                }
+            )
 
-        self._mod.log.debug('Query output:', query_outputs)
-
-        # Index and merge entity data by ID
-        #   list[list[dict[str, str]]] -> dict[str, dict[str, str]]
-        merged_query_output: dict[str, dict[str, str]] = {}
-        for entity_list in query_outputs:
-            for entity_data in entity_list:
-                id = entity_data['id']
-                if id not in merged_query_output:
-                    merged_query_output[id] = {}
-                merged_query_output[id].update(entity_data)
-
-        return merged_query_output
+        return query_output
