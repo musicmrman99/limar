@@ -34,6 +34,7 @@ FINANCE_LIFECYCLE = PhaseSystem(
         'WINDOW',
         'DISTRIBUTE',
         'FINALISE',
+        'FILTER_TRANSACTIONS',
         'WRAP_IN_GROUP',
         'GROUP_BY_ACCOUNT',
         'GROUP_BY_TIME',
@@ -44,7 +45,16 @@ FINANCE_LIFECYCLE = PhaseSystem(
     ),
     {
         'WINDOW': ('FINALISE',),
+
         'FINALISE': (
+            'WRAP_IN_GROUP',
+            'GROUP_BY_ACCOUNT',
+            'GROUP_BY_TIME',
+            'FILTER_GROUPS',
+            'AGGREGATE',
+            'TABULATE'
+        ),
+        'FILTER_TRANSACTIONS': (
             'GROUP_BY_ACCOUNT',
             'GROUP_BY_TIME',
             'FILTER_GROUPS',
@@ -57,9 +67,18 @@ FINANCE_LIFECYCLE = PhaseSystem(
             'AGGREGATE',
             'TABULATE'
         ),
-        'GROUP_BY_ACCOUNT': ('FILTER_GROUPS', 'AGGREGATE', 'TABULATE'),
-        'GROUP_BY_TIME': ('AGGREGATE', 'TABULATE'),
-        'FILTER_GROUPS': ('TABULATE',)
+        'GROUP_BY_ACCOUNT': (
+            'FILTER_GROUPS',
+            'AGGREGATE',
+            'TABULATE'
+        ),
+        'GROUP_BY_TIME': (
+            'AGGREGATE',
+            'TABULATE'
+        ),
+        'FILTER_GROUPS': (
+            'TABULATE',
+        )
     },
     initial_phase='INITIALISE'
 )
@@ -118,6 +137,13 @@ class FinanceModule:
             Transactions without a cover period are not distributed.
             """)
 
+        parser.add_argument('-ft', '--filter-transactions', metavar='FILTER',
+            default=None,
+            help="""
+            If given, filter the transaction items using the given filter before
+            grouping. Filters are of the form '[not:]function=value'.
+            """)
+
         parser.add_argument('-ga', '--group-by-account',
             action='store_true', default=False,
             help="""If given, group the data by account before aggregating.""")
@@ -129,11 +155,11 @@ class FinanceModule:
             'week', 'month', or 'year') before aggregating.
             """)
 
-        parser.add_argument('-fg', '--filter-groups', metavar='FUNCTION',
+        parser.add_argument('-fg', '--filter-groups', metavar='FILTER',
             default=None,
             help="""
-            If given, filter the grouped data using the given filter function
-            before aggregating.
+            If given, filter the items in each group using the given filter
+            before aggregating. Remove groups that are empty after filtering.
             """)
 
         parser.add_argument('-a', '--aggregate', metavar='AGGREGATOR',
@@ -173,7 +199,7 @@ class FinanceModule:
         transition_to_phase = mod.phase.create_process(FINANCE_LIFECYCLE, args)
 
         # Start from where the forwarding chain left off
-        output = forwarded_data
+        output: Any = forwarded_data
 
         # Fetch data
         if transition_to_phase(FINANCE_LIFECYCLE.PHASES.GET):
@@ -212,6 +238,13 @@ class FinanceModule:
         # Undo the precision increase (aka. un-prepare)
         if transition_to_phase(FINANCE_LIFECYCLE.PHASES.FINALISE):
             output = self._finalise(output)
+
+        # Filter transactions
+        if (
+            args.filter_transactions is not None and
+            transition_to_phase(FINANCE_LIFECYCLE.PHASES.FILTER_TRANSACTIONS)
+        ):
+            output = self._filter_transactions(output, args.filter_transactions)
 
         # Create a single group initially
         if transition_to_phase(FINANCE_LIFECYCLE.PHASES.WRAP_IN_GROUP):
@@ -304,7 +337,7 @@ class FinanceModule:
     # Main Process
     # --------------------------------------------------
 
-    def _extract_and_prepare(self, item_set):
+    def _extract_and_prepare(self, item_set: ItemSet) -> ItemSet:
         return {
             ref: {
                 'ref': item['ref'],
@@ -340,7 +373,7 @@ class FinanceModule:
             for ref, item in item_set.items()
         }
 
-    def _window(self, item_set, window_start, window_end):
+    def _window(self, item_set, window_start, window_end) -> ItemSet:
         # Throw an error in case this was accidental. This would always
         # return zero results if we didn't catch it.
         if window_start > window_end:
@@ -362,7 +395,7 @@ class FinanceModule:
             )
         }
 
-    def _infinite_window(self, item_set):
+    def _infinite_window(self, item_set: ItemSet) -> ItemSet:
         return {
             ref: item | {
                 'coverStartWindowed': item['coverStart'],
@@ -371,7 +404,11 @@ class FinanceModule:
             for ref, item in item_set.items()
         }
 
-    def _distribute_item(self, ref: str, item: Item, period_length: timedelta):
+    def _distribute_item(self,
+            ref: str,
+            item: Item,
+            period_length: timedelta
+    ) -> ItemSet:
         cover_size = (
             item['coverEnd']
             - item['coverStart']
@@ -419,17 +456,20 @@ class FinanceModule:
 
         return item_set
 
-    def _distribute(self, item_set: ItemSet, period_length: timedelta):
-            return {
-                ref: item
-                for item_set in [
-                    self._distribute_item(ref, item, period_length)
-                    for ref, item in item_set.items()
-                ]
+    def _distribute(self,
+            item_set: ItemSet,
+            period_length: timedelta
+    ) -> ItemSet:
+        return {
+            ref: item
+            for item_set in [
+                self._distribute_item(ref, item, period_length)
                 for ref, item in item_set.items()
-            }
+            ]
+            for ref, item in item_set.items()
+        }
 
-    def _finalise(self, item_set):
+    def _finalise(self, item_set: ItemSet) -> ItemSet:
         return {
             ref: item | {
                 'amount': CurrencyAmount(
@@ -438,6 +478,17 @@ class FinanceModule:
                 )
             }
             for ref, item in item_set.items()
+        }
+
+    def _filter_transactions(self,
+            transactions: ItemSet,
+            filter_str: str
+    ) -> ItemSet:
+        filter = self._parse_filter(filter_str)
+        return {
+            ref: item
+            for ref, item in transactions.items()
+            if self._filter_includes(filter, item)
         }
 
     def _group_group_by_account(self,
@@ -525,77 +576,32 @@ class FinanceModule:
             for new_item_group_ref, new_item_group in item_groups.items()
         }
 
-    def _filter_account_type(self,
-            ref: frozendict[str, Hashable],
-            group: ItemGroup,
-            value: Any
-    ) -> bool:
-        return next(iter(group.values()))['account']['tags']['type'] == value
+    def _filter_groups(self,
+            groups: ItemGroupSet,
+            filter_str: str
+    ) -> ItemGroupSet:
+        filter = self._parse_filter(filter_str)
 
-    def _filter_groups(self, groups: ItemGroupSet, filter: str) -> ItemGroupSet:
-        _filters: dict[
-            str,
-            Callable[[frozendict[str, Hashable], ItemGroup, Any], bool]
-        ] = {
-            'account-type': self._filter_account_type
+        new_groups = {
+            item_group_ref: {
+                ref: item
+                for ref, item in item_group.items()
+                if self._filter_includes(filter, item)
+            }
+            for item_group_ref, item_group in groups.items()
         }
-
-        filter_name, filter_value = filter.split('=')
 
         return {
             item_group_ref: item_group
-            for item_group_ref, item_group in groups.items()
-            if _filters[filter_name](item_group_ref, item_group, filter_value)
+            for item_group_ref, item_group in new_groups.items()
+            if len(item_group.values()) > 0
         }
 
-    def _aggregate_sum(self,
-            iterable,
-            key: Callable[[Any], int] | None = None
-    ):
-        return sum([
-            (
-                key(item)
-                if key is not None
-                else iterable
-            )
-            for item in iterable
-        ])
-    def _aggregate_mean(self,
-            iterable,
-            key: Callable[[Any], int] | None = None
-    ):
-        return (
-            self._aggregate_sum(iterable, key) / len(iterable)
-            if len(iterable) > 0
-            else None
-        )
-    def _aggregate_median(self,
-            iterable,
-            key: Callable[[Any], int] | None = None
-    ):
-        # Based on: https://stackoverflow.com/a/68719018/16967315
-        sorted_iterable = sorted(iterable, key=key)
-        return (
-            # These might be structures that aren't averagable (ie. `(a+b)//2``),
-            # so take both.
-            (
-                sorted_iterable[ceil(len(sorted_iterable)/2) - 1],
-                sorted_iterable[-ceil(len(sorted_iterable)/2)]
-            )
-            if len(iterable) > 0
-            else None
-        )
-
-    def _aggregate(self, groups: ItemGroupSet, aggregator: str):
-        _aggregators = {
-            'sum': self._aggregate_sum,
-            'mean': self._aggregate_mean,
-            'median': self._aggregate_median,
-            'min': min,
-            'max': max
-        }
-
-        aggregator_fn = _aggregators[aggregator]
+    def _aggregate(self,
+            groups: ItemGroupSet,
+            aggregator: str
+    ) -> dict[str, str]:
+        aggregator_fn = self._aggregators[aggregator]
 
         aggregation = {}
         for item_group_ref, item_group in groups.items():
@@ -637,3 +643,108 @@ class FinanceModule:
             }
 
         return aggregation
+
+    # Filters
+    # --------------------------------------------------
+
+    @staticmethod
+    def _filter_account_type(item: Item, value: Any) -> bool:
+        return any(
+            (
+                account_key in item and
+                item[account_key]['tags']['type'] == value
+            )
+            for account_key in ('from', 'to', 'account')
+        )
+
+    @staticmethod
+    def _filter_account_tag(item: Item, value: Any) -> bool:
+        return any(
+            (
+                account_key in item and
+                value in item[account_key]['tags']
+            )
+            for account_key in ('from', 'to', 'account')
+        )
+
+    _item_filters: dict[str, Callable[[Item, Any], bool]] = {
+        'account-type': _filter_account_type,
+        'account-tag': _filter_account_tag
+    }
+
+    def _parse_filter(self, filter: str):
+        filter_check = filter
+        filter_negated = False
+        if ':' in filter:
+            filter_operator, filter_check = filter.split(':')
+            filter_negated = (filter_operator == 'not')
+        filter_name, filter_value = filter_check.split('=')
+
+        return {
+            'negated': filter_negated,
+            'name': filter_name,
+            'value': filter_value
+        }
+
+    def _filter_includes(self,
+            filter: dict[str, str],
+            item: Item
+    ) -> bool:
+        result = self._item_filters[filter['name']](item, filter['value'])
+        if filter['negated']:
+            result = not result
+        return result
+
+    # Aggregators
+    # --------------------------------------------------
+
+    @staticmethod
+    def _aggregate_sum(
+            iterable,
+            key: Callable[[Any], int] | None = None
+    ):
+        return sum([
+            (
+                key(item)
+                if key is not None
+                else iterable
+            )
+            for item in iterable
+        ])
+
+    @staticmethod
+    def _aggregate_mean(
+            iterable,
+            key: Callable[[Any], int] | None = None
+    ):
+        return (
+            FinanceModule._aggregate_sum(iterable, key) / len(iterable)
+            if len(iterable) > 0
+            else None
+        )
+
+    @staticmethod
+    def _aggregate_median(
+            iterable,
+            key: Callable[[Any], int] | None = None
+    ):
+        # Based on: https://stackoverflow.com/a/68719018/16967315
+        sorted_iterable = sorted(iterable, key=key)
+        return (
+            # These might be structures that aren't averagable (ie. `(a+b)//2``),
+            # so take both.
+            (
+                sorted_iterable[ceil(len(sorted_iterable)/2) - 1],
+                sorted_iterable[-ceil(len(sorted_iterable)/2)]
+            )
+            if len(iterable) > 0
+            else None
+        )
+
+    _aggregators = {
+        'sum': _aggregate_sum,
+        'mean': _aggregate_mean,
+        'median': _aggregate_median,
+        'min': min,
+        'max': max
+    }
