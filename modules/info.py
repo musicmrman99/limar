@@ -1,3 +1,4 @@
+from graphlib import CycleError, TopologicalSorter
 import random
 import string
 import shlex
@@ -10,6 +11,8 @@ from core.modules.phase_utils.phase_system import PhaseSystem
 # Types
 from argparse import ArgumentParser, Namespace
 from typing import Any
+
+from modules.manifest import ItemSet
 
 INFO_LIFECYCLE = PhaseSystem(
     f'{__name__}:lifecycle',
@@ -28,6 +31,7 @@ class InfoModule:
     """
 
     def __init__(self):
+        self._dependency_graph: dict[str, set[str]] | None = None
         self._reverse_dependency_graph: dict[str, set[str]] | None = None
 
     def dependencies(self):
@@ -49,12 +53,40 @@ class InfoModule:
         self._mod = mod
 
         command_manifest_digest = mod.manifest.get_manifest_digest('command')
+        query_items = None
+ 
         try:
-            self._reverse_dependency_graph = mod.cache.get(
+            self._dependency_graph = mod.cache.get(
                 f'info.dependency_graph.{command_manifest_digest}.pickle'
             )
         except KeyError:
-            query_items = mod.manifest.get_item_set('query')
+            if query_items is None:
+                query_items = mod.manifest.get_item_set('query')
+
+            self._dependency_graph = {
+                ref: {
+                    param[2][0] # 1st item of info.get() args
+                    for param in item['command']['parameters']
+                }
+                for ref, item in query_items.items()
+            }
+            mod.cache.set(
+                f'info.dependency_graph.{command_manifest_digest}.pickle',
+                self._dependency_graph
+            )
+        mod.log.debug(
+            'dependency graph:',
+            self._dependency_graph
+        )
+
+        try:
+            self._reverse_dependency_graph = mod.cache.get(
+                f'info.reverse_dependency_graph.{command_manifest_digest}.pickle'
+            )
+        except KeyError:
+            if query_items is None:
+                query_items = mod.manifest.get_item_set('query')
+
             self._reverse_dependency_graph = {
                 ref: {
                     item['ref']
@@ -67,7 +99,7 @@ class InfoModule:
                 for ref, _ in query_items.items()
             }
             mod.cache.set(
-                f'info.dependency_graph.{command_manifest_digest}.pickle',
+                f'info.reverse_dependency_graph.{command_manifest_digest}.pickle',
                 self._reverse_dependency_graph
             )
         mod.log.debug(
@@ -113,18 +145,43 @@ class InfoModule:
         queries.
         """
 
-        matched_queries = {}
+        assert self._dependency_graph is not None, f'{self.get.__name__}() called before {self.start.__name__}()'
+
+        matched_queries_sorted = {}
 
         # Get matching commands to execute
-        ref = 'info-query-'+''.join(random.choices(string.hexdigits, k=32))
+        set_ref = 'info-query-'+''.join(random.choices(string.hexdigits, k=32))
         # FIXME: Yes, I know this is an injection attack waiting to happen, eg.
         #          get('unlikely] | something_evil | [unlikely')
-        self._mod.manifest.declare_item_set(ref, f'query & [{entity_spec}]')
-        matched_queries = self._mod.manifest.get_item_set(ref)
+        self._mod.manifest.declare_item_set(set_ref, f'query & [{entity_spec}]')
+        matched_queries: ItemSet = self._mod.manifest.get_item_set(set_ref)
         self._mod.log.debug(f'Matched manifest items:', matched_queries)
 
+        # Sort commands into topological order to avoid issues with dependency
+        # cache invalidation.
+        # TODO: TopologicalSorter can also be used to run the commands in
+        # parallel by following its other usage pattern. See:
+        # https://docs.python.org/3/library/graphlib.html
+        sorter = TopologicalSorter({
+            ref: list(self._dependency_graph[ref])
+            for ref in matched_queries.keys()
+        })
+        try:
+            query_sort_order = tuple(sorter.static_order())
+        except CycleError as e:
+            raise LIMARException(
+                f"Cannot resolve dependencies for entity set '{entity_spec}'"
+                f" due to cycle '{e.args[1]}'"
+            )
+        self._mod.log.debug(f'Query run order:', query_sort_order)
+
+        matched_queries_sorted: ItemSet = {
+            ref: matched_queries[ref]
+            for ref in query_sort_order
+        }
+
         # Ensure all matched commands are queries
-        for item in matched_queries.values():
+        for item in matched_queries_sorted.values():
             if item['command']['type'] != 'query':
                 raise LIMARException(
                     f"The info spec '{entity_spec}' matched a non-query command"
@@ -139,7 +196,7 @@ class InfoModule:
         #   ItemSet -> list[list[dict[str, str]]]
         query_outputs = [
             self._run_query(item['ref'], item['command'])
-            for item in matched_queries.values()
+            for item in matched_queries_sorted.values()
         ]
         self._mod.log.debug('Query outputs:', query_outputs)
 
