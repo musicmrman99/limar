@@ -22,7 +22,12 @@ class Query:
         # - read-only (including caching, etc.)
         # - idempotent
         query_parameters = {
-            match.groups()
+            (
+                match.groups()[0],
+                match.groups()[1],
+                tuple(match.groups()[2].split(', ')),
+                match.groups()[3]
+            )
             for match in re.finditer(
                 '\\{\\{ (?P<module>[a-z0-9-]*)\\.(?P<method>[a-z0-9_]*)\\((?P<args>.*)\\) : (?P<transform>.*) \\}\\}',
                 context['opts']['command']
@@ -39,7 +44,12 @@ class Query:
         commands_parsed = [
             {
                 'parameters': [
-                    match.groups()
+                    (
+                        match.groups()[0],
+                        match.groups()[1],
+                        tuple(match.groups()[2].split(', ')),
+                        match.groups()[3]
+                    )
                     for match in re.finditer(
                         '\\{\\{ (?P<module>[a-z0-9-]*)\\.(?P<method>[a-z0-9_]*)\\((?P<args>.*)\\) : (?P<transform>.*) \\}\\}',
                         raw_command

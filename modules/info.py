@@ -60,7 +60,7 @@ class InfoModule:
                     item['ref']
                     for _, item in query_items.items()
                     # TODO: Only supports `info.get(ref...)` for now
-                    if ('info', 'get', ref) in (
+                    if ('info', 'get', (ref,)) in (
                         param[0:3] for param in item['command']['parameters']
                     )
                 }
@@ -163,6 +163,49 @@ class InfoModule:
                 self._mod.cache.get(f"info.query.{name}.pickle")
             )
         except KeyError:
+            query_args: dict[tuple[str, ...], str] = {}
+            for param in query['parameters']:
+                module, method, args, transform = param
+                self._mod.log.debug(
+                    f"Computing parameter: {module}.{method}(" +
+                    ', '.join(f"'{arg}'" for arg in args) +
+                    f") : {transform}"
+                )
+
+                if module == 'info' and method == 'get':
+                    try:
+                        query_args[param] = self._mod.cache.get(
+                            f"info.query.{args[0]}.pickle"
+                        )
+                    except KeyError:
+                        pass
+
+                query_arg = getattr(getattr(self._mod, module), method)(*args)
+                self._mod.log.debug(
+                    'Query argument (pre-transform): ',
+                    query_arg
+                )
+
+                query_args[param] = self._mod.tr.query(
+                    transform,
+                    query_arg,
+                    lang='jq',
+                    first=True
+                )
+                self._mod.log.debug(
+                    'Query argument (post-transform): ',
+                    query_args[param]
+                )
+
+                if not isinstance(query_args[param], str):
+                    raise LIMARException(
+                        f"Evaluation of query parameter {param} did not return"
+                        " a string. Cannot interpolate non-string values into"
+                        " the requested query."
+                    )
+
+            self._mod.log.debug('Query arguments:', query_args)        
+
             query_parser = (
                 query['parse']
                 if 'parse' in query
@@ -173,9 +216,12 @@ class InfoModule:
             for command in query['commands']:
                 try:
                     command_interpolated = ''.join(
-                        fragment
+                        (
+                            query_args[fragment]
+                            if isinstance(fragment, tuple)
+                            else fragment
+                        )
                         for fragment in command['command']
-                        if isinstance(fragment, str)
                     )
                     self._mod.log.info('Running command:', command_interpolated)
 
@@ -210,13 +256,13 @@ class InfoModule:
             )
             self._mod.cache.set(f"info.query.{name}.pickle", query_output)
 
-        # Invalidate (delete) the cached output of all commands that depend on
-        # the output of this one.
-        invalidated = self._invalidate_cache_for_query_dependents(ref)
-        self._mod.log.debug(
-            f"Invalidated cached output for dependent queries of '{ref}':",
-            invalidated
-        )
+            # Invalidate (delete) the cached output of all commands that depend
+            # on the output of this one.
+            invalidated = self._invalidate_cache_for_query_dependents(ref)
+            self._mod.log.debug(
+                f"Invalidated cached output for dependent queries of '{ref}':",
+                invalidated
+            )
 
         return query_output
 
