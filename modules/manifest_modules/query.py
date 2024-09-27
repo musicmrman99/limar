@@ -26,10 +26,11 @@ class Query:
                 match.groups()[0],
                 match.groups()[1],
                 tuple(match.groups()[2].split(', ')),
-                match.groups()[3]
+                match.groups()[4],
+                match.groups()[5]
             )
             for match in re.finditer(
-                '\\{\\{ (?P<module>[a-z0-9-]*)\\.(?P<method>[a-z0-9_]*)\\((?P<args>.*)\\) : (?P<transform>.*) \\}\\}',
+                '\\{\\{ (?P<module>[a-z0-9-]*)\\.(?P<method>[a-z0-9_]*)\\((?P<args>.*)\\) (: (?P<jqTransform>.*)|:: (?P<pqTransform>.*)) \\}\\}',
                 context['opts']['command']
             )
         }
@@ -48,15 +49,16 @@ class Query:
                         match.groups()[0],
                         match.groups()[1],
                         tuple(match.groups()[2].split(', ')),
-                        match.groups()[3]
+                        match.groups()[4],
+                        match.groups()[5]
                     )
                     for match in re.finditer(
-                        '\\{\\{ (?P<module>[a-z0-9-]*)\\.(?P<method>[a-z0-9_]*)\\((?P<args>.*)\\) : (?P<transform>.*) \\}\\}',
+                        '\\{\\{ (?P<module>[a-z0-9-]*)\\.(?P<method>[a-z0-9_]*)\\((?P<args>.*)\\) (: (?P<jqTransform>.*)|:: (?P<pqTransform>.*)) \\}\\}',
                         raw_command
                     )
                 ],
                 'fragments': re.split(
-                    '\\{\\{ [a-z0-9-]*\\.[a-z0-9_]*\\(.*\\) : .* \\}\\}',
+                    '\\{\\{ [a-z0-9-]*\\.[a-z0-9_]*\\(.*\\) ::? .* \\}\\}',
                     raw_command
                 ),
                 'allowedToFail': False
@@ -67,7 +69,7 @@ class Query:
             if command_parsed['fragments'][0][:2] == '!!':
                 command_parsed['allowedToFail'] = True
                 command_parsed['fragments'][0] = (
-                    command_parsed['fragments'][0][2:].strip()
+                    command_parsed['fragments'][0][2:]
                 )
 
         commands = [

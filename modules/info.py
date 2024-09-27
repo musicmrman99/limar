@@ -256,11 +256,15 @@ class InfoModule:
         except KeyError:
             query_args: dict[tuple[str, ...], str] = {}
             for param in query['parameters']:
-                module, method, args, transform = param
+                module, method, args, jqTransform, pqTransform = param
                 self._mod.log.debug(
                     f"Computing parameter: {module}.{method}(" +
                     ', '.join(f"'{arg}'" for arg in args) +
-                    f") : {transform}"
+                    ") "+(
+                        ': '+jqTransform
+                        if jqTransform is not None
+                        else ':: '+pqTransform
+                    )
                 )
 
                 if (module, method) == ('info', 'query'):
@@ -277,12 +281,14 @@ class InfoModule:
                     query_arg
                 )
 
-                query_args[param] = self._mod.tr.query(
-                    transform,
-                    query_arg,
-                    lang='jq',
-                    first=True
-                )
+                if jqTransform is not None:
+                    query_args[param] = self._mod.tr.query(
+                        jqTransform, query_arg, lang='jq', first=True
+                    )
+                elif pqTransform is not None:
+                    query_args[param] = self._mod.tr.query(
+                        pqTransform, query_arg, lang='yaql'
+                    )
                 self._mod.log.debug(
                     'Query argument (post-transform): ',
                     query_args[param]
