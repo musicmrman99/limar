@@ -645,7 +645,11 @@ class ModuleLifecycle:
 
         module_full_cli_args_set = [
             (
-                module_cli_args[0], # The module name
+                (
+                    module_cli_args[0] # The module name
+                    if len(module_cli_args) > 0
+                    else 'no-op' # See `core.modules.noop.NoOpModule`
+                ),
                 [*root_cli_args, *module_cli_args],
                 forward_types[i-1] if i > 0 else None,
                 forward_types[i] if i < len(module_cli_args_set) - 1 else None
