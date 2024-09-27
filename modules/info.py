@@ -1,5 +1,4 @@
 from graphlib import CycleError, TopologicalSorter
-from operator import itemgetter
 import random
 import string
 import shlex
@@ -13,7 +12,7 @@ from core.modules.phase_utils.phase_system import PhaseSystem
 from argparse import ArgumentParser, Namespace
 from typing import Any
 
-from modules.manifest import ItemSet
+from modules.manifest import Item, ItemSet
 
 INFO_LIFECYCLE = PhaseSystem(
     f'{__name__}:lifecycle',
@@ -42,6 +41,10 @@ class InfoModule:
         return ['log', 'phase', 'manifest', 'command-manifest']
 
     def configure_args(self, *, mod: Namespace, parser: ArgumentParser, **_):
+        parser.add_argument('-q', '--query',
+            action='store_true', default=False,
+            help="""Show information about the given subject.""")
+
         parser.add_argument('subject', metavar='SUBJECT', nargs='+',
             help="""Show information about the given subject.""")
 
@@ -123,7 +126,10 @@ class InfoModule:
         output: Any = forwarded_data
 
         if transition_to_phase(INFO_LIFECYCLE.PHASES.GET):
-            output = self.get(args.subject)
+            if args.query is True:
+                output = self.query(args.subject[0])
+            else:
+                output = self.get(args.subject)
 
         # Format
         if transition_to_phase(
@@ -213,40 +219,7 @@ class InfoModule:
         self._mod.log.debug('Query outputs:', query_outputs)
 
         # Index and merge entity data by ID
-        #   list[tuple[ Item, list[dict[str, str]] ]]
-        #   -> dict[str, dict[str, str]]
-        merged_query_output: dict[tuple[str, ...], dict[str, str]] = {}
-        for item, entities in query_outputs:
-            self._mod.log.trace(
-                f"Identities for item '{item['ref']}'", item['identities']
-            )
-            try:
-                id_fields = tuple(item['identities'][tag] for tag in subject)
-            except KeyError as e:
-                raise LIMARException(
-                    f"Query '{item['ref']}' missing identity mapping for"
-                    f" subject '{e.args[0]}'."
-                    " This is likely to be an issue with the command manifest."
-                )
-            for entity_data in entities:
-                try:
-                    id = tuple(entity_data[id_field] for id_field in id_fields)
-                except KeyError as e:
-                    self._mod.log.error(
-                        'Entity that caused the error below:', entity_data
-                    )
-                    raise LIMARException(
-                        f"Above result of query '{item['ref']}' missing"
-                        f" identity field '{e.args[0]}' mapped from subject"
-                        f" '{subject[id_fields.index(e.args[0])]}'."
-                        " This is likely to be an issue with the command"
-                        " manifest."
-                    )
-                if id not in merged_query_output:
-                    merged_query_output[id] = {}
-                merged_query_output[id].update(entity_data)
-
-        return merged_query_output
+        return self._merge_entities(query_outputs, subject)
 
     @ModuleAccessor.invokable_as_service
     def query(self, ref):
@@ -259,12 +232,16 @@ class InfoModule:
         ):
             raise LIMARException(
                 f"The query ref '{ref}' matched a non-query command"
-                f" '{item['ref']}'. Are you using the correct ref, and"
-                " are the tags correct in the command manifest? Run in"
-                " debug mode (`lm -vvv ...`) to see the matched item."
+                f" '{item['ref']}'. Are you using the correct ref, and are the"
+                " tags correct in the command manifest? Run in debug mode"
+                " (`lm -vvv ...`) to see the matched item."
             )
 
-        return self._run_query(item['ref'], item['command'])
+        entities = self._run_query(item['ref'], item['command'])
+        return self._merge_entities(
+            [(item, entities)],
+            list(item['identities'].keys())
+        )
 
     # Utils
     # --------------------------------------------------
@@ -400,3 +377,40 @@ class InfoModule:
                 )
 
         return invalidated
+
+    def _merge_entities(self,
+            query_outputs: list[tuple[ Item, list[dict[str, str]] ]],
+            subject: list[str]
+    ) -> dict[tuple[str, ...], dict[str, str]]:
+        merged_query_output: dict[tuple[str, ...], dict[str, str]] = {}
+        for item, entities in query_outputs:
+            self._mod.log.trace(
+                f"Identities for item '{item['ref']}'", item['identities']
+            )
+            try:
+                id_fields = tuple(item['identities'][tag] for tag in subject)
+            except KeyError as e:
+                raise LIMARException(
+                    f"Query '{item['ref']}' missing identity mapping for"
+                    f" subject '{e.args[0]}'."
+                    " This is likely to be an issue with the command manifest."
+                )
+            for entity_data in entities:
+                try:
+                    id = tuple(entity_data[id_field] for id_field in id_fields)
+                except KeyError as e:
+                    self._mod.log.error(
+                        'Entity that caused the error below:', entity_data
+                    )
+                    raise LIMARException(
+                        f"Above result of query '{item['ref']}' missing"
+                        f" identity field '{e.args[0]}' mapped from subject"
+                        f" '{subject[id_fields.index(e.args[0])]}'."
+                        " This is likely to be an issue with the command"
+                        " manifest."
+                    )
+                if id not in merged_query_output:
+                    merged_query_output[id] = {}
+                merged_query_output[id].update(entity_data)
+
+        return merged_query_output
