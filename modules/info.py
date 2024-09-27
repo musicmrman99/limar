@@ -1,4 +1,5 @@
 from graphlib import CycleError, TopologicalSorter
+from operator import itemgetter
 import random
 import string
 import shlex
@@ -30,6 +31,9 @@ class InfoModule:
     MM module to manage retreiving and displaying information.
     """
 
+    # Lifecycle
+    # --------------------------------------------------
+
     def __init__(self):
         self._dependency_graph: dict[str, set[str]] | None = None
         self._reverse_dependency_graph: dict[str, set[str]] | None = None
@@ -38,10 +42,8 @@ class InfoModule:
         return ['log', 'phase', 'manifest', 'command-manifest']
 
     def configure_args(self, *, mod: Namespace, parser: ArgumentParser, **_):
-        parser.add_argument('entity', metavar='ENTITY',
-            help="""
-            Show information about the given entity.
-            """)
+        parser.add_argument('subject', metavar='SUBJECT', nargs='+',
+            help="""Show information about the given subject.""")
 
         # Subcommands / Resolve Item Set - Output Controls
         mod.phase.configure_phase_control_args(parser)
@@ -91,8 +93,8 @@ class InfoModule:
                 ref: {
                     item['ref']
                     for _, item in query_items.items()
-                    # TODO: Only supports `info.get(ref...)` for now
-                    if ('info', 'get', (ref,)) in (
+                    # TODO: Only supports `info.query(<ref>)` for now
+                    if ('info', 'query', (ref,)) in (
                         param[0:3] for param in item['command']['parameters']
                     )
                 }
@@ -121,7 +123,7 @@ class InfoModule:
         output: Any = forwarded_data
 
         if transition_to_phase(INFO_LIFECYCLE.PHASES.GET):
-            output = self.get(args.entity)
+            output = self.get(args.subject)
 
         # Format
         if transition_to_phase(
@@ -137,8 +139,11 @@ class InfoModule:
         # Forward
         return output
 
+    # Invokation
+    # --------------------------------------------------
+
     @ModuleAccessor.invokable_as_service
-    def get(self, entity_spec: str) -> dict[str, dict[str, str]]:
+    def get(self, subject: list[str]) -> dict[tuple[str, ...], dict[str, str]]:
         """
         Get the list of the queries in the command manifest that match the given
         command_spec, then return the indexed list of objects returned by those
@@ -147,13 +152,14 @@ class InfoModule:
 
         assert self._dependency_graph is not None, f'{self.get.__name__}() called before {self.start.__name__}()'
 
-        matched_queries_sorted = {}
+        self._mod.log.info('Getting info for subject:', subject)
 
         # Get matching commands to execute
         set_ref = 'info-query-'+''.join(random.choices(string.hexdigits, k=32))
+        set_spec = ' & '.join(subject)
         # FIXME: Yes, I know this is an injection attack waiting to happen, eg.
         #          get('unlikely] | something_evil | [unlikely')
-        self._mod.manifest.declare_item_set(set_ref, f'query & [{entity_spec}]')
+        self._mod.manifest.declare_item_set(set_ref, f'query & [{set_spec}]')
         matched_queries: ItemSet = self._mod.manifest.get_item_set(set_ref)
         self._mod.log.debug(f'Matched manifest items:', matched_queries)
 
@@ -170,10 +176,12 @@ class InfoModule:
             query_sort_order = tuple(sorter.static_order())
         except CycleError as e:
             raise LIMARException(
-                f"Cannot resolve dependencies for entity set '{entity_spec}'"
-                f" due to cycle '{e.args[1]}'"
+                f"Cannot resolve dependencies for subject '{subject}' due to"
+                f" cycle '{e.args[1]}'"
             )
-        self._mod.log.debug(f'Query run order:', query_sort_order)
+        self._mod.log.debug(
+            f'Query run order (including dependencies):', query_sort_order
+        )
 
         matched_queries_sorted: ItemSet = {}
         for ref in query_sort_order:
@@ -185,33 +193,81 @@ class InfoModule:
         for item in matched_queries_sorted.values():
             if item['command']['type'] != 'query':
                 raise LIMARException(
-                    f"The info spec '{entity_spec}' matched a non-query command"
-                    f" '{item['ref']}'. Are you using the correct tag, and are"
-                    " the tags correct in the command manifest? Run in debug"
-                    " mode (`lm -vvv ...`) to see the full list of matched"
-                    " queries."
+                    f"The info subject '{subject}' matched a non-query command"
+                    f" '{item['ref']}'. Are you using the correct subject, and"
+                    " are the tags correct in the command manifest? Run in"
+                    " debug mode (`lm -vvv ...`) to see the full list of"
+                    " matched queries."
                 )
 
         # Execute each query. Produces a list of entity data (inc. entity ID)
         # for each query executed.
-        #   ItemSet -> list[list[dict[str, str]]]
-        query_outputs = [
-            self._run_query(item['ref'], item['command'])
+        #   ItemSet -> list[tuple[ Item, list[dict[str, str]] ]]
+        query_outputs =[
+            (
+                item,
+                self._run_query(item['ref'], item['command'])
+            )
             for item in matched_queries_sorted.values()
         ]
         self._mod.log.debug('Query outputs:', query_outputs)
 
         # Index and merge entity data by ID
-        #   list[list[dict[str, str]]] -> dict[str, dict[str, str]]
-        merged_query_output: dict[str, dict[str, str]] = {}
-        for entity_list in query_outputs:
-            for entity_data in entity_list:
-                id = entity_data['id']
+        #   list[tuple[ Item, list[dict[str, str]] ]]
+        #   -> dict[str, dict[str, str]]
+        merged_query_output: dict[tuple[str, ...], dict[str, str]] = {}
+        for item, entities in query_outputs:
+            self._mod.log.trace(
+                f"Identities for item '{item['ref']}'", item['identities']
+            )
+            try:
+                id_fields = tuple(item['identities'][tag] for tag in subject)
+            except KeyError as e:
+                raise LIMARException(
+                    f"Query '{item['ref']}' missing identity mapping for"
+                    f" subject '{e.args[0]}'."
+                    " This is likely to be an issue with the command manifest."
+                )
+            for entity_data in entities:
+                try:
+                    id = tuple(entity_data[id_field] for id_field in id_fields)
+                except KeyError as e:
+                    self._mod.log.error(
+                        'Entity that caused the error below:', entity_data
+                    )
+                    raise LIMARException(
+                        f"Above result of query '{item['ref']}' missing"
+                        f" identity field '{e.args[0]}' mapped from subject"
+                        f" '{subject[id_fields.index(e.args[0])]}'."
+                        " This is likely to be an issue with the command"
+                        " manifest."
+                    )
                 if id not in merged_query_output:
                     merged_query_output[id] = {}
                 merged_query_output[id].update(entity_data)
 
         return merged_query_output
+
+    @ModuleAccessor.invokable_as_service
+    def query(self, ref):
+        item = self._mod.manifest.get_item(ref)
+        if (
+            'query' not in item['tags'] or
+            'command' not in item or
+            'type' not in item['command'] or
+            item['command']['type'] != 'query'
+        ):
+            raise LIMARException(
+                f"The query ref '{ref}' matched a non-query command"
+                f" '{item['ref']}'. Are you using the correct ref, and"
+                " are the tags correct in the command manifest? Run in"
+                " debug mode (`lm -vvv ...`) to see the matched item."
+            )
+
+        return self._run_query(item['ref'], item['command'])
+
+    # Utils
+    # --------------------------------------------------
 
     def _run_query(self, ref, query) -> list[dict[str, str]]:
         name = ref.replace('/', '.')
@@ -230,7 +286,7 @@ class InfoModule:
                     f") : {transform}"
                 )
 
-                if module == 'info' and method == 'get':
+                if (module, method) == ('info', 'query'):
                     try:
                         query_args[param] = self._mod.cache.get(
                             f"info.query.{args[0]}.pickle"
