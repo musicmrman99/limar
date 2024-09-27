@@ -175,10 +175,11 @@ class InfoModule:
             )
         self._mod.log.debug(f'Query run order:', query_sort_order)
 
-        matched_queries_sorted: ItemSet = {
-            ref: matched_queries[ref]
-            for ref in query_sort_order
-        }
+        matched_queries_sorted: ItemSet = {}
+        for ref in query_sort_order:
+            # Don't run dependent queries twice
+            if ref in matched_queries:
+                matched_queries_sorted[ref] = matched_queries[ref]
 
         # Ensure all matched commands are queries
         for item in matched_queries_sorted.values():
