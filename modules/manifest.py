@@ -1100,14 +1100,16 @@ class ManifestModule:
         else:
             item_set_regex = re.compile(pattern)
             try:
-                item_set = next(
-                    item
-                    for ref, item in self._global_manifest.item_sets().items()
+                ref, item_set = next(
+                    (ref, item_set)
+                    for ref, item_set in self._global_manifest.item_sets().items()
                     if (
                         (type(ref) == str and item_set_regex.search(ref)) or
                         (type(ref) == tuple and item_set_regex.search(ref[0]))
                     )
                 )
+                self._mod.log.info(f"Matched item set '{ref}'")
+                self._mod.log.debug('Item set refs:', tuple(item_set.keys()))
             except (KeyError, StopIteration) as e:
                 raise LIMARException(
                     f"item set not found from pattern '{pattern}'"
@@ -1137,12 +1139,13 @@ class ManifestModule:
 
         item_regex = re.compile(pattern)
         try:
-            item = next(
-                value
-                for name, value in self._global_manifest.items().items()
-                if item_regex.search(name)
+            ref, item = next(
+                (ref, item)
+                for ref, item in self._global_manifest.items().items()
+                if item_regex.search(ref)
             )
-            self._mod.log.debug('found:', item)
+            self._mod.log.info(f"Matched item '{ref}'")
+            self._mod.log.debug('Item data:', item)
         except StopIteration:
             raise LIMARException(
                 f"item not found from pattern '{pattern}'"
