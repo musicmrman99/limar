@@ -54,7 +54,7 @@ dmidecode  (__TODO, hardware) # description of system's hardware components
           revision:     (.Rev)
         }
       )
-      """
+    """
   )
   lspci/main (hardware, pci)
 
@@ -81,7 +81,7 @@ dmidecode  (__TODO, hardware) # description of system's hardware components
           }
         )
       )
-      """
+    """
   )
   lspci/extras (hardware, pci)
 }
@@ -152,7 +152,7 @@ lsblk (__TODO, hardware)
           trimDoesZeroFill:   (."disc-zero"),
         }
       )
-      """
+    """
   )
   lsblk/device (hardware, device)
 
@@ -177,7 +177,7 @@ lsblk (__TODO, hardware)
           }
         }
       )
-      """
+    """
   )
   lsblk/device/partition-table (hardware, device, partition-table)
 
@@ -216,7 +216,7 @@ lsblk (__TODO, hardware)
         fileGroup:         (.group),
         filePermissions:   (.mode),
       })
-      """
+    """
   )
   lsblk/block (hardware, block)
 
@@ -243,7 +243,7 @@ lsblk (__TODO, hardware)
           },
         }
       )
-      """
+    """
   )
   lsblk/block/partition (hardware, block, partition)
 
@@ -286,7 +286,7 @@ lsblk (__TODO, hardware)
           ),
         }
       )
-      """
+    """
   )
   lsblk/filesystem (hardware, filesystem)
 }
@@ -435,141 +435,305 @@ docker/host-image/show   (__TODO, show,   host-image, file, metadata, content)
   command: git
   description: """Manage versions and changes to files, particularly software source code."""
 ) {
-  @query(
-    command: """
-      pwd &&
-      git rev-parse --is-inside-work-tree !! &&
-      git rev-parse --show-toplevel !!
-    """
-    parse: """
-      [
-        {
-          id:          (.[0].stdout),
-          "git.isRepo": (.[1].stdout == "true"),
-          "git.repo.root": (if .[2].status == 0 then .[2].stdout else null end),
-        }
-      ]
-    """
-  )
-  git/repo (git, repo)
+  # General Info
+  # --------------------
 
   @query(
     command: """
       pwd &&
-      git status --porcelain &&
-      git rev-parse --short HEAD &&
-      git rev-parse HEAD &&
-      git symbolic-ref --short -q HEAD !! &&
-      git describe --tags --exact-match !! &&
-      git rev-list --tags --max-count=1
+    !!git rev-parse --show-toplevel &&
+    !!git rev-parse --is-inside-work-tree &&
+    !!git status --porcelain
+    """
+    parse: """
+      [{
+        "dir.id": (.[0].stdout),
+        "git.id": (if .[1].status == 0 then .[1].stdout else null end),
+
+        "git.isValid": (.[2].stdout == "true"),
+        "git.isClean": (if .[3].status == 0 then .[3].stdout == "" else null end)
+      }]
+    """
+  )
+  @identities(
+    dir: dir.id
+    git: git.id
+  )
+  git/repo (show, dir, git)
+
+  # Current State - Identity Info
+  # --------------------
+
+  @query(
+    command: """
+      pwd &&
+    !!git rev-parse --show-toplevel &&
+    !!git rev-parse --short HEAD &&
+    !!git rev-parse HEAD
+    """
+    parse: """
+      [{
+        "dir.id":        (.[0].stdout),
+        "git.id":        (if .[1].status == 0 then .[1].stdout else null end),
+        "git.commit.id": (if .[2].status == 0 then .[2].stdout else null end),
+
+        "git.commit.idFull": (if .[3].status == 0 then .[3].stdout else null end)
+      }]
+    """
+  )
+  @identities(
+    dir: dir.id
+    git: git.id
+    commit: git.commit.id
+  )
+  git/commit (show, dir, git, commit)
+
+  @query(
+    command: """
+      pwd &&
+    !!git rev-parse --show-toplevel &&
+    !!git symbolic-ref --short -q HEAD
+    """
+    parse: """
+      [{
+        "dir.id":        (.[0].stdout),
+        "git.id":        (if .[1].status == 0 then .[1].stdout else null end),
+        "git.branch.id": (if .[2].status == 0 and .[2].stdout != "" then .[2].stdout else null end)
+      }]
+    """
+  )
+  @identities(
+    dir: dir.id
+    git: git.id
+    branch: git.branch.id
+  )
+  git/branch (show, dir, git, branch)
+
+  @query(
+    command: """
+      pwd &&
+    !!git rev-parse --show-toplevel &&
+    !!git describe --tags --exact-match
+    """
+    parse: """
+      [{
+        "dir.id":     (.[0].stdout),
+        "git.id":     (if .[1].status == 0 then .[1].stdout else null end),
+        "git.tag.id": (if .[2].status == 0 and .[2].stdout != "" then .[2].stdout else null end)
+      }]
+    """
+  )
+  @identities(
+    dir: dir.id
+    git: git.id
+    tag: git.tag.id
+  )
+  git/tag (show, dir, git, tag)
+
+  # Current State - Derived Info
+  # --------------------
+
+  @query(
+    command: """
+      pwd &&
+    !!git rev-parse --show-toplevel &&
+    !!git symbolic-ref --short -q HEAD &&
+    !!git for-each-ref --format='%(upstream:short)' refs/heads/{{ info.query(git/branch) :: $.values().toList()[0]["git.branch.id"] }}
+    """
+    parse: """
+      [{
+        "dir.id":        (.[0].stdout),
+        "git.id":        (if .[1].status == 0 then .[1].stdout else null end),
+        "git.branch.id": (if .[2].status == 0 and .[2].stdout != "" then .[2].stdout else null end),
+
+        "git.branch.remote": (if .[3].status == 0 and .[3].stdout != "" then .[3].stdout else null end)
+      }]
+    """
+  )
+  @identities(
+    dir: dir.id
+    git: git.id
+    branch: git.branch.id
+  )
+  git/branch/remote (show, dir, git, branch)
+
+  @query(
+    command: """
+      pwd &&
+    !!git rev-parse --show-toplevel &&
+    !!git symbolic-ref --short -q HEAD &&
+    !!git rev-parse {{ info.query(git/branch/remote) :: $.values().toList()[0]["git.branch.remote"] }}
+    """
+    parse: """
+      [{
+        "dir.id":        (.[0].stdout),
+        "git.id":        (if .[1].status == 0 then .[1].stdout else null end),
+        "git.branch.id": (if .[2].status == 0 and .[2].stdout != "" then .[2].stdout else null end),
+
+        "git.branch.remote.commit.id": (if .[2].status == 0 and .[3].stdout != "" then .[3].stdout else null end)
+      }]
+    """
+  )
+  @identities(
+    dir: dir.id
+    git: git.id
+    branch: git.branch.id
+  )
+  git/branch/remote/commit (show, dir, git, branch)
+
+  @query(
+    command: """
+    !!git rev-list --tags --max-count=1
+    """,
+    parse: """
+      [{
+        "git.tag.orderedLast.commit.id": (
+          if .[0].status == 0 and .[0].stdout != "" then .[0].stdout else null end
+        )
+      }]
+    """
+  )
+  @identities(
+    tag: git.tag.orderedLast.commit.id
+  )
+  git/tag/orderedLast/commitId
+
+  @query(
+    command: """
+      pwd &&
+    !!git rev-parse --show-toplevel &&
+    !!git describe --tags {{ info.query(git/tag/orderedLast/commitId) :: $.values().toList()[0]["git.tag.orderedLast.commit.id"] }} &&
+    !!git rev-list --tags --max-count=1 &&
+    !!git for-each-ref refs/tags --sort=-creatordate --format='%(refname:short)' --count=1 &&
+    !!git for-each-ref refs/tags --sort=-creatordate --format='%(objectname)' --count=1
     """
     parse: """
       [
         {
-          id:                            (.[0].stdout),
-
-          "git.isClean":                 (.[1].stdout == ""),
-
-          # Checked out commit
-          "git.current.commitId":        (.[2].stdout),
-          "git.current.commitIdFull":    (.[3].stdout),
-          "git.current.branch.name":     (if .[4].stdout != "" then .[4].stdout else null end),
-          "git.current.tag.name":        (if .[5].stdout != "" then .[5].stdout else null end),
-
-          # Latest tag at or before the current commit
-          "git.latest.tag.commitIdFull": (if .[6].stdout != "" then .[6].stdout else null end)
+          "dir.id":                (.[0].stdout),
+          "git.id":                (if .[1].status == 0 then .[1].stdout else null end),
+          "git.tag.id":            (if .[2].status == 0 then .[2].stdout else null end),
+          "git.tag.commit.id":     (if .[3].status == 0 then .[3].stdout else null end),
+          "git.tag.isOrderedLast": (true)
+        },
+        {
+          "dir.id":                (.[0].stdout),
+          "git.id":                (if .[1].status == 0 then .[1].stdout else null end),
+          "git.tag.id":            (if .[4].status == 0 then .[4].stdout else null end),
+          "git.tag.commit.id":     (if .[5].status == 0 then .[5].stdout else null end),
+          "git.tag.isCreatedLast": (true)
         }
       ]
     """
   )
-  git/status (git, branch, tag)
+  @identities(
+    dir: dir.id
+    git: git.id
+    tag: git.tag.id
+  )
+  git/tag/latest (show, dir, git, tag)
 
   @query(
     command: """
+      pwd &&
+    !!git rev-parse --show-toplevel &&
       git branch -vv
     """
-    # Ideas for using dynamic values:
-    # - template via `limar`      - {/ info git/status --- tr -1 -jq 'map(.)[0]."git.current.branch.name"' /}
-    # - template via `limar info` - {% git/status % .[0]."git.current.branch.name" %}
     parse: """
-      .[0].stdout
+      [.[0], .[1], .[2].stdout] as [$dirPath, $gitPath, $branches]
+      | $branches
       | split("\n")
       | map(
-        capture("^((?<worktree>[ \\*]) )?(?<name>[^ ]*) +(?<commitId>[^ ]*) (\\[(?<remoteInfo>[^\\]]*)\\] )?(?<commitMessage>.*)")
+        capture(
+          "^((?<worktree>[ \\*]) )?(?<name>[^ ]*) +(?<commitId>[^ ]*) (\\[(?<remoteInfo>[^\\]]*)\\] )?(?<commitMessage>.*)"
+        )
         | {
-          isCurrent:     (if .worktree == "*" then "[bold]✓" elif .worktree == "+" then "✓" else null end),
-          id:            (.name),
-          commitId:      (.commitId),
-          commitMessage: (.commitMessage)
+          "dir.id": ($dirPath.stdout),
+          "git.id": (if $gitPath.status == 0 then $gitPath.stdout else null end),
+
+          "git.branch.id":            (.name),
+          "git.branch.isCurrent":     (
+            if .worktree == "*" then "[bold]✓" elif .worktree == "+" then "✓" else null end
+          ),
+          "git.branch.commitId":      (.commitId),
+          "git.branch.commitMessage": (.commitMessage)
         }
       )
     """
   )
-  git/testing (git, branch)
+  @identities(
+    dir: dir.id
+    branch: git.branch.id
+  )
+  git/branch/all (show, dir, branch)
 
   #"""
-  TODO
-  --------------------
+    TODO
+    --------------------
 
-  # Write/Modify Commands (workflow)
-  # ----------
+    git for-each-ref --format='%(HEAD):%(refname:short):%(objecttype):%(objectname):%(upstream:track,nobracket)%0a%(creator):%(creatordate)%0a%(authorname):%(authoremail:trim):%(authordate:iso-local)%0a%(committername):%(committeremail:trim):%(committerdate:iso-local)%0a%(taggername):%(taggeremail:trim):%(taggerdate:iso-local)%0a%(contents:subject)%0a%(contents:body)%0a%(trailers:only,key_value_separator==)%0a%(contents:signature)'
 
-  git clone $remote_url $local_path
-  git fetch -p
+    # Write/Modify Commands (workflow)
+    # ----------
 
-  git branch $branch $source_ref
-  git branch -m # rename branch
-  git branch --unset-upstream
-  git branch -d/-D # delete / force-delete branch
+    git clone $remote_url $local_path
+    git fetch -p
+    git fetch --tags -f
 
-  # Stash changes
-  git stash --include-untracked # normal stash + unstaged, non-ignored files
-  git stash --all # stash EVERYTHING
-  git stash pop --index # Re-stage changes that were staged before stash
+    git branch $branch $source_ref
+    git branch -m # rename branch
+    git branch --unset-upstream
+    git branch -d/-D # delete / force-delete branch
 
-  # Change branch
-  git checkout
+    # Stash changes
+    git stash --include-untracked # normal stash + unstaged, non-ignored files
+    git stash --all # stash EVERYTHING
+    git stash pop --index # Re-stage changes that were staged before stash
 
-  git rebase origin/$branch
-  git rebase -i $default_branch
-  git rebase --abort
+    # Change branch
+    git checkout
+    + git submodule update # stash? "would be overridden by checkout"?
 
-  git push --force-with-lease
-  git push origin :$branch
+    git rebase origin/$branch
+    git rebase -i $default_branch
+    git rebase --abort
 
-  # Requires Parameters
-  # ----------
+    git push --force-with-lease
+    git push origin :$branch
 
-  # git info format
-  #project | default_branch | D^< >D< >C< >C^ | num_branches | orphans
+    # Requires Parameters
+    # ----------
 
-  # Branch exists?
-  git rev-parse --verify $branch
+    # git info format
+    #project | default_branch | D^< >D< >C< >C^ | num_branches | orphans
 
-  # Get tracking branch
-  branch_ref=refs/heads/$branch
-  git for-each-ref --format='%(upstream:short)' $branch_ref
+    # Branch exists?
+    git rev-parse --verify $branch
 
-  # How many commits from one branch to another
-  git rev-list --count $from_branch..$to_branch
+    # Get tracking branch
+    branch_ref=refs/heads/$branch
+    git for-each-ref --format='%(upstream:short)' $branch_ref
 
-  # Conventional stuff, like:
-  git log --format='%s' $branch_ref | grep "^[^(]*\($type\): "
+    # How many commits from one branch to another
+    git rev-list --count $from_branch..$to_branch
 
-  # Remote tracking branch exists
-  git ls-remote --heads origin $branch_ref
+    # Conventional stuff, like:
+    git log --format='%s' $branch_ref | grep "^[^(]*\($type\): "
 
-  # get ref of commit ID
-  git describe --tags $commit_id
+    # Remote tracking branch exists
+    git ls-remote --heads origin $branch_ref
 
-  # Get author date of commit at $ref
-  git log --date=format:%Y-%m-%d --pretty=format:%ad $ref
+    # get ref of commit ID
+    git describe --tags $commit_id
 
-  # Get formatted log of commit
-  git log -1 format=$format $ref
+    # Get author date of commit at $ref
+    git log --date=format:%Y-%m-%d --pretty=format:%ad $ref
 
-  # Format every ref (eg. for getting branches with some patterns filtered out)
-  git for-each-ref --format=$format refs/heads
+    # Get formatted log of commit
+    git log -1 format=$format $ref
+
+    # Format every ref (eg. for getting branches with some patterns filtered out)
+    git for-each-ref --format=$format refs/heads
   """
 }
 
