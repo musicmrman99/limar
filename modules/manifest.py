@@ -1092,12 +1092,20 @@ class ManifestModule:
             ")"
         )
 
+        item_set = None
         if pattern is None:
             if self._default_item_set is None:
                 item_set = self._global_manifest.items()
             else:
                 item_set = self._global_manifest.item_set(self._default_item_set)
-        else:
+
+        if pattern is not None and item_set is None:
+            try:
+                item_set = self._global_manifest.item_set(pattern)
+            except KeyError:
+                self._mod.log.debug(f"No item set with ref '{pattern}'")
+
+        if pattern is not None and item_set is None:
             item_set_regex = re.compile(pattern)
             try:
                 ref, item_set = next(
@@ -1110,10 +1118,13 @@ class ManifestModule:
                 )
                 self._mod.log.info(f"Matched item set '{ref}'")
                 self._mod.log.debug('Item set refs:', tuple(item_set.keys()))
-            except (KeyError, StopIteration) as e:
-                raise LIMARException(
-                    f"item set not found from pattern '{pattern}'"
-                ) from e
+            except (KeyError, StopIteration):
+                self._mod.log.debug(
+                    f"Item set not found from pattern '{pattern}'"
+                )
+
+        if item_set is None:
+            raise LIMARException(f"Item set not found from pattern '{pattern}'")
 
         return item_set
 
@@ -1137,19 +1148,31 @@ class ManifestModule:
         if item_set is None:
             item_set = self._global_manifest.items()
 
-        item_regex = re.compile(pattern)
+        item = None
         try:
-            ref, item = next(
-                (ref, item)
-                for ref, item in self._global_manifest.items().items()
-                if item_regex.search(ref)
+            item = item_set[pattern]
+        except KeyError:
+            self._mod.log.debug(
+                f"No item with ref '{pattern}', trying pattern matching ..."
             )
-            self._mod.log.info(f"Matched item '{ref}'")
-            self._mod.log.debug('Item data:', item)
-        except StopIteration:
-            raise LIMARException(
-                f"item not found from pattern '{pattern}'"
-            )
+
+        if item is None:
+            item_regex = re.compile(pattern)
+            try:
+                ref, item = next(
+                    (ref, item)
+                    for ref, item in item_set.items()
+                    if item_regex.search(ref)
+                )
+                self._mod.log.info(f"Matched item '{ref}'")
+                self._mod.log.debug('Item data:', item)
+            except StopIteration:
+                self._mod.log.debug(
+                    f"Item not found from pattern '{pattern}'"
+                )
+
+        if item is None:
+            raise LIMARException(f"Item not found from pattern '{pattern}'")
 
         return item
 
