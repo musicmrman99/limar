@@ -66,7 +66,7 @@ class Query:
             for raw_command in raw_commands
         ]
         for command_parsed in commands_parsed:
-            if command_parsed['fragments'][0][:2] == '!!':
+            if command_parsed['fragments'][0][:2] == '! ':
                 command_parsed['allowedToFail'] = True
                 command_parsed['fragments'][0] = (
                     command_parsed['fragments'][0][2:]
