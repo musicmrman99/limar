@@ -149,7 +149,9 @@ class InfoModule:
     # --------------------------------------------------
 
     @ModuleAccessor.invokable_as_service
-    def get(self, subject: list[str]) -> dict[tuple[str, ...], dict[str, str]]:
+    def get(self,
+            subject: list[str]
+    ) -> dict[str | tuple[str, ...], dict[str, str]]:
         """
         Get the list of the queries in the command manifest that match the given
         command_spec, then return the indexed list of objects returned by those
@@ -222,8 +224,15 @@ class InfoModule:
         return self._merge_entities(query_outputs, subject)
 
     @ModuleAccessor.invokable_as_service
-    def query(self, ref):
+    def query(self, ref, subject=None):
         item = self._mod.manifest.get_item(ref)
+
+        if subject is None:
+            if 'primarySubject' in item:
+                subject = [item['primarySubject']]
+            else:
+                subject = list(item['subjects'].keys())
+
         if (
             'query' not in item['tags'] or
             'command' not in item or
@@ -238,10 +247,7 @@ class InfoModule:
             )
 
         entities = self._run_query(item['ref'], item['command'])
-        return self._merge_entities(
-            [(item, entities)],
-            list(item['identities'].keys())
-        )
+        return self._merge_entities([(item, entities)], subject)
 
     # Utils
     # --------------------------------------------------
@@ -387,18 +393,18 @@ class InfoModule:
     def _merge_entities(self,
             query_outputs: list[tuple[ Item, list[dict[str, str]] ]],
             subject: list[str]
-    ) -> dict[tuple[str, ...], dict[str, str]]:
-        merged_query_output: dict[tuple[str, ...], dict[str, str]] = {}
+    ) -> dict[str | tuple[str, ...], dict[str, str]]:
+        merged_query_output: dict[str | tuple[str, ...], dict[str, str]] = {}
         for item, entities in query_outputs:
             self._mod.log.trace(
-                f"Identities for item '{item['ref']}'", item['identities']
+                f"Subjects for item '{item['ref']}'", item['subjects']
             )
             try:
-                id_fields = tuple(item['identities'][tag] for tag in subject)
+                id_fields = tuple(item['subjects'][tag] for tag in subject)
             except KeyError as e:
                 raise LIMARException(
-                    f"Query '{item['ref']}' missing identity mapping for"
-                    f" subject '{e.args[0]}'."
+                    f"Query '{item['ref']}' missing field mapping for subject"
+                    f" '{e.args[0]}'."
                     " This is likely to be an issue with the command manifest."
                 )
             for entity_data in entities:
@@ -415,6 +421,15 @@ class InfoModule:
                         " This is likely to be an issue with the command"
                         " manifest."
                     )
+
+                # If there is only one item in the composite key, then unwrap
+                # it. Neither jq nor yaql support indexing into dictionaries
+                # with tuple keys. Unwrapping permits queries (and subqueries)
+                # to be indexed into to improve performance when joining data
+                # about different subjects.
+                if len(id) == 1:
+                    id = id[0]
+
                 if id not in merged_query_output:
                     merged_query_output[id] = {}
                 merged_query_output[id].update(entity_data)

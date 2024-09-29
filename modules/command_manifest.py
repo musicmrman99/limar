@@ -7,7 +7,8 @@ from modules.manifest_modules import (
     command,
     tool,
     query,
-    identities
+    subjects,
+    primary_subject
 )
 
 class CommandManifestModule:
@@ -25,5 +26,6 @@ class CommandManifestModule:
             command.Command,
             tool.Tool,
             query.Query,
-            identities.Identities
+            subjects.Subjects,
+            primary_subject.PrimarySubject
         )
