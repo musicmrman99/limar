@@ -7,11 +7,17 @@ import subprocess
 from core.exceptions import LIMARException
 from core.modulemanager import ModuleAccessor
 from core.modules.phase_utils.phase_system import PhaseSystem
+from modules.command_utils.query import QueryFormatter
 
 # Types
 from argparse import ArgumentParser, Namespace
 from typing import Any
 
+from modules.command_utils.query import (
+    LimarCommand,
+    Interpolatable,
+    InterpolatableLimarCommand
+)
 from modules.manifest import Item, ItemSet
 
 INFO_LIFECYCLE = PhaseSystem(
@@ -194,6 +200,14 @@ class InfoModule:
         matched_queries_sorted: ItemSet = {}
         for ref in query_sort_order:
             # Don't run dependent queries twice
+            # FIXME: ... but won't running dependent queries out of topological
+            # order have the same issues as not running matched queries out of
+            # topological order? (I think it will)
+            # FIXME: ... and therefore won't this need doing for .query() too,
+            # including any usages of .query() as part of a LIMAR command in a
+            # manifest query?
+            # At which point, would it be best to create a dedicated query
+            # runner system? (sync for now)
             if ref in matched_queries:
                 matched_queries_sorted[ref] = matched_queries[ref]
 
@@ -249,7 +263,7 @@ class InfoModule:
         entities = self._run_query(item['ref'], item['command'])
         return self._merge_entities([(item, entities)], subject)
 
-    # Utils
+    # Utils - Runners
     # --------------------------------------------------
 
     def _run_query(self, ref, query) -> list[dict[str, str]]:
@@ -260,53 +274,16 @@ class InfoModule:
                 self._mod.cache.get(f"info.query.{name}.pickle")
             )
         except KeyError:
-            query_args: dict[tuple[str, ...], str] = {}
+            query_args: dict[LimarCommand, str] = {}
             for param in query['parameters']:
-                module, method, args, jqTransform, pqTransform = param
-                self._mod.log.debug(
-                    f"Computing parameter: {module}.{method}(" +
-                    ', '.join(f"'{arg}'" for arg in args) +
-                    ") "+(
-                        ': '+jqTransform
-                        if jqTransform is not None
-                        else ':: '+pqTransform
-                    )
-                )
-
-                if (module, method) == ('info', 'query'):
-                    try:
-                        query_args[param] = self._mod.cache.get(
-                            f"info.query.{args[0]}.pickle"
-                        )
-                    except KeyError:
-                        pass
-
-                query_arg = getattr(getattr(self._mod, module), method)(*args)
-                self._mod.log.debug(
-                    'Query argument (pre-transform): ',
-                    query_arg
-                )
-
-                if jqTransform is not None:
-                    query_args[param] = self._mod.tr.query(
-                        jqTransform, query_arg, lang='jq', first=True
-                    )
-                elif pqTransform is not None:
-                    query_args[param] = self._mod.tr.query(
-                        pqTransform, query_arg, lang='yaql'
-                    )
-                self._mod.log.debug(
-                    'Query argument (post-transform): ',
-                    query_args[param]
-                )
-
+                query_args[param] = self._run_limar_command(param)['stdout']
                 if not isinstance(query_args[param], str):
                     raise LIMARException(
-                        f"Evaluation of query parameter {param} did not return"
-                        " a string. Cannot interpolate non-string values into"
-                        " the requested query."
+                        f"Evaluation of query parameter {{{{"
+                        f" {QueryFormatter().limar_command(param)} }}}} did not"
+                        " return a string. Cannot interpolate non-string values"
+                        " into the requested query."
                     )
-
             self._mod.log.debug('Query arguments:', query_args)        
 
             query_parser = (
@@ -315,47 +292,36 @@ class InfoModule:
                 else '.'
             )
 
+            COMMAND_RUNNERS = {
+                'system': self._run_system_command,
+                'limar': self._run_limar_command
+            }
             command_outputs: list[dict[str, Any]] = []
             for command in query['commands']:
                 try:
-                    command_interpolated = ''.join(
-                        (
-                            query_args[fragment]
-                            if isinstance(fragment, tuple)
-                            else fragment
+                    command_outputs.append(
+                        COMMAND_RUNNERS[command['type']](
+                            command['command'], query_args, command
                         )
-                        for fragment in command['command']
                     )
-                    self._mod.log.info('Running command:', command_interpolated)
-
-                    command_split_args = shlex.split(command_interpolated)
-                    self._mod.log.trace('Command split:', command_split_args)
-
-                    subproc = subprocess.Popen(
-                        command_split_args,
-                        stdout=subprocess.PIPE,
-                        stderr=subprocess.PIPE
+                    self._mod.log.trace('Command output:', command_outputs[-1])
+                except KeyError:
+                    raise LIMARException(
+                        f"Unknown command type '{command['type']}' for command"
+                        f" '{command['command']}' in query '{ref}'"
                     )
-                    stdout, stderr = subproc.communicate()
-                    command_status = 0
 
-                except subprocess.CalledProcessError as e:
-                    if not command['allowedToFail']:
-                        raise e
-                    command_status = e.returncode
-
-                command_outputs.append({
-                    'status': command_status,
-                    'stdout': stdout.decode().strip(),
-                    'stderr': stderr.decode().strip()
-                })
-                self._mod.log.trace('Command output:', command_outputs[-1])
-
+            self._mod.log.trace('Query parser input:', command_outputs)
+            self._mod.log.trace('Query parser:', query_parser)
             query_output: list[dict[str, str]] = self._mod.tr.query(
                 query_parser,
                 command_outputs,
                 lang='jq',
                 first=True
+            )
+            self._mod.log.debug(
+                'Query output (post-transform):',
+                command_outputs[-1]
             )
             self._mod.cache.set(f"info.query.{name}.pickle", query_output)
 
@@ -368,6 +334,138 @@ class InfoModule:
             )
 
         return query_output
+
+    def _run_limar_command(self,
+            limar_command: LimarCommand | InterpolatableLimarCommand,
+            data=None,
+            options: dict[str, Any] | None = None
+    ) -> Any:
+        if data is None:
+            data = {}
+
+        # Currently unused (don't run unused code), but may be used in future
+        # final_options = {}
+        # if options is not None:
+        #     final_options.update(options)
+
+        module, method, args_raw, jqTransform, pqTransform = limar_command
+        self._mod.log.debug(
+            'Running LIMAR command:',
+            QueryFormatter().limar_command(limar_command)
+        )
+
+        # Interpolate args
+        args = tuple(
+            (
+                arg
+                if isinstance(arg, str)
+                else self._interpolate(arg, data)
+            )
+            for arg in args_raw
+        )
+        self._mod.log.debug(
+            'Evaluated LIMAR command:',
+            QueryFormatter().limar_command(
+                (module, method, args, jqTransform, pqTransform)
+            )
+        )
+
+        # Get LIMAR command output
+        cache_hit = False
+        if (module, method) == ('info', 'query'):
+            try:
+                command_output_raw = self._mod.cache.get(
+                    f"info.query.{args[0]}.pickle"
+                )
+                cache_hit = True
+            except KeyError:
+                pass
+
+        if not cache_hit:
+            limar_service_method = getattr(getattr(self._mod, module), method)
+            command_output_raw = limar_service_method(*args)
+
+        self._mod.log.debug(
+            'LIMAR command output (pre-transform): ',
+            command_output_raw
+        )
+
+        # Process LIMAR command output
+        command_output = command_output_raw
+        if jqTransform is not None:
+            command_output = self._mod.tr.query(
+                jqTransform, command_output_raw, lang='jq', first=True
+            )
+        elif pqTransform is not None:
+            command_output = self._mod.tr.query(
+                pqTransform, command_output_raw, lang='yaql'
+            )
+        self._mod.log.trace(
+            'LIMAR command output (post-transform): ',
+            command_output
+        )
+
+        return {
+            'status': 0,
+            'stdout': command_output,
+            'stderr': None
+        }
+
+    def _run_system_command(self,
+        system_command: Interpolatable,
+        data: dict[LimarCommand, str] | None = None,
+        options: dict[str, Any] | None = None
+    ) -> Any:
+        if data is None:
+            data = {}
+
+        final_options = {
+            'allowedToFail': False
+        }
+        if options is not None:
+            final_options.update(options)
+
+        command_interpolated = self._interpolate(system_command, data)
+        self._mod.log.info('Running command:', command_interpolated)
+
+        command_split_args = shlex.split(command_interpolated)
+        self._mod.log.trace('Command split:', command_split_args)
+
+        try:
+            subproc = subprocess.Popen(
+                command_split_args,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE
+            )
+            stdout, stderr = subproc.communicate()
+            command_status = 0
+
+        except subprocess.CalledProcessError as e:
+            if not final_options['allowedToFail']:
+                raise e
+            command_status = e.returncode
+
+        return {
+            'status': command_status,
+            'stdout': stdout.decode().strip(),
+            'stderr': stderr.decode().strip()
+        }
+
+    # Utils - Other
+    # --------------------------------------------------
+
+    def _interpolate(self,
+            interpolatable: Interpolatable,
+            data: dict[LimarCommand, str]
+    ) -> str:
+        return ''.join(
+            (
+                data[fragment]
+                if isinstance(fragment, tuple)
+                else fragment
+            )
+            for fragment in interpolatable
+        )
 
     def _invalidate_cache_for_query_dependents(self,
             query_ref,

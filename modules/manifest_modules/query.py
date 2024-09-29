@@ -1,8 +1,14 @@
 from itertools import chain
-from core.exceptions import LIMARException
 import re
 
+from core.exceptions import LIMARException
 from core.utils import list_strip
+from modules.command_utils.query import (
+    LimarCommand,
+    Interpolatable,
+    InterpolatableLimarCommand,
+    QueryFormatter
+)
 
 class Query:
     @staticmethod
@@ -11,6 +17,7 @@ class Query:
 
     def __init__(self):
         self._current_query = None
+        self._fmt = QueryFormatter()
 
     def on_enter_context(self, context, *_, **__):
         if 'command' not in context['opts']:
@@ -21,20 +28,6 @@ class Query:
         # Query requirements:
         # - read-only (including caching, etc.)
         # - idempotent
-        query_parameters = {
-            (
-                match.groups()[0],
-                match.groups()[1],
-                tuple(match.groups()[2].split(', ')),
-                match.groups()[4],
-                match.groups()[5]
-            )
-            for match in re.finditer(
-                '\\{\\{ (?P<module>[a-z0-9-]*)\\.(?P<method>[a-z0-9_]*)\\((?P<args>.*)\\) (: (?P<jqTransform>.*)|:: (?P<pqTransform>.*)) \\}\\}',
-                context['opts']['command']
-            )
-        }
-
         raw_commands = [
             command.strip()
             for command in re.split(
@@ -42,60 +35,65 @@ class Query:
                 context['opts']['command']
             )
         ]
-        commands_parsed = [
-            {
-                'parameters': [
-                    (
-                        match.groups()[0],
-                        match.groups()[1],
-                        tuple(match.groups()[2].split(', ')),
-                        match.groups()[4],
-                        match.groups()[5]
-                    )
-                    for match in re.finditer(
-                        '\\{\\{ (?P<module>[a-z0-9-]*)\\.(?P<method>[a-z0-9_]*)\\((?P<args>.*)\\) (: (?P<jqTransform>.*)|:: (?P<pqTransform>.*)) \\}\\}',
-                        raw_command
-                    )
-                ],
-                'fragments': re.split(
-                    '\\{\\{ [a-z0-9-]*\\.[a-z0-9_]*\\(.*\\) ::? .* \\}\\}',
-                    raw_command
-                ),
-                'allowedToFail': False
-            }
-            for raw_command in raw_commands
-        ]
-        for command_parsed in commands_parsed:
-            if command_parsed['fragments'][0][:2] == '! ':
-                command_parsed['allowedToFail'] = True
-                command_parsed['fragments'][0] = (
-                    command_parsed['fragments'][0][2:]
+
+        commands = [{} for _ in range(len(raw_commands))]
+        for i, raw_command in enumerate(raw_commands):
+            command = commands[i]
+
+            command['type'] = 'system'
+            command['allowedToFail'] = False
+            if raw_command[:2] == '- ':
+                command['type'] = 'limar'
+                raw_command = raw_command[2:]
+            elif raw_command[:2] == '! ':
+                command['allowedToFail'] = True
+                raw_command = raw_command[2:]
+
+            if command['type'] == 'system':
+                # Cannot shlex.split() until we know all of the arguments
+                fragments, params = self._split_fragments_params(raw_command)
+                system_command: Interpolatable = (
+                    self._chain_fragments_params(fragments, params)
                 )
 
-        commands = [
-            {
-                # Cannot shlex.split() until we know all of the arguments
-                'command': list_strip([
-                    *chain.from_iterable(
-                        zip(command['fragments'], command['parameters'])
+                command['parameters'] = set(params)
+                command['command'] = system_command
+
+            elif command['type'] == 'limar':
+                match = re.match(
+                    "^(?P<module>[a-z0-9-]*)\\.(?P<method>[a-z0-9_]*)\\((?P<args>.*)\\) (: (?P<jqTransform>.*)|:: (?P<pqTransform>.*))$",
+                    raw_command
+                )
+                if match is None:
+                    raise LIMARException(
+                        f"Failed to parse limar command '{raw_command}'"
+                    )
+                fragments, params = self._split_fragments_params(
+                    match.group('args')
+                )
+                limar_command: InterpolatableLimarCommand = (
+                    match.group('module'),
+                    match.group('method'),
+                    tuple(
+                        self._chain_fragments_params(fragments, params)
+                        for fragments, params in self._group_fragments_params(
+                            fragments, params, ', '
+                        )
                     ),
-                    command['fragments'][-1]
-                ], ''),
-                'allowedToFail': command['allowedToFail']
-            }
-            for command in commands_parsed
-        ]
+                    match.groups()[4],
+                    match.groups()[5]
+                )
+
+                command['parameters'] = set(params)
+                command['command'] = limar_command
 
         if self._current_query is not None:
             fmt_commands = lambda commands: (
                 ' && '.join(
-                    ' '.join(
-                        (
-                            '{{'+', '.join(fragment)+'}}'
-                            if isinstance(fragment, tuple)
-                            else fragment
-                        )
-                        for fragment in command['command']
+                    (
+                        self._fmt.interpolatable(command['command'])
+                        if command['type'] == 'system'
+                        else self._fmt.limar_command(command)
                     )
                     for command in commands
                 )
@@ -108,7 +106,11 @@ class Query:
 
         self._current_query = {
             'type': 'query',
-            'parameters': query_parameters,
+            'parameters': {
+                param
+                for command in commands
+                for param in command['parameters']
+            },
             'commands': commands,
             'parse': context['opts']['parse']
         }
@@ -119,3 +121,64 @@ class Query:
     def on_declare_item(self, contexts, item, *_, **__):
         item['tags'].add('query')
         item['command'] = self._current_query
+
+    def _split_fragments_params(self,
+            string: str
+    ) -> tuple[list[str], list[LimarCommand]]:
+        return (
+            re.split(
+                '\\{\\{ [a-z0-9-]*\\.[a-z0-9_]*\\(.*\\) ::? .* \\}\\}',
+                string
+            ),
+            [
+                (
+                    match.group('module'),
+                    match.group('method'),
+                    tuple(match.group('args').split(', ')),
+                    match.groups()[4],
+                    match.groups()[5]
+                )
+                for match in re.finditer(
+                    '\\{\\{ (?P<module>[a-z0-9-]*)\\.(?P<method>[a-z0-9_]*)\\((?P<args>.*)\\) (: (?P<jqTransform>.*)|:: (?P<pqTransform>.*)) \\}\\}',
+                    string
+                )
+            ]
+        )
+
+    def _group_fragments_params(self,
+            fragments: list[str],
+            parameters: list[LimarCommand],
+            delim: str
+    ) -> list[tuple[list[str], list[LimarCommand]]]:
+        groups: list[tuple[list[str], list[LimarCommand]]] = [
+            ([], [])
+        ]
+
+        for fragment, parameter in zip(fragments[:-1], parameters):
+            split_fragment = fragment.split(delim)
+            groups[-1][0].append(split_fragment[0])
+            groups.extend(
+                ([initial_fragment], [])
+                for initial_fragment in split_fragment[1:]
+            )
+            groups[-1][1].append(parameter)
+
+        split_fragment = fragments[-1].split(delim)
+        groups[-1][0].append(split_fragment[0])
+        groups.extend(
+            ([initial_fragment], [])
+            for initial_fragment in split_fragment[1:]
+        )
+
+        return groups
+
+    def _chain_fragments_params(self,
+            fragments: list[str],
+            parameters: list[LimarCommand]
+    ) -> Interpolatable:
+        return list_strip([
+            *chain.from_iterable(
+                zip(fragments, parameters)
+            ),
+            fragments[-1]
+        ], '')

@@ -441,9 +441,9 @@ docker/host-image/show   (__TODO, show,   host-image, file, metadata, content)
   @query(
     command: """
       pwd &&
-    !!git rev-parse --show-toplevel &&
-    !!git rev-parse --is-inside-work-tree &&
-    !!git status --porcelain
+    ! git rev-parse --show-toplevel &&
+    ! git rev-parse --is-inside-work-tree &&
+    ! git status --porcelain
     """
     parse: """
       [{
@@ -455,11 +455,96 @@ docker/host-image/show   (__TODO, show,   host-image, file, metadata, content)
       }]
     """
   )
-  @identities(
+  @subjects(
     dir: dir.id
     git: git.id
   )
-  git/repo (show, dir, git)
+  @primary-subject(git)
+  git/repo
+
+  # All State
+  # --------------------
+
+  @query(
+    command: """
+      pwd &&
+    ! git rev-parse --show-toplevel &&
+    ! git for-each-ref --format='%(refname:short)|%(objectname:short)|%(upstream:short)|%(HEAD)|%(upstream:track,nobracket)|%(objectname)|%(authorname)|%(authoremail:trim)|%(authordate:iso-local)|%(committername)|%(committeremail:trim)|%(committerdate:iso-local)' refs/heads &&
+    ! git for-each-ref --format='%(contents:subject)==========' refs/heads &&
+    ! git for-each-ref --format='%(contents:body)==========' refs/heads &&
+    ! git for-each-ref --format='%(trailers:only)==========' refs/heads &&
+    ! git for-each-ref --format='%(contents:signature)==========' refs/heads
+    """
+    parse: """
+      [
+        .[0].stdout,
+        (if .[1].status == 0 then .[1].stdout else null end),
+        [
+          [
+            (.[2].stdout | split("\n")),
+            [.[3].stdout | split("==========")[:-1][] | gsub("^\\s+|\\s+$";"")],
+            [.[4].stdout | split("==========")[:-1][] | gsub("^\\s+|\\s+$";"")],
+            [.[5].stdout | split("==========")[:-1][] | gsub("^\\s+|\\s+$";"")],
+            [.[6].stdout | split("==========")[:-1][] | gsub("^\\s+|\\s+$";"")]
+          ]
+          | transpose[] as [$coreInfo, $subject, $body, $trailers, $signature]
+          | $coreInfo
+          | split("|")
+          | {
+            "git.branch.id":        (.[0]),
+            "git.branch.commit.id": (.[1]),
+            "git.branch.remote.id": (.[2]),
+
+            "git.branch.isCurrent": (
+                if .[3] == "*" then true
+              elif .[3] == "+" then "other"
+              else false
+              end
+            ),
+
+            "git.branch.ahead.remote":  (
+              .[4] | sub("^(ahead (?<ahead>[0-9]*))?(, )?(behind (?<behind>[0-9]*))?$";"\(.ahead)") as $n
+              | if $n != "" then ($n | tonumber) else 0 end
+            ),
+            "git.branch.behind.remote": (
+              .[4] | sub("^(ahead (?<ahead>[0-9]*))?(, )?(behind (?<behind>[0-9]*))?$";"\(.behind)") as $n
+              | if $n != "" then ($n | tonumber) else 0 end
+            ),
+
+            "git.branch.commit.idFull":          (.[5]),
+            "git.branch.commit.author.name":     (.[6]),
+            "git.branch.commit.author.email":    (.[7]),
+            "git.branch.commit.authored.date":   (.[8]),
+            "git.branch.commit.committer.name":  (.[9]),
+            "git.branch.commit.committer.email": (.[10]),
+            "git.branch.commit.committed.date":  (.[11]),
+            "git.branch.commit.subject":         ($subject),
+            "git.branch.commit.body":            (if $body != "" then $body else null end),
+            "git.branch.commit.trailers":        ($trailers | split("\n")),
+            "git.branch.commit.signature":       (if $signature != "" then $signature else null end)
+          }
+        ]
+      ] as [
+        $dirPath,
+        $gitPath,
+        $branches
+      ]
+      | $branches
+      | map(
+        {
+          "dir.id": ($dirPath),
+          "git.id": ($gitPath)
+        } + .
+      )
+    """
+  )
+  @subjects(
+    dir: dir.id
+    branch: git.branch.id
+    commit: git.branch.commit.id
+  )
+  @primary-subject(branch)
+  git/branch
 
   # Current State - Identity Info
   # --------------------
@@ -467,9 +552,9 @@ docker/host-image/show   (__TODO, show,   host-image, file, metadata, content)
   @query(
     command: """
       pwd &&
-    !!git rev-parse --show-toplevel &&
-    !!git rev-parse --short HEAD &&
-    !!git rev-parse HEAD
+    ! git rev-parse --show-toplevel &&
+    ! git rev-parse --short HEAD &&
+    ! git rev-parse HEAD
     """
     parse: """
       [{
@@ -481,39 +566,54 @@ docker/host-image/show   (__TODO, show,   host-image, file, metadata, content)
       }]
     """
   )
-  @identities(
+  @subjects(
     dir: dir.id
     git: git.id
     commit: git.commit.id
   )
-  git/commit (show, dir, git, commit)
+  @primary-subject(commit)
+  git/commit/current
 
   @query(
     command: """
       pwd &&
-    !!git rev-parse --show-toplevel &&
-    !!git symbolic-ref --short -q HEAD
+    ! git rev-parse --show-toplevel &&
+    ! git symbolic-ref --short -q HEAD &&
+    - info.query(git/branch) :: $
     """
     parse: """
-      [{
-        "dir.id":        (.[0].stdout),
-        "git.id":        (if .[1].status == 0 then .[1].stdout else null end),
-        "git.branch.id": (if .[2].status == 0 and .[2].stdout != "" then .[2].stdout else null end)
-      }]
+      [
+        {
+          "dir.id":        (.[0].stdout),
+          "git.id":        (if .[1].status == 0 then .[1].stdout else null end),
+          "git.branch.id": (if .[2].status == 0 and .[2].stdout != "" then .[2].stdout else null end)
+        } + (
+          [.[3].stdout, .[2].stdout] as [$branches, $curBranch]
+          | if (
+              .[2].status == 0 and
+              $curBranch != "" and
+              ($branches | has($curBranch))
+            )
+            then $branches[$curBranch]
+            else {}
+            end
+        )
+      ]
     """
   )
-  @identities(
+  @subjects(
     dir: dir.id
     git: git.id
     branch: git.branch.id
   )
-  git/branch (show, dir, git, branch)
+  @primary-subject(branch)
+  git/branch/current
 
   @query(
     command: """
       pwd &&
-    !!git rev-parse --show-toplevel &&
-    !!git describe --tags --exact-match
+    ! git rev-parse --show-toplevel &&
+    ! git describe --tags --exact-match
     """
     parse: """
       [{
@@ -523,67 +623,20 @@ docker/host-image/show   (__TODO, show,   host-image, file, metadata, content)
       }]
     """
   )
-  @identities(
+  @subjects(
     dir: dir.id
     git: git.id
     tag: git.tag.id
   )
-  git/tag (show, dir, git, tag)
+  @primary-subject(tag)
+  git/tag/current
 
   # Current State - Derived Info
   # --------------------
 
   @query(
     command: """
-      pwd &&
-    !!git rev-parse --show-toplevel &&
-    !!git symbolic-ref --short -q HEAD &&
-    !!git for-each-ref --format='%(upstream:short)' refs/heads/{{ info.query(git/branch) :: $.values().toList()[0]["git.branch.id"] }}
-    """
-    parse: """
-      [{
-        "dir.id":        (.[0].stdout),
-        "git.id":        (if .[1].status == 0 then .[1].stdout else null end),
-        "git.branch.id": (if .[2].status == 0 and .[2].stdout != "" then .[2].stdout else null end),
-
-        "git.branch.remote": (if .[3].status == 0 and .[3].stdout != "" then .[3].stdout else null end)
-      }]
-    """
-  )
-  @identities(
-    dir: dir.id
-    git: git.id
-    branch: git.branch.id
-  )
-  git/branch/remote (show, dir, git, branch)
-
-  @query(
-    command: """
-      pwd &&
-    !!git rev-parse --show-toplevel &&
-    !!git symbolic-ref --short -q HEAD &&
-    !!git rev-parse {{ info.query(git/branch/remote) :: $.values().toList()[0]["git.branch.remote"] }}
-    """
-    parse: """
-      [{
-        "dir.id":        (.[0].stdout),
-        "git.id":        (if .[1].status == 0 then .[1].stdout else null end),
-        "git.branch.id": (if .[2].status == 0 and .[2].stdout != "" then .[2].stdout else null end),
-
-        "git.branch.remote.commit.id": (if .[2].status == 0 and .[3].stdout != "" then .[3].stdout else null end)
-      }]
-    """
-  )
-  @identities(
-    dir: dir.id
-    git: git.id
-    branch: git.branch.id
-  )
-  git/branch/remote/commit (show, dir, git, branch)
-
-  @query(
-    command: """
-    !!git rev-list --tags --max-count=1
+    ! git rev-list --tags --max-count=1
     """,
     parse: """
       [{
@@ -593,19 +646,20 @@ docker/host-image/show   (__TODO, show,   host-image, file, metadata, content)
       }]
     """
   )
-  @identities(
+  @subjects(
     tag: git.tag.orderedLast.commit.id
   )
+  @primary-subject(tag)
   git/tag/orderedLast/commitId
 
   @query(
     command: """
       pwd &&
-    !!git rev-parse --show-toplevel &&
-    !!git describe --tags {{ info.query(git/tag/orderedLast/commitId) :: $.values().toList()[0]["git.tag.orderedLast.commit.id"] }} &&
-    !!git rev-list --tags --max-count=1 &&
-    !!git for-each-ref refs/tags --sort=-creatordate --format='%(refname:short)' --count=1 &&
-    !!git for-each-ref refs/tags --sort=-creatordate --format='%(objectname)' --count=1
+    ! git rev-parse --show-toplevel &&
+    ! git describe --tags {{ info.query(git/tag/orderedLast/commitId) :: $.values().toList()[0]["git.tag.orderedLast.commit.id"] }} &&
+    ! git rev-list --tags --max-count=1 &&
+    ! git for-each-ref refs/tags --sort=-creatordate --format='%(refname:short)' --count=1 &&
+    ! git for-each-ref refs/tags --sort=-creatordate --format='%(objectname)' --count=1
     """
     parse: """
       [
@@ -626,52 +680,64 @@ docker/host-image/show   (__TODO, show,   host-image, file, metadata, content)
       ]
     """
   )
-  @identities(
+  @subjects(
     dir: dir.id
     git: git.id
     tag: git.tag.id
   )
-  git/tag/latest (show, dir, git, tag)
-
-  @query(
-    command: """
-      pwd &&
-    !!git rev-parse --show-toplevel &&
-      git branch -vv
-    """
-    parse: """
-      [.[0], .[1], .[2].stdout] as [$dirPath, $gitPath, $branches]
-      | $branches
-      | split("\n")
-      | map(
-        capture(
-          "^((?<worktree>[ \\*]) )?(?<name>[^ ]*) +(?<commitId>[^ ]*) (\\[(?<remoteInfo>[^\\]]*)\\] )?(?<commitMessage>.*)"
-        )
-        | {
-          "dir.id": ($dirPath.stdout),
-          "git.id": (if $gitPath.status == 0 then $gitPath.stdout else null end),
-
-          "git.branch.id":            (.name),
-          "git.branch.isCurrent":     (
-            if .worktree == "*" then "[bold]✓" elif .worktree == "+" then "✓" else null end
-          ),
-          "git.branch.commitId":      (.commitId),
-          "git.branch.commitMessage": (.commitMessage)
-        }
-      )
-    """
-  )
-  @identities(
-    dir: dir.id
-    branch: git.branch.id
-  )
-  git/branch/all (show, dir, branch)
+  @primary-subject(tag)
+  git/tag/latest
 
   #"""
     TODO
     --------------------
 
-    git for-each-ref --format='%(HEAD):%(refname:short):%(objecttype):%(objectname):%(upstream:track,nobracket)%0a%(creator):%(creatordate)%0a%(authorname):%(authoremail:trim):%(authordate:iso-local)%0a%(committername):%(committeremail:trim):%(committerdate:iso-local)%0a%(taggername):%(taggeremail:trim):%(taggerdate:iso-local)%0a%(contents:subject)%0a%(contents:body)%0a%(trailers:only,key_value_separator==)%0a%(contents:signature)'
+    # Info for refs
+    # ----------
+
+    # FIXME: use `|` as the separator, not `:` (dates contain `:`)
+
+    git for-each-ref --format='%(HEAD):%(refname:short):%(objectname):%(objectname:short):%(upstream:track,nobracket):%(authorname):%(authoremail:trim):%(authordate:iso-local):%(committername):%(committeremail:trim):%(committerdate:iso-local)' refs/heads
+    git for-each-ref --format='%(contents:subject)' refs/heads
+    git for-each-ref --format='%(contents:body)' refs/heads
+    git for-each-ref --format='%(trailers:only)' refs/heads
+    git for-each-ref --format='%(contents:signature)' refs/heads
+      - refname:short [PKEY]    -> git.branch.id
+      - objectname:short [FKEY] -> git.branch.commit.id (commit this branch references)
+      - upstream [FKEY]         -> git.branch.remote.id (remote branch that this branch is tracking)
+
+    git for-each-ref --format='%(HEAD):%(refname:short):%(objectname):%(objectname:short):%(authorname):%(authoremail:trim):%(authordate:iso-local):%(committername):%(committeremail:trim):%(committerdate:iso-local)' refs/remotes
+    git for-each-ref --format='%(contents:subject)' refs/remotes
+    git for-each-ref --format='%(contents:body)' refs/remotes
+    git for-each-ref --format='%(trailers:only)' refs/remotes
+    git for-each-ref --format='%(contents:signature)' refs/remotes
+      - refname:short [PKEY]    -> git.branch.remote.id
+      - objectname:short [FKEY] -> git.branch.remote.commit.id (commit this remote tracking branch references)
+
+    git for-each-ref --format='%(HEAD):%(refname:short):%(objecttype):%(objectname):%(objectname:short):%(*objectname):%(*objectname:short):%(taggername):%(taggeremail:trim):%(taggerdate:iso-local):%(*authorname):%(*authoremail:trim):%(*authordate:iso-local):%(*committername):%(*committeremail:trim):%(*committerdate:iso-local):%(authorname):%(authoremail:trim):%(authordate:iso-local):%(committername):%(committeremail:trim):%(committerdate:iso-local)' refs/tags
+    git for-each-ref --format='%(contents:subject)' refs/tags
+    git for-each-ref --format='%(contents:body)' refs/tags
+    git for-each-ref --format='%(trailers:only)' refs/tags
+    git for-each-ref --format='%(contents:signature)' refs/tags
+    git for-each-ref --format='%(*contents:subject)' refs/tags
+    git for-each-ref --format='%(*contents:body)' refs/tags
+    git for-each-ref --format='%(*trailers:only)' refs/tags
+    git for-each-ref --format='%(*contents:signature)' refs/tags
+      - refname:short [PKEY]                                  -> git.tag.id
+      [IF]
+        - objecttype                                          -> annotated ("tag") or lightweight ("commit") tag?
+      [is annotated; THEN]
+        - objectname... + *objectname...                      -> git.tag.objId/objIdFull + git.tag.commit.id/idFull [*objectname:short = FKEY]
+        - tagger... + *author... + *comitter...               -> git.tag.author... + git.tag.commit.author.* + git.tag.commit.comitter.*
+        - contents.../trailers... + *contents.../*trailers... -> git.tag.* + git.tag.commit.*
+      [is lightweight; THEN]
+        - objectname...                                       -> git.tag.commit.id/idFull [objectname:short = FKEY]
+        - author... + committer...                            -> git.tag.commit.author.* + git.tag.commit.comitter.*
+        - contents.../trailers...                             -> git.tag.commit.*
+
+    git for-each-ref --format='%(refname:short):%(objectname):%(objectname:short)' refs/stash
+      - refname:short [PKEY] -> git.stash.id
+      - objectname:short [FKEY] -> git.stash.commit.id
 
     # Write/Modify Commands (workflow)
     # ----------
