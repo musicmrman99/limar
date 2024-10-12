@@ -431,6 +431,7 @@ class InfoModule:
         command_split_args = shlex.split(command_interpolated)
         self._mod.log.trace('Command split:', command_split_args)
 
+        exception = None
         try:
             subproc = subprocess.Popen(
                 command_split_args,
@@ -438,12 +439,17 @@ class InfoModule:
                 stderr=subprocess.PIPE
             )
             stdout, stderr = subproc.communicate()
-            command_status = 0
+            command_status = subproc.returncode
 
         except subprocess.CalledProcessError as e:
-            if not final_options['allowedToFail']:
-                raise e
-            command_status = e.returncode
+            exception = e
+            command_status = exception.returncode
+
+        if command_status != 0 and not final_options['allowedToFail']:
+            raise LIMARException(
+                f"Process run with arguments {command_split_args} failed"
+                f" with return code '{command_status}'."
+            ) from exception
 
         return {
             'status': command_status,
