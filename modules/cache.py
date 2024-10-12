@@ -64,8 +64,9 @@ class CacheModule:
             epilog=docs_for(self.delete_and_persist))
         mod.docs.add_docs_arg(delete_parser)
 
-        delete_parser.add_argument('entry_name', metavar='ENTRY_NAME',
-            help="""Name of the entry to delete.""")
+        delete_parser.add_argument('entry_names', metavar='ENTRY_NAMES',
+            nargs='*',
+            help="""Names of the entries to delete.""")
 
         # Subcommands / Clear Cache
         clear_parser = cache_subparsers.add_parser('clear',
@@ -116,23 +117,15 @@ class CacheModule:
             output = self.get(args.entry_name)
 
         elif args.cache_command == 'delete':
-            output = self.delete_and_persist(args.entry_name)
+            output = self.delete_and_persist(*args.entry_names)
 
         elif args.cache_command == 'clear':
             output = self.clear_and_persist()
 
         return output
 
-    def stop(self, *_, mod: Namespace, **__):
-        if self._write_cache:
-            assert self._store is not None, 'CacheModule.stop() called before CacheModule.configure()'
-            self._store.flush()
-            mod.log.info(f"Flushed cache in {self.get_store_str()}")
-        else:
-            mod.log.info(
-                f"Did not flush cache in {self.get_store_str()} (writing to"
-                " cache is disabled)"
-            )
+    def stop(self, *_, **__):
+        self._flush()
 
     # Invokation
     # --------------------
@@ -189,53 +182,76 @@ class CacheModule:
         if enabled.
         """
 
-        assert self._store is not None, f'{self.set_and_persist.__name__}() called before {self.configure.__name__}()'
-
         self.set(name, data)
-        if self._write_cache:
-            self._store.persist()
+        self._persist()
 
     @ModuleAccessor.invokable_as_service
-    def delete(self, name):
-        """Delete the cache entry with the given name."""
+    def delete(self, *names):
+        """Delete the cache entries with the given names."""
 
         assert self._store is not None, f'{self.delete.__name__}() called before {self.configure.__name__}()'
 
-        self._store.delete(name)
-        self._store.delattrs(name)
-        self._mod.log.info(
-            f"Deleted cached '{name}' from {self.get_store_str()} (not yet"
-            " persisted)"
-        )
+        for name in names:
+            self._store.delete(name)
+            self._store.delattrs(name)
+            self._mod.log.info(
+                f"Deleted cached '{name}' from {self.get_store_str()} (not yet"
+                " persisted)"
+            )
 
     @ModuleAccessor.invokable_as_service
-    def delete_and_persist(self, name):
+    def delete_and_persist(self, *names):
         """
-        Delete the cache entry with the given name, and persist if enabled.
+        Delete the cache entries with the given names, and persist if enabled.
         """
 
-        assert self._store is not None, f'{self.delete_and_persist.__name__}() called before {self.configure.__name__}()'
-
-        self.delete(name)
-        if self._write_cache:
-            self._store.persist()
+        self.delete(*names)
+        self._persist()
 
     @ModuleAccessor.invokable_as_service
     def clear(self):
         """Delete all cache entries."""
 
-        assert self._store is not None, f'{self.clear.__name__}() called before {self.configure.__name__}()'
-
-        for entry in self.list():
-            self.delete(entry)
+        self.delete(*self.list())
         self._mod.log.info("Deleted all cache entries (not yet persisted)")
 
     @ModuleAccessor.invokable_as_service
     def clear_and_persist(self):
         """Delete all cache entries, and persist if enabled."""
 
-        assert self._store is not None, f'{self.clear_and_persist.__name__}() called before {self.configure.__name__}()'
-
         self.clear()
+        self._persist()
+
+    # Utils
+    # --------------------
+
+    def _persist(self):
+        """Persist the cache to storage, if writing to the cache is enabled."""
+
+        assert self._store is not None, f'{self._persist.__name__}() called before {self.configure.__name__}()'
+
         if self._write_cache:
             self._store.persist()
+            self._mod.log.info(f"Persisted cache in {self.get_store_str()}")
+        else:
+            self._mod.log.info(
+                f"Did not persist cache in {self.get_store_str()} (writing to"
+                " cache is disabled)"
+            )
+
+    def _flush(self):
+        """
+        Flush the cache to storage (ie. persist, then clear the ephemeral
+        store) if writing to the cache is enabled.
+        """
+
+        assert self._store is not None, f'{self._flush.__name__}() called before {self.configure.__name__}()'
+
+        if self._write_cache:
+            self._store.flush()
+            self._mod.log.info(f"Flushed cache in {self.get_store_str()}")
+        else:
+            self._mod.log.info(
+                f"Did not flush cache in {self.get_store_str()} (writing to"
+                " cache is disabled)"
+            )
