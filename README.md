@@ -218,7 +218,7 @@ cat <<EOF >> "$HOME/.bashrc" # Or .zshrc, etc.
 
 # LIMAR
 # Global overrides (may be required, depending on your setup):
-# - If \`limar init\` said you needed to add this (ie. if you're using a shell for which LIMAR can't automatically set the location), then set this.
+# - If \`limar /init\` said you needed to add this (ie. if you're using a shell for which LIMAR can't automatically set the location), then set this.
 #export LIMAR__REPO="$LIMAR__REPO"
 # - If you need something different, then set these as needed.
 #export LIMAR__PYTHON='$LIMAR__PYTHON'
@@ -259,7 +259,7 @@ If you move the repo directory without a shell with LIMAR loaded, then any new s
 
 ### Building from Source
 
-To build the ANTLR4 language (after installing the packages in `requirements.txt` with `limar init`):
+To build the ANTLR4 language (after installing the packages in `requirements.txt` with `limar /init`):
 
 ```sh
 cd modules/manifest_lang && \
