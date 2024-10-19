@@ -9,9 +9,11 @@ Entity Info (static for now)
 ```
 /hardware
 
-/store (hardware?)
-  > store-host/attachment
-/host (hardware?)
+/agent {
+  /passive (hardware? alias: store)
+    > passive-active/attachment
+  /active (hardware? alias: host)
+}
 
 /data-type {
   # Address of data
@@ -84,12 +86,21 @@ Entity Info (static for now)
   /role
 }
 
+# Versions and Change
+# Eg. file history, tagged versions, tasks, (the act of) deployments, etc.
+/change {
+  /tracker (alias: repo)
+  /version {
+    /reference (alias: ref)
+  }
+  /delta
+}
+
 # Other stuff
 /web-resource
 /email
 /word
 
-/change # file history, tagged versions, tasks, (the act of) deployments, etc.
 /quality # tests, validity, integrity, 7 Cs, etc.
 /knowledge # comments, documentation strings, readmes, licencing, design information and visualisations, etc.
 ```
