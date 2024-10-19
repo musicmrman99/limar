@@ -66,7 +66,7 @@ tag : kvPair ;
 -------------------- */
 
 kvPair : name (kvSeparator value)? ;
-name : (literalBlock | NAME) ;
+name : (literalBlock | NAME | PATH) ;
 value : (literalBlock | toEndOfItem) ;
 kvSeparator : SPACE? KEY_VALUE_SEPARATOR SPACE? ;
 
