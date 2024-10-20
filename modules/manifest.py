@@ -864,7 +864,7 @@ class ManifestModule:
 
         # Determine cache filename for this version of the manifest file
         digest = md5(manifest_text.encode('utf-8')).hexdigest()
-        cached_name = '.'.join([name, 'manifest', digest, 'pickle'])
+        cached_name = '.'.join(['manifest', name, digest, 'pickle'])
 
         # Try cache
         try:
