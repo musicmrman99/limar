@@ -1,3 +1,5 @@
+import re
+
 from core.store import Store
 from core.modulemanager import ModuleAccessor
 from core.modules.docs_utils.docs_arg import docs_for
@@ -61,12 +63,12 @@ class CacheModule:
 
         # Subcommands / Delete Cache Entry
         delete_parser = cache_subparsers.add_parser('delete',
-            epilog=docs_for(self.delete_and_persist))
+            epilog=docs_for(self.delete_and_persist_matching))
         mod.docs.add_docs_arg(delete_parser)
 
-        delete_parser.add_argument('entry_names', metavar='ENTRY_NAMES',
+        delete_parser.add_argument('entry_patterns', metavar='ENTRY_PATTERNS',
             nargs='*',
-            help="""Names of the entries to delete.""")
+            help="""Regexes to delete the matched entries of.""")
 
         # Subcommands / Clear Cache
         clear_parser = cache_subparsers.add_parser('clear',
@@ -117,7 +119,7 @@ class CacheModule:
             output = self.get(args.entry_name)
 
         elif args.cache_command == 'delete':
-            output = self.delete_and_persist(*args.entry_names)
+            output = self.delete_and_persist_matching(*args.entry_patterns)
 
         elif args.cache_command == 'clear':
             output = self.clear_and_persist()
@@ -148,7 +150,7 @@ class CacheModule:
         return self._store.list(read_persistent=self._read_cache)
 
     @ModuleAccessor.invokable_as_service
-    def get(self, name):
+    def get(self, name: str):
         """Get the contents of the cache entry with the given name."""
 
         assert self._store is not None, f'{self.get.__name__}() called before {self.configure.__name__}()'
@@ -164,7 +166,7 @@ class CacheModule:
         return data
 
     @ModuleAccessor.invokable_as_service
-    def set(self, name, data):
+    def set(self, name: str, data: Any):
         """Set the cache entry with the given name to the given data."""
 
         assert self._store is not None, f'{self.set.__name__}() called before {self.configure.__name__}()'
@@ -176,7 +178,7 @@ class CacheModule:
         )
 
     @ModuleAccessor.invokable_as_service
-    def set_and_persist(self, name, data):
+    def set_and_persist(self, name: str, data: Any):
         """
         Set the cache entry with the given name to the given data, and persist
         if enabled.
@@ -186,7 +188,7 @@ class CacheModule:
         self._persist()
 
     @ModuleAccessor.invokable_as_service
-    def delete(self, *names):
+    def delete(self, *names: str):
         """Delete the cache entries with the given names."""
 
         assert self._store is not None, f'{self.delete.__name__}() called before {self.configure.__name__}()'
@@ -200,12 +202,38 @@ class CacheModule:
             )
 
     @ModuleAccessor.invokable_as_service
-    def delete_and_persist(self, *names):
+    def delete_and_persist(self, *names: str):
         """
         Delete the cache entries with the given names, and persist if enabled.
         """
 
         self.delete(*names)
+        self._persist()
+
+    @ModuleAccessor.invokable_as_service
+    def delete_matching(self, *patterns: str):
+        """Delete the cache entries that match the given regex patterns."""
+
+        assert self._store is not None, f'{self.delete.__name__}() called before {self.configure.__name__}()'
+
+        entry_names = self.list()
+
+        names: set[str] = set()
+        for pattern in patterns:
+            matcher = re.compile(pattern)
+            for name in entry_names:
+                if matcher.search(name) is not None:
+                    names.add(name)
+
+        self.delete(*names)
+
+    @ModuleAccessor.invokable_as_service
+    def delete_and_persist_matching(self, *patterns: str):
+        """Delete the cache entries that match the given regex patterns."""
+
+        assert self._store is not None, f'{self.delete.__name__}() called before {self.configure.__name__}()'
+
+        self.delete_matching(*patterns)
         self._persist()
 
     @ModuleAccessor.invokable_as_service
