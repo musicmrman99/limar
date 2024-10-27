@@ -7,6 +7,8 @@ Entity Info (static for now)
 **NOTE**: Should differentiate between what a thing *is* and what a thing *operates on*.
 
 ```
+/subject
+
 /hardware
 
 /agent {

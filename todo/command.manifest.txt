@@ -96,7 +96,7 @@ lsblk (__TODO, hardware)
 @tool (
   command: lsblk
   description: """List device, block, partition table, partition, and filesystem information."""
-) {  
+) {
   # Entity Hierarchy:
   #   Device (opt. Partition Table) > Block (opt. Partition) > Filesystem
 
@@ -634,6 +634,185 @@ docker/host-image/show   (__TODO, show,   host-image, file, metadata, content)
   # Versions and Version References
   # --------------------
 
+  # ======================================================================================================================================================
+  # ISSUE:
+  #
+  # If you want to know what your current branch is, what your remote is, and what commit each of them is on, you may end up with two commits - one for
+  # the local (tracking) branch, and one for the remote branch. How do you show them both?
+  # - Rename the fields of the remote branch's entity data?
+  # - Show the branch + remote branch as two separate records?
+  # - Get information about one set of subject(s) (branches, remote branches), but index by a different subject (version)?
+  # - Setup the manifest so that you have to specify all identifying subjects to get their data
+  #   - This would probably also require omitting the ID fields for subjects with a higher multiplicity (which is hard to detect)
+  #
+  # The general case is any self-join (A - A), or transitive self-join (A - B - C - A, as in the above example)
+  #
+  # How does this relate to the delta between the local and remote branches?
+  # - Usually, a delta would exclude the version at 'beginning', but maybe it shouldn't?
+  # - Is there really any difference between `length > 0` and `length > 1`?
+  #   - What about "there is *no* difference between A and B"? Shouldn't that yield no results?
+  # - Could you tell it to omit the entries in the middle, or is that the *whole point* of a delta - the bit between the two
+  # ======================================================================================================================================================
+
+  # IN PROGRESS
+  @query(
+    command: """
+      pwd &&
+    ! git rev-parse --show-toplevel &&
+    ! git for-each-ref --format='%(objectname:short)|%(refname:short)|%(upstream:short)|%(HEAD)|%(upstream:track,nobracket)' refs/heads
+    """
+    parse: """
+          "version.ref.ahead.remote":  (
+            .[4]
+            | sub("^(ahead (?<ahead>[0-9]*))?(, )?(behind (?<behind>[0-9]*))?$";"\(.ahead)")
+            | if . != "" and . != "null" then tonumber else 0 end
+          ),
+          "version.ref.behind.remote": (
+            .[4]
+            | sub("^(ahead (?<ahead>[0-9]*))?(, )?(behind (?<behind>[0-9]*))?$";"\(.behind)")
+            | if . != "" and . != "null" then tonumber else 0 end
+          ),
+    """
+  )
+  @subjects(
+    dir: dir.id
+    repo: repo.id
+    delta: delta.id
+    version: version.id
+  )
+  @primary-subject(version)
+  delta/version/git/branch/remote
+
+  @query(
+    command: """
+      pwd &&
+    ! git rev-parse --show-toplevel &&
+    ! git for-each-ref --format='%(objectname:short)|%(refname:short)|%(objectname)|%(authorname)|%(authoremail:trim)|%(authordate:iso-local)|%(committername)|%(committeremail:trim)|%(committerdate:iso-local)' refs/remotes &&
+    ! git for-each-ref --format='%(contents:subject)==========' refs/remotes &&
+    ! git for-each-ref --format='%(contents:body)==========' refs/remotes &&
+    ! git for-each-ref --format='%(trailers:only)==========' refs/remotes &&
+    ! git for-each-ref --format='%(contents:signature)==========' refs/remotes
+    """
+    parse: """
+      [
+        .[0].stdout,
+        (if .[1].status == 0 then .[1].stdout else null end)
+      ] as [
+        $dirPath,
+        $repoPath
+      ]
+      | [
+        [
+          (.[2].stdout | split("\n")),
+          [.[3].stdout | split("==========")[:-1][] | gsub("^\\s+|\\s+$";"")],
+          [.[4].stdout | split("==========")[:-1][] | gsub("^\\s+|\\s+$";"")],
+          [.[5].stdout | split("==========")[:-1][] | gsub("^\\s+|\\s+$";"")],
+          [.[6].stdout | split("==========")[:-1][] | gsub("^\\s+|\\s+$";"")]
+        ]
+        | transpose[] as [$coreInfo, $subject, $body, $trailers, $signature]
+        | $coreInfo
+        | split("|")
+        | {
+          "version.id":            (.[0]),
+          "version.ref.id":        (.[1]),
+
+          "version.id.full":       (.[2]),
+          "version.author.name":   (.[3]),
+          "version.author.email":  (.[4]),
+          "version.authored.date": (.[5]),
+          "version.creator.name":  (.[6]),
+          "version.creator.email": (.[7]),
+          "version.created.date":  (.[8]),
+          "version.summary":       ($subject),
+          "version.description":   (if $body != "" then $body else null end),
+          "version.footers":       ($trailers | split("\n")),
+          "version.signature":     (if $signature != "" then $signature else null end)
+        }
+      ]
+      | map(
+        {
+          "dir.id": ($dirPath),
+          "repo.id": ($repoPath)
+        } + .
+      )
+    """
+  )
+  @subjects(
+    dir: dir.id
+    repo: repo.id
+    version: version.id
+    version/ref: version.ref.id
+  )
+  @primary-subject(version/ref)
+  version/ref/git/branch/remote
+
+  @query(
+    command: """
+      pwd &&
+    ! git rev-parse --show-toplevel &&
+    ! git for-each-ref --format='%(objectname:short)|%(refname:short)|%(upstream:short)|%(HEAD)|%(objectname)|%(authorname)|%(authoremail:trim)|%(authordate:iso-local)|%(committername)|%(committeremail:trim)|%(committerdate:iso-local)' refs/heads &&
+    ! git for-each-ref --format='%(contents:subject)==========' refs/heads &&
+    ! git for-each-ref --format='%(contents:body)==========' refs/heads &&
+    ! git for-each-ref --format='%(trailers:only)==========' refs/heads &&
+    ! git for-each-ref --format='%(contents:signature)==========' refs/heads
+    """
+    parse: """
+      [
+        .[0].stdout,
+        (if .[1].status == 0 then .[1].stdout else null end)
+      ] as [
+        $dirPath,
+        $repoPath
+      ]
+      | [
+        [
+          (.[2].stdout | split("\n")),
+          [.[3].stdout | split("==========")[:-1][] | gsub("^\\s+|\\s+$";"")],
+          [.[4].stdout | split("==========")[:-1][] | gsub("^\\s+|\\s+$";"")],
+          [.[5].stdout | split("==========")[:-1][] | gsub("^\\s+|\\s+$";"")],
+          [.[6].stdout | split("==========")[:-1][] | gsub("^\\s+|\\s+$";"")]
+        ]
+        | transpose[] as [$coreInfo, $subject, $body, $trailers, $signature]
+        | $coreInfo
+        | split("|")
+        | {
+          "version.id":            (.[0]),
+          "version.ref.id":        (.[1]),
+          "version.ref.remote.id": (if .[2] != "" then .[2] else null end),
+
+          # Even if .[3] == "+", then it is still not in this dir (dir.id) or repo (repo.id)
+          "version.ref.isCurrent": (.[3] == "*"),
+
+          "version.id.full":       (.[4]),
+          "version.author.name":   (.[5]),
+          "version.author.email":  (.[6]),
+          "version.authored.date": (.[7]),
+          "version.creator.name":  (.[8]),
+          "version.creator.email": (.[9]),
+          "version.created.date":  (.[10]),
+          "version.summary":       ($subject),
+          "version.description":   (if $body != "" then $body else null end),
+          "version.footers":       ($trailers | split("\n")),
+          "version.signature":     (if $signature != "" then $signature else null end)
+        }
+      ]
+      | map(
+        {
+          "dir.id": ($dirPath),
+          "repo.id": ($repoPath)
+        } + .
+      )
+    """
+  )
+  @subjects(
+    dir: dir.id
+    repo: repo.id
+    version: version.id
+    version/ref: version.ref.id
+  )
+  @primary-subject(version/ref)
+  version/ref/git/branch
+
   @query(
     command: """
       pwd &&
@@ -737,83 +916,6 @@ docker/host-image/show   (__TODO, show,   host-image, file, metadata, content)
   )
   @primary-subject(version/ref)
   version/ref/git/tag
-
-  @query(
-    command: """
-      pwd &&
-    ! git rev-parse --show-toplevel &&
-    ! git for-each-ref --format='%(objectname:short)|%(refname:short)|%(upstream:short)|%(HEAD)|%(upstream:track,nobracket)|%(objectname)|%(authorname)|%(authoremail:trim)|%(authordate:iso-local)|%(committername)|%(committeremail:trim)|%(committerdate:iso-local)' refs/heads &&
-    ! git for-each-ref --format='%(contents:subject)==========' refs/heads &&
-    ! git for-each-ref --format='%(contents:body)==========' refs/heads &&
-    ! git for-each-ref --format='%(trailers:only)==========' refs/heads &&
-    ! git for-each-ref --format='%(contents:signature)==========' refs/heads
-    """
-    parse: """
-      [
-        .[0].stdout,
-        (if .[1].status == 0 then .[1].stdout else null end)
-      ] as [
-        $dirPath,
-        $repoPath
-      ]
-      | [
-        [
-          (.[2].stdout | split("\n")),
-          [.[3].stdout | split("==========")[:-1][] | gsub("^\\s+|\\s+$";"")],
-          [.[4].stdout | split("==========")[:-1][] | gsub("^\\s+|\\s+$";"")],
-          [.[5].stdout | split("==========")[:-1][] | gsub("^\\s+|\\s+$";"")],
-          [.[6].stdout | split("==========")[:-1][] | gsub("^\\s+|\\s+$";"")]
-        ]
-        | transpose[] as [$coreInfo, $subject, $body, $trailers, $signature]
-        | $coreInfo
-        | split("|")
-        | {
-          "version.id":            (.[0]),
-          "version.ref.id":        (.[1]),
-          "version.ref.remote.id": (.[2]),
-
-          # Even if .[3] == "+", then it is still not in this dir (dir.id) or repo (repo.id)
-          "version.ref.isCurrent": (.[3] == "*"),
-          "version.ref.ahead.remote":  (
-            .[4]
-            | sub("^(ahead (?<ahead>[0-9]*))?(, )?(behind (?<behind>[0-9]*))?$";"\(.ahead)")
-            | if . != "" and . != "null" then tonumber else 0 end
-          ),
-          "version.ref.behind.remote": (
-            .[4]
-            | sub("^(ahead (?<ahead>[0-9]*))?(, )?(behind (?<behind>[0-9]*))?$";"\(.behind)")
-            | if . != "" and . != "null" then tonumber else 0 end
-          ),
-
-          "version.id.full":       (.[5]),
-          "version.author.name":   (.[6]),
-          "version.author.email":  (.[7]),
-          "version.authored.date": (.[8]),
-          "version.creator.name":  (.[9]),
-          "version.creator.email": (.[10]),
-          "version.created.date":  (.[11]),
-          "version.summary":       ($subject),
-          "version.description":   (if $body != "" then $body else null end),
-          "version.footers":       ($trailers | split("\n")),
-          "version.signature":     (if $signature != "" then $signature else null end)
-        }
-      ]
-      | map(
-        {
-          "dir.id": ($dirPath),
-          "repo.id": ($repoPath)
-        } + .
-      )
-    """
-  )
-  @subjects(
-    dir: dir.id
-    repo: repo.id
-    version: version.id
-    version/ref: version.ref.id
-  )
-  @primary-subject(version/ref)
-  version/ref/git/branch
 
   # Specific Entities
   # --------------------
@@ -952,7 +1054,7 @@ docker/host-image/show   (__TODO, show,   host-image, file, metadata, content)
     # ----------
 
     # DONE
-    git for-each-ref --format='%(HEAD)|%(refname:short)|%(objectname)|%(objectname:short)|%(upstream:track,nobracket)|%(authorname)|%(authoremail:trim)|%(authordate:iso-local)|%(committername)|%(committeremail:trim)|%(committerdate:iso-local)' refs/heads
+    git for-each-ref --format='%(objectname:short)|%(refname:short)|%(upstream:short)|%(HEAD)|%(upstream:track,nobracket)|%(objectname)|%(authorname)|%(authoremail:trim)|%(authordate:iso-local)|%(committername)|%(committeremail:trim)|%(committerdate:iso-local)' refs/heads
     git for-each-ref --format='%(contents:subject)' refs/heads
     git for-each-ref --format='%(contents:body)' refs/heads
     git for-each-ref --format='%(trailers:only)' refs/heads
@@ -961,7 +1063,7 @@ docker/host-image/show   (__TODO, show,   host-image, file, metadata, content)
       - objectname:short [FKEY] -> version.id (commit this branch references)
       - upstream [FKEY]         -> version.ref.remote.id (remote branch that this branch is tracking)
 
-    git for-each-ref --format='%(HEAD)|%(refname:short)|%(objecttype)|%(objectname)|%(objectname:short)|%(*objectname)|%(*objectname:short)|%(taggername)|%(taggeremail:trim)|%(taggerdate:iso-local)|%(*authorname)|%(*authoremail:trim)|%(*authordate:iso-local)|%(*committername)|%(*committeremail:trim)|%(*committerdate:iso-local)|%(authorname)|%(authoremail:trim)|%(authordate:iso-local)|%(committername)|%(committeremail:trim)|%(committerdate:iso-local)' refs/tags
+    git for-each-ref --format='%(objectname:short)|%(refname:short)|%(HEAD)|%(objecttype)|%(objectname:short)|%(objectname)|%(*objectname:short)|%(*objectname)|%(taggername)|%(taggeremail:trim)|%(taggerdate:iso-local)|%(*authorname)|%(*authoremail:trim)|%(*authordate:iso-local)|%(*committername)|%(*committeremail:trim)|%(*committerdate:iso-local)|%(authorname)|%(authoremail:trim)|%(authordate:iso-local)|%(committername)|%(committeremail:trim)|%(committerdate:iso-local)' refs/tags
     git for-each-ref --format='%(contents:subject)' refs/tags
     git for-each-ref --format='%(contents:body)' refs/tags
     git for-each-ref --format='%(trailers:only)' refs/tags
@@ -983,7 +1085,7 @@ docker/host-image/show   (__TODO, show,   host-image, file, metadata, content)
         - contents.../trailers...                             -> version.*
 
     # TODO
-    git for-each-ref --format='%(HEAD)|%(refname:short)|%(objectname)|%(objectname:short)|%(authorname)|%(authoremail:trim)|%(authordate:iso-local)|%(committername)|%(committeremail:trim)|%(committerdate:iso-local)' refs/remotes
+    git for-each-ref --format='%(refname:short)|%(objectname:short)|%(HEAD)|%(objectname)|%(authorname)|%(authoremail:trim)|%(authordate:iso-local)|%(committername)|%(committeremail:trim)|%(committerdate:iso-local)' refs/remotes
     git for-each-ref --format='%(contents:subject)' refs/remotes
     git for-each-ref --format='%(contents:body)' refs/remotes
     git for-each-ref --format='%(trailers:only)' refs/remotes
@@ -991,7 +1093,7 @@ docker/host-image/show   (__TODO, show,   host-image, file, metadata, content)
       - refname:short [PKEY]    -> version.ref.remote.id
       - objectname:short [FKEY] -> version.ref.remote.commit.id (commit this remote tracking branch references)
 
-    git for-each-ref --format='%(refname:short)|%(objectname)|%(objectname:short)' refs/stash
+    git for-each-ref --format='%(refname:short)|%(objectname:short)|%(objectname)' refs/stash
       - refname:short [PKEY] -> git.stash.id
       - objectname:short [FKEY] -> git.stash.commit.id
 
