@@ -7,13 +7,13 @@ import subprocess
 from core.exceptions import LIMARException
 from core.modulemanager import ModuleAccessor
 from core.modules.phase_utils.phase_system import PhaseSystem
-from modules.command_utils.query import QueryFormatter
+from modules.command_utils.formatter import CommandFormatter
 
 # Types
 from argparse import ArgumentParser, Namespace
 from typing import Any
 
-from modules.command_utils.query import (
+from modules.command_utils.formatter import (
     LimarCommand,
     Interpolatable,
     InterpolatableLimarCommand
@@ -65,7 +65,7 @@ class InfoModule:
 
         command_manifest_digest = mod.manifest.get_manifest_digest('command')
         query_items = None
- 
+
         try:
             self._dependency_graph = mod.cache.get(
                 f'info.dependency_graph.{command_manifest_digest}.pickle'
@@ -280,11 +280,11 @@ class InfoModule:
                 if not isinstance(query_args[param], str):
                     raise LIMARException(
                         f"Evaluation of query parameter {{{{"
-                        f" {QueryFormatter().limar_command(param)} }}}} did not"
+                        f" {CommandFormatter().limar_command(param)} }}}} did not"
                         " return a string. Cannot interpolate non-string values"
                         " into the requested query."
                     )
-            self._mod.log.debug('Query arguments:', query_args)        
+            self._mod.log.debug('Query arguments:', query_args)
 
             query_parser = (
                 query['parse']
@@ -351,7 +351,7 @@ class InfoModule:
         module, method, args_raw, jqTransform, pqTransform = limar_command
         self._mod.log.debug(
             'Running LIMAR command:',
-            QueryFormatter().limar_command(limar_command)
+            CommandFormatter().limar_command(limar_command)
         )
 
         # Interpolate args
@@ -365,7 +365,7 @@ class InfoModule:
         )
         self._mod.log.debug(
             'Evaluated LIMAR command:',
-            QueryFormatter().limar_command(
+            CommandFormatter().limar_command(
                 (module, method, args, jqTransform, pqTransform)
             )
         )

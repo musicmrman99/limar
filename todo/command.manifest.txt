@@ -1,18 +1,53 @@
 #"""
-System commands operate on the system.
+The Command Manifest
+--------------------------------------------------
 
-Operations are Creation, Representation, Management, and Destruction. These
-operations are broader than CRUD (eg. representation includes display as well as
-retreival, and management includes more than just updates).
+The command manifest defines the commands that can be run in LIMAR. Commands (@command) may be
+queries (@query) or actions (@action). All commands are tagged according to the subjects (@subjects)
+they fetch data about (for queries) or perform operations on (for actions). Subjects are organised
+into a hierarchy called the LIMAR Model. Data about subjects are called entities.
+
+Subjects and Entities
+--------------------------------------------------
+
+Subjects are like types or database tables, except that subjects are 'specified', rather than
+'static' or 'dynamic'. That means that LIMAR doesn't check what you're doing before it runs commands
+based on what you've told it in this manifest (static typing), nor do fetched entities record what
+type they are (dynamic typing), but rather that LIMAR interprets entities to contain information
+about the subjects you request at the time you request them after fetching only the entities that
+include the specified subjects.
+
+Entities are like objects or records in a database. They are composed of 'entity data', which is the
+output of each query that matches a subject request, which are then merged to form a list of
+entities indexed by the IDs of each subject in the request. If there are multiple subjects in the
+request, they will be indexed by a composite key (a tuple) consisting of the IDs of each subject in
+the request, in order.
+
+The LIMAR Model
+--------------------------------------------------
+
+The LIMAR Model consists of a hierarchy of subjects. The first level of nodes are:
+
+```
+/subject  - The subject of subjects. Aliased to "/", and is the root of the hierarchy.
+/hardware - Physical devices that make up agents.
+/agent    - Perform actions.
+/identity - Determines what actions agents are allowed to perform, and with what requirements.
+/process  - Sequences of actions being performed.
+/channel  - Routes that processes and agents cooperate to use for the transfer of data within and
+            between them.
+/data     - Information and compositions of it that determine the sequences of actions for processes
+            to perform, and that processes perform actions on.
+/change   - Changes to data and other relevant aspects of tracking those changes.
+```
 """
 
-:__DUPLICATE (description: """Unused because it only contains functionality that another tool has, and may do better""")
+:__DUPLICATE (description: """Unused because it only contains functionality that another tool has, and the other tool does it better""")
 :__OLD (description: """Out of date, and should no longer be used""")
 :__TODO (description: """Not fully defined in the manifest yet""")
 
-@tags (system) {
-
 # Hardware
+#   (/hardware)
 # ----------------------------------------------------------------------------------------------------
 
 biosdecode (__TODO, hardware) # description of system's bios/uefi
@@ -24,8 +59,10 @@ dmidecode  (__TODO, hardware) # description of system's hardware components
   command: lspci
   description: """List PCI devices."""
 ) {
-  @query (
+  @command (
     command: """lspci -vvmmnn -D"""
+  )
+  @query (
     parse: """
       gsub("^\\s*|\\s*$"; "")
       | split("\n\n")
@@ -58,8 +95,10 @@ dmidecode  (__TODO, hardware) # description of system's hardware components
   )
   lspci/main (hardware, pci)
 
-  @query (
+  @command (
     command: """lspci -vv"""
+  )
+  @query (
     parse: """
       gsub("^\\s*|\\s*$"; "")
       | split("\n\n")
@@ -100,8 +139,12 @@ lsblk (__TODO, hardware)
   # Entity Hierarchy:
   #   Device (opt. Partition Table) > Block (opt. Partition) > Filesystem
 
+  @command (
+    command: """
+      lsblk -a -bDz -Jlo MAJ:MIN,TYPE,PATH,RM,HOTPLUG,WWN,SERIAL,REV,MODEL,VENDOR,TRAN,RQ-SIZE,PHY-SEC,LOG-SEC,MIN-IO,OPT-IO,DISC-ALN,DISC-GRAN,DISC-MAX,DISC-ZERO,RAND
+    """
+  )
   @query (
-    command: """lsblk -a -bDz -Jlo MAJ:MIN,TYPE,PATH,RM,HOTPLUG,WWN,SERIAL,REV,MODEL,VENDOR,TRAN,RQ-SIZE,PHY-SEC,LOG-SEC,MIN-IO,OPT-IO,DISC-ALN,DISC-GRAN,DISC-MAX,DISC-ZERO,RAND"""
     parse: """
       fromjson
       | .blockdevices
@@ -156,8 +199,12 @@ lsblk (__TODO, hardware)
   )
   lsblk/device (hardware, device)
 
+  @command (
+    command: """
+      lsblk -a -bDz -Jlo MAJ:MIN,PTUUID,PTTYPE
+    """
+  )
   @query (
-    command: """lsblk -a -bDz -Jlo MAJ:MIN,PTUUID,PTTYPE"""
     parse: """
       fromjson
       | .blockdevices
@@ -181,8 +228,12 @@ lsblk (__TODO, hardware)
   )
   lsblk/device/partition-table (hardware, device, partition-table)
 
+  @command (
+    command: """
+      lsblk -a -bDz -Jlo MAJ:MIN,NAME,KNAME,PATH,TYPE,SIZE,RA,ROTA,STATE,RO,OWNER,GROUP,MODE
+    """
+  )
   @query (
-    command: """lsblk -a -bDz -Jlo MAJ:MIN,NAME,KNAME,PATH,TYPE,SIZE,RA,ROTA,STATE,RO,OWNER,GROUP,MODE"""
     parse: """
       fromjson
       | .blockdevices
@@ -220,8 +271,12 @@ lsblk (__TODO, hardware)
   )
   lsblk/block (hardware, block)
 
+  @command (
+    command: """
+      lsblk -a -bDz -Jlo MAJ:MIN,TYPE,PARTUUID,PARTLABEL,PARTTYPE,PARTTYPENAME,PARTFLAGS
+    """
+  )
   @query (
-    command: """lsblk -a -bDz -Jlo MAJ:MIN,TYPE,PARTUUID,PARTLABEL,PARTTYPE,PARTTYPENAME,PARTFLAGS"""
     parse: """
       fromjson
       | .blockdevices
@@ -247,8 +302,12 @@ lsblk (__TODO, hardware)
   )
   lsblk/block/partition (hardware, block, partition)
 
+  @command (
+    command: """
+      lsblk -a -bDz -Jlo MAJ:MIN,UUID,LABEL,FSTYPE,FSVER,FSSIZE,FSUSED,FSAVAIL,FSROOTS,MOUNTPOINTS
+    """
+  )
   @query (
-    command: """lsblk -a -bDz -Jlo MAJ:MIN,UUID,LABEL,FSTYPE,FSVER,FSSIZE,FSUSED,FSAVAIL,FSROOTS,MOUNTPOINTS"""
     parse: """
       fromjson
       | .blockdevices
@@ -294,10 +353,21 @@ blkid (__DUPLICATE, hardware, block) # Show block device information. Unnecessar
 
 lsusb (__TODO, hardware) # List USB devices
 
-# Storage: Filesystems, Directories, and Files
+# Agents
+#   (/agent)
 # ----------------------------------------------------------------------------------------------------
 
-# Filesystem
+# TODO
+
+# Data
+#   (/data)
+# ----------------------------------------------------------------------------------------------------
+
+# General Data: Filesystems, Directories, and Files
+# --------------------------------------------------
+
+# Filesystems
+#   (/data/filesystem)
 # --------------------
 
 # Create and Delete
@@ -318,7 +388,8 @@ sync         (__TODO, sync,   filesystem) # flush filesystem buffers
 mount/attach (__TODO, attach, filesystem) # mount or unmount a filesystem
 umount       (__TODO, attach, filesystem) # unmount a filesystem
 
-# File and Directory
+# Directories and Files
+#   (/data/directory, /data/file)
 # --------------------
 
 # Create and Delete
@@ -389,8 +460,9 @@ mv           (__TODO, move,             file, dir, metadata, content) # move a f
 rsync/local  (__TODO, sync,             file, dir, metadata, content) # sync files/dirs
 rsync/remote (__TODO, sync,             file, dir, metadata, content, over: host/channel) # sync files/dirs over the network
 
-# Projects: Sources, Artifacts, Deployments, and Configurations
-# ----------------------------------------------------------------------------------------------------
+# Process Data: Sources, Artifacts, Deployments, and Configurations
+#   (/data/source, /data/artifact, /data/deployment, /data/configuration)
+# --------------------------------------------------
 
 # FIXME: Every package manager has the following variations:
 #create, installation
@@ -399,7 +471,7 @@ rsync/remote (__TODO, sync,             file, dir, metadata, content, over: host
 #show, package, metadata
 #show, installation, metadata
 dpkg         (__TODO, package, installation: global,     configuration) # manage deb packages
-apt-get      (__TODO, package, installation: global,     configuration) # manage deb packages
+apt-get      (__TODO, package, installation: global,     configuration) # manage deb and snap packages
 apt-cache    (__TODO, package, installation: global,     configuration) # manage the APT cache
 apt          (__TODO, package, installation: global,     configuration) # manage deb packages and the APT chache
 aptitute     (__TODO, package, installation: global,     configuration) # manage deb packages
@@ -410,15 +482,15 @@ brew         (__TODO, package, installation: global,     configuration) # manage
 flatpak      (__TODO, package, installation: namespaced, configuration) # manage flatpack packages
 snap         (__TODO, package, installation: namespaced, configuration) # manage snap packages
 conda        (__TODO, package, installation: namespaced, configuration, process-environment) # multi-language package and environment manager
-npm          (__TODO, package, installation: project,    configuration) # node and JS package manager
-yarn         (__TODO, package, installation: project,    configuration) # node and JS package manager
-pip          (__TODO, package, installation: project,    configuration) # python package manager
-cargo        (__TODO, package, installation: project,    configuration) # rust package manager
-gem          (__TODO, package, installation: project,    configuration) # ruby package manager
-composer     (__TODO, package, installation: project,    configuration) # PHP package manager
-maven        (__TODO, package, installation: project,    configuration) # Java package manager
-gradle       (__TODO, package, installation: project,    configuration) # Java package manager
-nuget        (__TODO, package, installation: project,    configuration) # .NET package manager
+npm          (__TODO, package, installation: project,    configuration) # manage node and JS packages
+yarn         (__TODO, package, installation: project,    configuration) # manage node and JS packages
+pip          (__TODO, package, installation: project,    configuration) # manage python packages
+cargo        (__TODO, package, installation: project,    configuration) # manage rust packages
+gem          (__TODO, package, installation: project,    configuration) # manage ruby packages
+composer     (__TODO, package, installation: project,    configuration) # manage PHP packages
+maven        (__TODO, package, installation: project,    configuration) # manage Java packages
+gradle       (__TODO, package, installation: project,    configuration) # manage Java packages
+nuget        (__TODO, package, installation: project,    configuration) # manage .NET packages
 
 whereis      (__TODO, search, installation, content) # searches for binary, source, and man pages for a command
 which        (__TODO, search, installation, process-environment, content) # show where a command's program is, based on the current $PATH
@@ -430,6 +502,157 @@ docker/host/show         (__TODO, show,   host, metadata, content)
 docker/host-image/create (__TODO, create, host-image, file)
 docker/host-image/delete (__TODO, delete, host-image, file)
 docker/host-image/show   (__TODO, show,   host-image, file, metadata, content)
+
+# Commands
+#   (/data/command)
+# --------------------------------------------------
+
+whatis     (__TODO, show,   command, metadata) # show a one-line summary of command
+type       (__TODO, show,   command, metadata) # show how a command would be interpreted in the current environment
+#"""
+`type X` can give output of:
+- X is a shell keyword
+- X is a shell builtin
+- X is aliased to `Y'
+- X is a function
+- X is hashed (/path/to/X)
+- X is /path/to/X
+- -bash: type: X: not found
+"""
+man        (__TODO, show,   command, metadata) # show usage manual for a given command
+alias/list (__TODO, show,   command          ) # show command aliases
+alias/set  (__TODO, create, command          ) # create a command alias
+function   (__TODO, create, command          ) # create a shell function
+unalias    (__TODO, delete, command          ) # remove a command alias
+
+# Processes
+#   (/process)
+# ----------------------------------------------------------------------------------------------------
+
+# TODO
+
+# Process Environment
+#   (/process/environment)
+# --------------------------------------------------
+
+tty        (__TODO, show, process/environment, terminal       ) # return terminal name, eg. '/dev/tty4' from WSL
+stty/show  (__TODO, show, process/environment, terminal       ) # get terminal options
+umask/show (__TODO, show, process/environment, identity/policy) # show the file permissions mask (ie. excluded perms) for creating files
+
+@tool (command: env, description: """Print environment variables.""")
+@command (
+  command: """env"""
+)
+@query(
+  parse: """
+    [
+      .[0].stdout
+      | split("\n")[]
+      | capture("^(?<name>[^=]*)=(?<value>.*)$")
+      | {
+        "process.env.var.id":    (.name),
+        "process.env.var.value": (.value)
+      }
+    ]
+  """
+)
+@subjects (process/env/var: process.env.var.id)
+@primary-subject (process/env/var)
+env/show   (__TODO, show, process/environment, var            ) # set the file permissions mask (ie. excluded perms) for creating files
+
+@tool (command: pwd, description: """Print working directory.""")
+@command (
+  command: """pwd"""
+)
+@query (
+  parse: """
+    [{
+      "dir.id": .[0].stdout
+    }]
+  """
+)
+@subjects (dir: dir.id)
+@primary-subject (dir)
+pwd        (__TODO, show, process/environment, dir            ) # print working directory
+
+stty/set   (__TODO, set,  process/environment, terminal       ) # set terminal options
+tput       (__TODO, set,  process/environment, terminal       ) # set terminal options (see `tput`)
+tset       (__TODO, set,  process/environment, terminal       ) # set terminal options (see `tput`)
+reset      (__TODO, set,  process/environment, terminal       ) # reset terminal options (see `tput`)
+umask/set  (__TODO, set,  process/environment, identity/policy) # set the file permissions mask (ie. excluded perms) for creating files
+export     (__TODO, set,  process/environment, var            ) # make environment variable available to programs [sh and dirivatives]
+setenv     (__TODO, set,  process/environment, var            ) # csh-style equivalent of the bash-style `export` [csh and dirivatives]
+
+@tool (
+  command: cd
+  description: """Change directory."""
+)
+#"""
+TODO:
+- Consider/design:
+  - How args/slots/config/external-state are going to be handled by actions
+    > after setting any slot's value as requested, all slots can be accessed in:
+      > each command by using a context expansion
+        > eg. `{{ context.slot(name/of/slot) : . }}`
+        > (you can also use context expansions for args, eg. `{{ . : .args.arg_name }}`)
+
+    > actions needing the current state of the system should use a query expansion
+      > eg. `{{ info.query(name/of/query) : .parse.expr }}`
+
+  - How this relates to subjects, and how modifying subjects works with the command words
+    - subjects contain multiple pieces of data for which there are different queries/actions
+    - this is effectively the problem of un-merging queries
+
+    > there should be a way of transforming the 'current' complete state into a new state,
+      eg. interactive editor or jq, then passing the bits that have changed to the relevant
+      @actions to apply the changes.
+    > this creates a changes-as-data-modification mechanism, which is good for both
+      comprehension/simplicity, control/change management, and automation
+
+  - How multiple entities being returned by the same 'getter' might work (eg. env)
+    - Or if the getter needs to be parameterised on the slot name?
+    - What about dynamic slots, like 'env', where one query = many slots?
+
+- Change:
+  - the location that commands are parsed (info -> @query/@action)
+    - or @command? it's common to queries and actions, so move `command: ...` parsing there?
+
+- Implement:
+  - @action(command: ...)
+  - @context-getter(<slot_name>)
+  - @context-setter(<slot_name>, use-shell)
+  - @context-validator(<slot_name>)
+
+- Ideally implement:
+  - @context-setter(<slot_name>) # For where it can be used, eg. git, but not pwd/cd, env/export, etc.
+"""
+#@action(
+#  command: """cd {{ :dir/current || x.y(z) : .parse.expr }}"""
+#)
+@subjects(
+  dir: dir.id
+)
+cd         (__TODO, set,  process/environment, dir            ) # change directory
+
+clear (__TODO, delete, channel/content) # clear previous output in the terminal
+bg    (__TODO, start,  process) # resume a process in the background of a shell
+fg    (__TODO, set,    channel) # put a process into the foreground of a shell (ie. connect channels)
+
+# Channels
+#   (/channel)
+# ----------------------------------------------------------------------------------------------------
+
+# TODO
+
+# Identity
+#   (/identity)
+# ----------------------------------------------------------------------------------------------------
+
+# TODO
+
+# Change
+#   (/change)
+# ----------------------------------------------------------------------------------------------------
 
 @tool (
   command: git
@@ -443,12 +666,14 @@ docker/host-image/show   (__TODO, show,   host-image, file, metadata, content)
   # General Info
   # --------------------
 
-  @query(
+  @command (
     command: """
       pwd &&
     ! git rev-parse --show-toplevel &&
     ! git status --porcelain=v2 --untracked-files=all
     """
+  )
+  @query(
     parse: """
       [{
         "dir.id": (.[0].stdout),
@@ -474,12 +699,14 @@ docker/host-image/show   (__TODO, show,   host-image, file, metadata, content)
   #   (M = changed HEAD; m = normal M for the child; single ? = contains untracked files)
   #   except not in --porcelain mode, where any submodule changes are reported as M
   #   what about `--porcelain=v2`?
-  @query(
+  @command (
     command: """
       pwd &&
     ! git rev-parse --show-toplevel &&
     ! git status --porcelain=v2 --untracked-files=all
     """
+  )
+  @query(
     parse: """
       def summary_of_change_line_type(char): (
           if char == "!" then "ignored"
@@ -655,12 +882,14 @@ docker/host-image/show   (__TODO, show,   host-image, file, metadata, content)
   # ======================================================================================================================================================
 
   # IN PROGRESS
-  @query(
+  @command (
     command: """
       pwd &&
     ! git rev-parse --show-toplevel &&
     ! git for-each-ref --format='%(objectname:short)|%(refname:short)|%(upstream:short)|%(HEAD)|%(upstream:track,nobracket)' refs/heads
     """
+  )
+  @query(
     parse: """
           "version.ref.ahead.remote":  (
             .[4]
@@ -683,7 +912,7 @@ docker/host-image/show   (__TODO, show,   host-image, file, metadata, content)
   @primary-subject(version)
   delta/version/git/branch/remote
 
-  @query(
+  @command (
     command: """
       pwd &&
     ! git rev-parse --show-toplevel &&
@@ -693,6 +922,8 @@ docker/host-image/show   (__TODO, show,   host-image, file, metadata, content)
     ! git for-each-ref --format='%(trailers:only)==========' refs/remotes &&
     ! git for-each-ref --format='%(contents:signature)==========' refs/remotes
     """
+  )
+  @query(
     parse: """
       [
         .[0].stdout,
@@ -746,7 +977,7 @@ docker/host-image/show   (__TODO, show,   host-image, file, metadata, content)
   @primary-subject(version/ref)
   version/ref/git/branch/remote
 
-  @query(
+  @command (
     command: """
       pwd &&
     ! git rev-parse --show-toplevel &&
@@ -756,6 +987,8 @@ docker/host-image/show   (__TODO, show,   host-image, file, metadata, content)
     ! git for-each-ref --format='%(trailers:only)==========' refs/heads &&
     ! git for-each-ref --format='%(contents:signature)==========' refs/heads
     """
+  )
+  @query(
     parse: """
       [
         .[0].stdout,
@@ -813,7 +1046,7 @@ docker/host-image/show   (__TODO, show,   host-image, file, metadata, content)
   @primary-subject(version/ref)
   version/ref/git/branch
 
-  @query(
+  @command (
     command: """
       pwd &&
     ! git rev-parse --show-toplevel &&
@@ -827,6 +1060,8 @@ docker/host-image/show   (__TODO, show,   host-image, file, metadata, content)
     ! git for-each-ref --format='%(*trailers:only)==========' refs/tags &&
     ! git for-each-ref --format='%(*contents:signature)==========' refs/tags
     """
+  )
+  @query(
     parse: """
       [
         .[0].stdout,
@@ -920,13 +1155,15 @@ docker/host-image/show   (__TODO, show,   host-image, file, metadata, content)
   # Specific Entities
   # --------------------
 
-  @query(
+  @command (
     command: """
       pwd &&
     ! git rev-parse --show-toplevel &&
     ! git rev-parse --short HEAD &&
     ! git rev-parse HEAD
     """
+  )
+  @query(
     parse: """
       [{
         "dir.id":     (.[0].stdout),
@@ -945,13 +1182,15 @@ docker/host-image/show   (__TODO, show,   host-image, file, metadata, content)
   @primary-subject(version)
   version/current/git
 
-  @query(
+  @command (
     command: """
       pwd &&
     ! git rev-parse --show-toplevel &&
     ! git symbolic-ref --short -q HEAD &&
     - info.query(version/ref/git/branch) :: $
     """
+  )
+  @query(
     parse: """
       [
         {
@@ -973,12 +1212,14 @@ docker/host-image/show   (__TODO, show,   host-image, file, metadata, content)
   @primary-subject(version/ref)
   version/ref/current/git/branch
 
-  @query(
+  @command (
     command: """
       pwd &&
     ! git rev-parse --show-toplevel &&
     ! git describe --tags --exact-match
     """
+  )
+  @query(
     parse: """
       [{
         "dir.id":         (.[0].stdout),
@@ -995,7 +1236,7 @@ docker/host-image/show   (__TODO, show,   host-image, file, metadata, content)
   @primary-subject(version/ref)
   version/ref/current/git/tag
 
-  @query(
+  @command (
     command: """
       pwd &&
     ! git rev-parse --show-toplevel &&
@@ -1004,6 +1245,8 @@ docker/host-image/show   (__TODO, show,   host-image, file, metadata, content)
     ! git for-each-ref refs/tags --sort=-creatordate --format='%(objectname:short)' --count=1 &&
     ! git for-each-ref refs/tags --sort=-creatordate --format='%(refname:short)' --count=1
     """
+  )
+  @query(
     parse: """
       (
         if .[3].status == 0 and .[3].stdout != "" then [
@@ -1182,5 +1425,3 @@ deployment [installation | instance]
 category/hardware [command & [hardware]]
 category/storage  [command & [filesystem | file | dir]]
 category/projects [command & [source | artifact | deployment | configuration]]
-
-}

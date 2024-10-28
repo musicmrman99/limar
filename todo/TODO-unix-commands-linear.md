@@ -7,29 +7,39 @@ Entity Info (static for now)
 **NOTE**: Should differentiate between what a thing *is* and what a thing *operates on*.
 
 ```
-/subject
+/subject (alias: /)
 
 /hardware
-
 /agent {
-  /passive (hardware? alias: store)
+  /passive (hardware? alias: /store)
     > passive-active/attachment
-  /active (hardware? alias: host)
+  /active (hardware? alias: /host)
 }
 
-/data-type {
-  # Address of data
-  /path
-
-  # Address of process
-  /command
-
-  /text
-  /number
-  /time
+/identity (alias: identity and trust, identity and access, iam) {
+  /user
+  /group
+  /role
 }
 
 /data (store? path?) {
+  # Basic
+  # ----------
+  /text
+  /number
+  /time
+
+  # Address of data
+  /path
+
+  # Process Data -> Process transition
+  /command
+
+  /email
+  /word
+
+  # Compound
+  # ----------
   /host/image (project? version?)
 
   /filesystem (alias: fs)
@@ -60,7 +70,7 @@ Entity Info (static for now)
   }
 }
 
-/proccess (host? installation? configuration? command? identity? alias: proc) {
+/process (host? installation? configuration? command? identity? alias: proc) {
   /kernel
   /service     (kernel? async operations?)
   /application (kernel? sync operations? alias: app)
@@ -82,12 +92,6 @@ Entity Info (static for now)
   }
 }
 
-/identity (alias: identity and trust, identity and access, iam) {
-  /user
-  /group
-  /role
-}
-
 # Versions and Change
 # Eg. file history, tagged versions, tasks, (the act of) deployments, etc.
 /change {
@@ -98,11 +102,8 @@ Entity Info (static for now)
   /delta
 }
 
-# Other stuff
+# Other stuff (UNCATEGORISED)
 /web-resource
-/email
-/word
-
 /quality # tests, validity, integrity, 7 Cs, etc.
 /knowledge # comments, documentation strings, readmes, licencing, design information and visualisations, etc.
 ```
@@ -141,29 +142,6 @@ System Entities - Creation, Information, Management, and Destruction (CRUD)
 **Notes**:
 - Tags without a name represent the target entities of the command
 - Unless overridden, all items are assumed to be `is: /operation`.
-
-Commands
-====================
-
-### show
-- whatis      /command, /process/environment - shows the one-line summary of a command
-- type        /command, /process/environment - show how a command would be interpreted in the current environment
-  - X is a shell keyword
-  - X is a shell builtin
-  - X is aliased to `Y'
-  - X is a function
-  - X is hashed (/path/to/X)
-  - X is /path/to/X
-  - -bash: type: X: not found
-
-- man         /command, /process/environment - show usage manual for a given command
-
-### create
-- alias       /command         - create a command alias, or show aliases
-- function    /command         - create a shell function
-
-### delete
-- unalias     /command         - remove an alias
 
 Hosts, Kernels, and Processes
 ====================
@@ -246,31 +224,6 @@ Hosts, Kernels, and Processes
 #### wait
 - wait        /process/state   - wait for process to exit (ie. reach the stopped state)
 - pidwait     /process/state   - wait on process searched for by name or other attributes
-
-Process Environment
-====================
-
-### terminal
-- tty         /process/environment - return terminal name, eg. '/dev/tty4' (run on WSL)
-- stty        /process/environment - get or set terminal options
-- clear       /process/environment - clear the screen
-- reset       /process/environment - reset terminal (see `tput`)
-- tput        /process/environment - terminal-specific capabilities
-  - [most of the user-level uses of this are covered by ncurses or ANSI codes]
-
-### shell
-- bg          /process/environment - resume a process in the background of a shell
-- fg          /process/environment - put a process into the foreground of a shell
-
-### files and filesystem
-- pwd         /process/environment - print working directory
-- cd          /process/environment - change directory
-- umask       /process/environment - set the file permissions mask (ie. excluded perms) for creating files
-
-### environment variables
-- export      /process/environment - make environment variable available to programs [sh and dirivatives]
-- setenv      /process/environment - csh-style equivalent of the bash-style `export` [csh and dirivatives]
-- [see /process - env]
 
 Applications
 ====================

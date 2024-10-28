@@ -8,7 +8,7 @@ InterpolatableLimarCommand = tuple[
     str | None
 ]
 
-class QueryFormatter:
+class CommandFormatter:
     def interpolatable(self, interpolatable: Interpolatable) -> str:
         return ''.join(
             (
