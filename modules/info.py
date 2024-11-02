@@ -7,13 +7,13 @@ import subprocess
 from core.exceptions import LIMARException
 from core.modulemanager import ModuleAccessor
 from core.modules.phase_utils.phase_system import PhaseSystem
-from modules.command_utils.formatter import SubcommandFormatter
+from modules.command_utils.command_transformer import CommandTransformer
 
 # Types
 from argparse import ArgumentParser, Namespace
 from typing import Any
 
-from modules.command_utils.formatter import (
+from modules.command_utils.command_transformer import (
     LimarSubcommand,
     InterpolatableSubcommand,
     InterpolatableLimarSubcommand
@@ -42,6 +42,8 @@ class InfoModule:
     def __init__(self):
         self._dependency_graph: dict[str, set[str]] | None = None
         self._reverse_dependency_graph: dict[str, set[str]] | None = None
+
+        self._command_tr = CommandTransformer()
 
     def dependencies(self):
         return ['log', 'phase', 'manifest', 'command-manifest']
@@ -285,9 +287,9 @@ class InfoModule:
             if not isinstance(query_args[param], str):
                 raise LIMARException(
                     f"Evaluation of query parameter {{{{"
-                    f" {SubcommandFormatter().limar_subcommand(param)} }}}} did"
-                    " not return a string. Cannot interpolate non-string values"
-                    " into the requested query."
+                    f" {self._command_tr.format_text_limar_subcommand(param)}"
+                    " }}}} did not return a string. Cannot interpolate"
+                    " non-string values into the requested query."
                 )
         self._mod.log.debug('Query arguments:', query_args)
 
@@ -360,7 +362,7 @@ class InfoModule:
         module, method, args_raw, jqTransform, pqTransform = limar_subcommand
         self._mod.log.debug(
             'Running LIMAR subcommand:',
-            SubcommandFormatter().limar_subcommand(limar_subcommand)
+            self._command_tr.format_text_limar_subcommand(limar_subcommand)
         )
 
         # Interpolate args
@@ -368,13 +370,13 @@ class InfoModule:
             (
                 arg
                 if isinstance(arg, str)
-                else self._interpolate(arg, data)
+                else self._command_tr.interpolate(arg, data)
             )
             for arg in args_raw
         )
         self._mod.log.debug(
             'Evaluated LIMAR subcommand:',
-            SubcommandFormatter().limar_subcommand(
+            self._command_tr.format_text_limar_subcommand(
                 (module, method, args, jqTransform, pqTransform)
             )
         )
@@ -434,7 +436,9 @@ class InfoModule:
         if options is not None:
             final_options.update(options)
 
-        subcommand_interpolated = self._interpolate(system_subcommand, data)
+        subcommand_interpolated = self._command_tr.interpolate(
+            system_subcommand, data
+        )
         self._mod.log.info('Running subcommand:', subcommand_interpolated)
 
         subcommand_split_args = shlex.split(subcommand_interpolated)
@@ -468,19 +472,6 @@ class InfoModule:
 
     # Utils - Other
     # --------------------------------------------------
-
-    def _interpolate(self,
-            interpolatable: InterpolatableSubcommand,
-            data: dict[LimarSubcommand, str]
-    ) -> str:
-        return ''.join(
-            (
-                data[fragment]
-                if isinstance(fragment, tuple)
-                else fragment
-            )
-            for fragment in interpolatable
-        )
 
     def _invalidate_cache_for_query_dependents(self,
             query_ref,
