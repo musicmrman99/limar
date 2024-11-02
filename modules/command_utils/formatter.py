@@ -1,26 +1,26 @@
-LimarCommand = tuple[str, str, tuple[str, ...], str | None, str | None]
-Interpolatable = list[str | LimarCommand] # Used for multiple dynamic types
-InterpolatableLimarCommand = tuple[
+LimarSubcommand = tuple[str, str, tuple[str, ...], str | None, str | None]
+InterpolatableSubcommand = list[str | LimarSubcommand] # Used for multiple dynamic types
+InterpolatableLimarSubcommand = tuple[
     str,
     str,
-    tuple[Interpolatable, ...],
+    tuple[InterpolatableSubcommand, ...],
     str | None,
     str | None
 ]
 
-class CommandFormatter:
-    def interpolatable(self, interpolatable: Interpolatable) -> str:
+class SubcommandFormatter:
+    def interpolatable_subcommand(self, interpolatable: InterpolatableSubcommand) -> str:
         return ''.join(
             (
                 part # Fragment
                 if isinstance(part, str)
-                else '{{ '+self.limar_command(part)+' }}' # Parameter
+                else '{{ '+self.limar_subcommand(part)+' }}' # Parameter
             )
             for part in interpolatable
         )
 
-    def limar_command(self,
-            limar_command: LimarCommand | InterpolatableLimarCommand
+    def limar_subcommand(self,
+            limar_command: LimarSubcommand | InterpolatableLimarSubcommand
     ) -> str:
         return (
             f"{limar_command[0]}.{limar_command[1]}(" +
@@ -28,7 +28,7 @@ class CommandFormatter:
                 (
                     arg
                     if isinstance(arg, str)
-                    else self.interpolatable(arg)
+                    else self.interpolatable_subcommand(arg)
                 )
                 for arg in limar_command[2]
             ) +

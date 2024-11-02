@@ -4,16 +4,16 @@ import re
 from core.exceptions import LIMARException
 from core.utils import list_strip
 from modules.command_utils.formatter import (
-    LimarCommand,
-    Interpolatable,
-    InterpolatableLimarCommand,
-    CommandFormatter
+    LimarSubcommand,
+    InterpolatableSubcommand,
+    InterpolatableLimarSubcommand,
+    SubcommandFormatter
 )
 
 class Command:
     def __init__(self):
         self._current_command = None
-        self._fmt = CommandFormatter()
+        self._fmt = SubcommandFormatter()
 
     @staticmethod
     def context_type():
@@ -35,48 +35,48 @@ class Command:
                 " execute"
             )
 
-        raw_commands = [
-            command.strip()
-            for command in re.split(
+        raw_subcommands = [
+            subcommand.strip()
+            for subcommand in re.split(
                 '[ \\n]&&[ \\n]',
                 context['opts']['command']
             )
         ]
 
-        commands = [{} for _ in range(len(raw_commands))]
-        for command, raw_command in zip(commands, raw_commands):
-            command['type'] = 'system'
-            command['allowedToFail'] = False
-            if raw_command[:2] == '- ':
-                command['type'] = 'limar'
-                raw_command = raw_command[2:]
-            elif raw_command[:2] == '! ':
-                command['allowedToFail'] = True
-                raw_command = raw_command[2:]
+        subcommands = [{} for _ in range(len(raw_subcommands))]
+        for subcommand, raw_subcommand in zip(subcommands, raw_subcommands):
+            subcommand['type'] = 'system'
+            subcommand['allowedToFail'] = False
+            if raw_subcommand[:2] == '- ':
+                subcommand['type'] = 'limar'
+                raw_subcommand = raw_subcommand[2:]
+            elif raw_subcommand[:2] == '! ':
+                subcommand['allowedToFail'] = True
+                raw_subcommand = raw_subcommand[2:]
 
-            if command['type'] == 'system':
+            if subcommand['type'] == 'system':
                 # Cannot shlex.split() until we know all of the arguments
-                fragments, params = self._split_fragments_params(raw_command)
-                system_command: Interpolatable = (
+                fragments, params = self._split_fragments_params(raw_subcommand)
+                system_subcommand: InterpolatableSubcommand = (
                     self._chain_fragments_params(fragments, params)
                 )
 
-                command['parameters'] = set(params)
-                command['command'] = system_command
+                subcommand['parameters'] = set(params)
+                subcommand['subcommand'] = system_subcommand
 
-            elif command['type'] == 'limar':
+            elif subcommand['type'] == 'limar':
                 match = re.match(
                     "^(?P<module>[a-z0-9-]*)\\.(?P<method>[a-z0-9_]*)\\((?P<args>.*)\\) (: (?P<jqTransform>.*)|:: (?P<pqTransform>.*))$",
-                    raw_command
+                    raw_subcommand
                 )
                 if match is None:
                     raise LIMARException(
-                        f"Failed to parse limar command '{raw_command}'"
+                        f"Failed to parse limar subcommand '{raw_subcommand}'"
                     )
                 fragments, params = self._split_fragments_params(
                     match.group('args')
                 )
-                limar_command: InterpolatableLimarCommand = (
+                limar_subcommand: InterpolatableLimarSubcommand = (
                     match.group('module'),
                     match.group('method'),
                     tuple(
@@ -89,33 +89,35 @@ class Command:
                     match.groups()[5]
                 )
 
-                command['parameters'] = set(params)
-                command['command'] = limar_command
+                subcommand['parameters'] = set(params)
+                subcommand['subcommand'] = limar_subcommand
 
         if self._current_command is not None:
-            fmt_commands = lambda commands: (
+            fmt_subcommands = lambda subcommands: (
                 ' && '.join(
                     (
-                        self._fmt.interpolatable(command['command'])
-                        if command['type'] == 'system'
-                        else self._fmt.limar_command(command)
+                        self._fmt.interpolatable_subcommand(
+                            subcommand['subcommand']
+                        )
+                        if subcommand['type'] == 'system'
+                        else self._fmt.limar_subcommand(subcommand)
                     )
-                    for command in commands
+                    for subcommand in subcommands
                 )
             )
             raise LIMARException(
                 "Can only have one nested @query context: tried to nest"
-                f" '{fmt_commands(commands)}' inside"
-                f" '{fmt_commands(self._current_command['commands'])}'"
+                f" '{fmt_subcommands(subcommands)}' inside"
+                f" '{fmt_subcommands(self._current_command['subcommands'])}'"
             )
 
         self._current_command = {
             'parameters': {
                 param
-                for command in commands
-                for param in command['parameters']
+                for subcommand in subcommands
+                for param in subcommand['parameters']
             },
-            'commands': commands
+            'subcommands': subcommands
         }
 
     def on_exit_context(self, *_, **__):
@@ -145,7 +147,7 @@ class Command:
 
     def _split_fragments_params(self,
             string: str
-    ) -> tuple[list[str], list[LimarCommand]]:
+    ) -> tuple[list[str], list[LimarSubcommand]]:
         return (
             re.split(
                 '\\{\\{ [a-z0-9-]*\\.[a-z0-9_]*\\(.*\\) ::? .* \\}\\}',
@@ -168,10 +170,10 @@ class Command:
 
     def _group_fragments_params(self,
             fragments: list[str],
-            parameters: list[LimarCommand],
+            parameters: list[LimarSubcommand],
             delim: str
-    ) -> list[tuple[list[str], list[LimarCommand]]]:
-        groups: list[tuple[list[str], list[LimarCommand]]] = [
+    ) -> list[tuple[list[str], list[LimarSubcommand]]]:
+        groups: list[tuple[list[str], list[LimarSubcommand]]] = [
             ([], [])
         ]
 
@@ -195,8 +197,8 @@ class Command:
 
     def _chain_fragments_params(self,
             fragments: list[str],
-            parameters: list[LimarCommand]
-    ) -> Interpolatable:
+            parameters: list[LimarSubcommand]
+    ) -> InterpolatableSubcommand:
         return list_strip([
             *chain.from_iterable(
                 zip(fragments, parameters)
