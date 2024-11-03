@@ -4,12 +4,15 @@ import re
 from core.exceptions import LIMARException
 from core.utils import list_strip
 
-LimarSubcommand = tuple[str, str, tuple[str, ...], str | None, str | None]
-InterpolatableSubcommand = list[str | LimarSubcommand] # Used for multiple dynamic types
-InterpolatableLimarSubcommand = tuple[
+Subquery = tuple[str, str, tuple[str, ...], str | None, str | None]
+Interpolatable = list[str | Subquery]
+GroupedInterpolatable = tuple[Interpolatable, ...]
+
+SystemSubcommand = GroupedInterpolatable
+LimarSubcommand = tuple[
     str,
     str,
-    tuple[InterpolatableSubcommand, ...],
+    GroupedInterpolatable,
     str | None,
     str | None
 ]
@@ -45,8 +48,11 @@ class CommandTransformer:
             if subcommand['type'] == 'system':
                 # Cannot shlex.split() until we know all of the arguments
                 fragments, params = self._split_fragments_params(raw_subcommand)
-                system_subcommand: InterpolatableSubcommand = (
+                system_subcommand: SystemSubcommand = tuple(
                     self._chain_fragments_params(fragments, params)
+                    for fragments, params in self._group_fragments_params(
+                        fragments, params, '[ \t\n]+'
+                    )
                 )
 
                 subcommand['parameters'] = set(params)
@@ -65,7 +71,7 @@ class CommandTransformer:
                 fragments, params = self._split_fragments_params(
                     match.group('args')
                 )
-                limar_subcommand: InterpolatableLimarSubcommand = (
+                limar_subcommand: LimarSubcommand = (
                     match.group('module'),
                     match.group('method'),
                     tuple(
@@ -103,7 +109,7 @@ class CommandTransformer:
         )
 
     def format_text_interpolatable_subcommand(self,
-            interpolatable_subcommand: InterpolatableSubcommand
+            interpolatable_subcommand: Interpolatable
     ) -> str:
         return ''.join(
             (
@@ -115,7 +121,7 @@ class CommandTransformer:
         )
 
     def format_text_limar_subcommand(self,
-            limar_command: LimarSubcommand | InterpolatableLimarSubcommand
+            limar_command: Subquery | LimarSubcommand
     ) -> str:
         return (
             f"{limar_command[0]}.{limar_command[1]}(" +
@@ -136,8 +142,8 @@ class CommandTransformer:
         )
 
     def interpolate(self,
-            interpolatable: InterpolatableSubcommand,
-            data: dict[LimarSubcommand, str]
+            interpolatable: Interpolatable,
+            data: dict[Subquery, str]
     ) -> str:
         return ''.join(
             (
@@ -148,12 +154,25 @@ class CommandTransformer:
             for fragment in interpolatable
         )
 
+    def interpolate_grouped(self,
+            grouped_interpolatable: GroupedInterpolatable,
+            data: dict[Subquery, str]
+    ):
+        return tuple(
+            (
+                group
+                if isinstance(group, str)
+                else self.interpolate(group, data)
+            )
+            for group in grouped_interpolatable
+        )
+
     # Utils
     # --------------------------------------------------
 
     def _split_fragments_params(self,
             string: str
-    ) -> tuple[list[str], list[LimarSubcommand]]:
+    ) -> tuple[list[str], list[Subquery]]:
         return (
             re.split(
                 '\\{\\{ [a-z0-9-]*\\.[a-z0-9_]*\\(.*\\) ::? .* \\}\\}',
@@ -176,15 +195,17 @@ class CommandTransformer:
 
     def _group_fragments_params(self,
             fragments: list[str],
-            parameters: list[LimarSubcommand],
+            parameters: list[Subquery],
             delim: str
-    ) -> list[tuple[list[str], list[LimarSubcommand]]]:
-        groups: list[tuple[list[str], list[LimarSubcommand]]] = [
+    ) -> list[tuple[list[str], list[Subquery]]]:
+        groups: list[tuple[list[str], list[Subquery]]] = [
             ([], [])
         ]
 
+        delim_regex = re.compile(delim)
+
         for fragment, parameter in zip(fragments[:-1], parameters):
-            split_fragment = fragment.split(delim)
+            split_fragment = delim_regex.split(fragment)
             groups[-1][0].append(split_fragment[0])
             groups.extend(
                 ([initial_fragment], [])
@@ -192,7 +213,7 @@ class CommandTransformer:
             )
             groups[-1][1].append(parameter)
 
-        split_fragment = fragments[-1].split(delim)
+        split_fragment = delim_regex.split(fragments[-1])
         groups[-1][0].append(split_fragment[0])
         groups.extend(
             ([initial_fragment], [])
@@ -203,8 +224,8 @@ class CommandTransformer:
 
     def _chain_fragments_params(self,
             fragments: list[str],
-            parameters: list[LimarSubcommand]
-    ) -> InterpolatableSubcommand:
+            parameters: list[Subquery]
+    ) -> Interpolatable:
         return list_strip([
             *chain.from_iterable(
                 zip(fragments, parameters)
