@@ -78,8 +78,10 @@ class InfoModule:
 
             self._dependency_graph = {
                 ref: {
-                    param[2][0] # 1st item of info.get() args
+                    param[2][0] # 1st item of info.query() args
                     for param in item['command']['parameters']
+                    # TODO: Only supports `info.query(<ref>)` for now
+                    if ('info', 'query') in param[0:2]
                 }
                 for ref, item in query_items.items()
             }
