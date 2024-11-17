@@ -358,15 +358,15 @@ class InfoModule:
         if options is not None:
             final_options.update(options)
 
-        subcommand_split_args = self._command_tr.interpolate_grouped(
+        args = self._command_tr.interpolate_grouped(
             system_subcommand, data
         )
-        self._mod.log.trace('Subcommand split:', subcommand_split_args)
+        self._mod.log.trace('Subcommand split:', args)
 
         exception = None
         try:
             subproc = subprocess.Popen(
-                subcommand_split_args,
+                args,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE
             )
@@ -379,7 +379,7 @@ class InfoModule:
 
         if subcommand_status != 0 and not final_options['allowedToFail']:
             raise LIMARException(
-                f"Process run with arguments {subcommand_split_args} failed"
+                f"Process run with arguments {args} failed"
                 f" with return code '{subcommand_status}'."
             ) from exception
 
@@ -397,10 +397,11 @@ class InfoModule:
         if data is None:
             data = {}
 
-        # Currently unused (don't run unused code), but may be used in future
-        # final_options = {}
-        # if options is not None:
-        #     final_options.update(options)
+        final_options = {
+            'allowedToFail': False
+        }
+        if options is not None:
+            final_options.update(options)
 
         module, method, args_raw, jqTransform, pqTransform = limar_subcommand
         self._mod.log.debug(
@@ -419,58 +420,77 @@ class InfoModule:
 
         # LIMAR subcommands are the same process as parameter evaluation, but
         # with support for one level of nesting in the arguments.
-        return self._invoke_limar_module(
+        output = self._invoke_limar_module(
             module, method, args, jqTransform, pqTransform
         )
+
+        if output['status'] != 0 and not final_options['allowedToFail']:
+            raise LIMARException(
+                f"Process run with arguments {args} failed with return code"
+                f" '{output['status']}'."
+            ) from output['stderr']
+
+        return output
 
     def _invoke_limar_module(self,
             module: str,
             method: str,
             args: tuple[str, ...],
-            jqTransform: str | None,
-            pqTransform: str | None
-    ) -> Any:
+            jq_transform: str | None,
+            pq_transform: str | None
+    ) -> dict[str, Any]:
+        subcommand_output_raw = None
+        subcommand_error = None
+
         # Get LIMAR invokation output
-        # Manage caching for `info.query()` here. Other modules should do their
+        # Manage caching for this module here. Other modules should do their
         # own caching if needed.
-        cache_hit = False
         if (module, method) == ('info', 'query'):
             try:
                 subcommand_output_raw = self._mod.cache.get(
                     f"info.query.{args[0]}.pickle"
                 )
-                cache_hit = True
-            except KeyError:
-                pass
+            except KeyError as e:
+                subcommand_error = e
 
-        if not cache_hit:
-            limar_service_method = getattr(getattr(self._mod, module), method)
-            subcommand_output_raw = limar_service_method(*args)
-
-        self._mod.log.debug(
-            'LIMAR invokation output (pre-transform): ',
-            subcommand_output_raw
-        )
+        # Invoke LIMAR service
+        if subcommand_error is not None:
+            try:
+                limar_service_method = (
+                    getattr(getattr(self._mod, module), method)
+                )
+                subcommand_output_raw: Any = limar_service_method(*args)
+                self._mod.log.debug(
+                    'LIMAR invokation output (pre-transform): ',
+                    subcommand_output_raw
+                )
+            except Exception as e:
+                subcommand_error = e
+                self._mod.log.error(
+                    'LIMAR invokation error (not transformed): ',
+                    subcommand_error
+                )
 
         # Process LIMAR invokation output
-        subcommand_output = subcommand_output_raw
-        if jqTransform is not None:
-            subcommand_output = self._mod.tr.query(
-                jqTransform, subcommand_output_raw, lang='jq', first=True
+        if subcommand_error is None:
+            subcommand_output = subcommand_output_raw
+            if jq_transform is not None:
+                subcommand_output = self._mod.tr.query(
+                    jq_transform, subcommand_output_raw, lang='jq', first=True
+                )
+            elif pq_transform is not None:
+                subcommand_output = self._mod.tr.query(
+                    pq_transform, subcommand_output_raw, lang='yaql'
+                )
+            self._mod.log.trace(
+                'LIMAR invokation output (post-transform): ',
+                subcommand_output
             )
-        elif pqTransform is not None:
-            subcommand_output = self._mod.tr.query(
-                pqTransform, subcommand_output_raw, lang='yaql'
-            )
-        self._mod.log.trace(
-            'LIMAR invokation output (post-transform): ',
-            subcommand_output
-        )
 
         return {
-            'status': 0,
+            'status': 0 if subcommand_error is None else 1,
             'stdout': subcommand_output,
-            'stderr': None
+            'stderr': subcommand_error
         }
 
     # Utils - Other

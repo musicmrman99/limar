@@ -37,12 +37,21 @@ class CommandTransformer:
             # Parse markers
             subcommand['type'] = 'system'
             subcommand['allowedToFail'] = False
-            if raw_subcommand[:2] == '- ':
-                subcommand['type'] = 'limar'
-                raw_subcommand = raw_subcommand[2:]
-            elif raw_subcommand[:2] == '! ':
+
+            if raw_subcommand[:1] == '!':
                 subcommand['allowedToFail'] = True
-                raw_subcommand = raw_subcommand[2:]
+                raw_subcommand = raw_subcommand[1:]
+
+            if raw_subcommand[:1] == '-':
+                subcommand['type'] = 'limar'
+                raw_subcommand = raw_subcommand[1:]
+
+            if raw_subcommand[:1] != ' ':
+                raise LIMARException(
+                    "Missing space after markers in subcommand"
+                    f" '{self.format_text(raw_subcommand)}'"
+                )
+            raw_subcommand = raw_subcommand[1:]
 
             # Parse system command
             if subcommand['type'] == 'system':
