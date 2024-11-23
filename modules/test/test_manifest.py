@@ -17,12 +17,16 @@ class TestManifest(TestCase):
     def _log(self, *objs, error=False, level=0):
         print(*objs)
 
+    def _warning(self, *objs):
+        self._log(*objs, level=1)
+
     def _get_cache(self, name):
         raise KeyError()
 
     def setUp(self):
         log_module = Mock()
         log_module.log.side_effect = self._log
+        log_module.warning.side_effect = self._warning
 
         cache_module = Mock()
         cache_module.get.side_effect = self._get_cache
@@ -71,7 +75,7 @@ class TestManifest(TestCase):
         context_mod.on_declare_item.side_effect = self._assert_has_calls(
             expected_declare_item_calls
         )
-        manifest.start() # Verifier runs here
+        manifest.start(mod=self.mock_mod) # Verifier runs here
 
         self.assertEqual(
             manifest.get_item('itemA'),
@@ -112,7 +116,7 @@ class TestManifest(TestCase):
         context_mod.on_declare_item.side_effect = self._assert_has_calls(
             expected_declare_item_calls
         )
-        manifest.start() # Verifier runs here
+        manifest.start(mod=self.mock_mod) # Verifier runs here
 
         self.assertEqual(
             manifest.get_item('itemA'),
@@ -157,7 +161,7 @@ class TestManifest(TestCase):
         context_mod.on_declare_item.side_effect = self._assert_has_calls(
             expected_declare_item_calls
         )
-        manifest.start() # Verifier runs here
+        manifest.start(mod=self.mock_mod) # Verifier runs here
 
         self.assertEqual(
             manifest.get_item('itemA'),
@@ -218,7 +222,7 @@ class TestManifest(TestCase):
         context_mod.on_declare_item.side_effect = self._assert_has_calls(
             expected_declare_item_calls
         )
-        manifest.start() # Verifier runs here
+        manifest.start(mod=self.mock_mod) # Verifier runs here
 
         self.assertEqual(
             manifest.get_item('itemA'),
@@ -279,7 +283,7 @@ class TestManifest(TestCase):
         context_mod.on_declare_item.side_effect = self._assert_has_calls(
             expected_declare_item_calls
         )
-        manifest.start() # Verifier runs here
+        manifest.start(mod=self.mock_mod) # Verifier runs here
 
         self.assertEqual(
             manifest.get_item('itemA'),
@@ -362,7 +366,7 @@ class TestManifest(TestCase):
             ref: self._item_with_finalised_tags(item)
             for ref, item in items.items()
         }
-    
+
     def _assert_has_calls(self, expected_calls):
         call_num = 0
         def _verifier(*args, **kwargs):
