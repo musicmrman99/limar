@@ -14,8 +14,8 @@ Subjects are like types or database tables, except that subjects are 'specified'
 'static' or 'dynamic'. That means that LIMAR doesn't check what you're doing before it runs commands
 based on what you've told it in this manifest (static typing), nor do fetched entities record what
 type they are (dynamic typing), but rather that LIMAR interprets entities to contain information
-about the subjects you request at the time you request them after fetching only the entities that
-include the specified subjects.
+about the subjects you are operating on at the time you operate on them, usually after fetching
+only the entities that include the specified subjects.
 
 Entities are like objects or records in a database. They are composed of 'entity data', which is the
 output of each query that matches a subject request, which are then merged to form a list of
@@ -31,7 +31,7 @@ The LIMAR Model consists of a hierarchy of subjects. The first level of nodes ar
 ```
 /subject  - The subject of subjects. Aliased to "/", and is the root of the hierarchy.
 /hardware - Physical devices that make up agents.
-/agent    - Perform actions.
+/agent    - Performs actions.
 /identity - Determines what actions agents are allowed to perform, and with what requirements.
 /process  - Sequences of actions being performed.
 /channel  - Routes that processes and agents cooperate to use for the transfer of data within and
@@ -40,7 +40,125 @@ The LIMAR Model consists of a hierarchy of subjects. The first level of nodes ar
             to perform, and that processes perform actions on.
 /change   - Changes to data and other relevant aspects of tracking those changes.
 ```
+
+The full model is:
+===== TODO =========================================================================================
+This is static for now, but should be retrievable using manifest commands, or at least from the
+`/subject` subject.
+====================================================================================================
+
+```
+/subject (alias: /)
+
+/hardware
+/agent {
+  /passive (hardware? alias: /store)
+    > passive-active/attachment
+  /active (hardware? alias: /host)
+}
+
+/identity (alias: identity and trust, identity and access, iam) {
+  /user
+  /group
+  /role
+}
+
+/process (host? installation? configuration? command? identity? alias: proc) {
+  /kernel
+  /service     (kernel? async operations?)
+  /application (kernel? sync operations? alias: app)
+  /operation   (kernel? service (optional)? alias: op)
+
+  content {
+    # subprocess that depends on and augments a parent process
+    /module
+
+    # per-process /configuration ('pushed in')
+    /parameter (alias: param)
+    # per-process /configuration, cloned from parent process and used as needed ('pulled in'); eg. env vars, current dir, vfs root, etc.
+    /environment (alias: env)
+
+    # current state (including status)
+    /state
+    # historical state
+    /log
+  }
+}
+
+# I/O
+/channel {
+  # cross-host channel = network I/O (eg. TCP/UDP connections)
+  /host/channel {
+    /config
+  }
+
+  # cross-process channel = I/O (eg. stdin/out/err, keyboard, mouse, IPC)
+  /process/channel {
+    /config
+  }
+}
+
+/data (store? path?) {
+  # Basic
+  # ----------
+  /text
+  /number
+  /time
+
+  # Address of data
+  /path
+  /url
+
+  # Process Data -> Process transition
+  /command
+
+  /email
+  /word
+
+  # Compound
+  # ----------
+  /host/image (project? version?)
+
+  /filesystem (alias: fs)
+  /directory (alias: dir)
+  /file
+
+  /project
+  # source code, assets, etc.
+  /source (project? version?)
+  # binaries, archives/packages, bundles, disk images, etc.
+  /artifact (project? version?)
+  # running instances of an artifact
+  /deployment (artifact? alias: instance, installation)
+  # parameter and environment bindings for a given deployment
+  /configuration (artifact? deployment (optional)? alias: config, conf, cfg)
+}
+
+# Versions and Change
+# Eg. file history, tagged versions, tasks, (the act of) deployments, etc.
+/change {
+  /tracker (alias: repo)
+  /version {
+    /reference (alias: ref)
+  }
+  /delta
+}
+
+# Other stuff (UNCATEGORISED)
+/quality # tests, validity, integrity, 7 Cs, etc.
+/knowledge # comments, documentation strings, readmes, licencing, design information and visualisations, etc.
+```
+
+Self-Classification
+--------------------------------------------------
+
+LIMAR differentiates between what a thing *is* and what a thing *operates on*. Tags without a name
+represent the *target* entities of the command. Unless overridden, all commands are assumed to be
+`is: /process/operation`.
 """
+
+# Tags
+# ----------------------------------------------------------------------------------------------------
 
 :__DUPLICATE (description: """Unused because it only contains functionality that another tool has, and the other tool does it better""")
 :__OLD (description: """Out of date, and should no longer be used""")
@@ -582,57 +700,80 @@ reset      (__TODO, set,  process/environment, terminal       ) # reset terminal
 umask/set  (__TODO, set,  process/environment, identity/policy) # set the file permissions mask (ie. excluded perms) for creating files
 export     (__TODO, set,  process/environment, var            ) # make environment variable available to programs [sh and dirivatives]
 setenv     (__TODO, set,  process/environment, var            ) # csh-style equivalent of the bash-style `export` [csh and dirivatives]
+# Shell options?? (eg. pipefail, fail on error, etc.)
 
-@tool (
-  command: cd
-  description: """Change directory."""
-)
 #"""
 TODO:
 - Consider/design:
-  - How args/slots/config/external-state are going to be handled by actions
-    > after setting any slot's value as requested, all slots can be accessed in:
-      > each command by using a context expansion
-        > eg. `{{ context.slot(name/of/slot) : . }}`
-        > (you can also use context expansions for args, eg. `{{ . : .args.arg_name }}`)
+  - How args/forwarded-data/slots/config/external-state should be handled by commands
+    > Args shouldn't need to be accessed. Forwarded data, slots, config, and external
+      state should provide sufficient information to run a query or action.
 
-    > actions needing the current state of the system should use a query expansion
-      > eg. `{{ info.query(name/of/query) : .parse.expr }}`
+    > Forwarded data should be requested using a special 'dynamic' expansion (which
+      is like a normal expansion, but has no module, method, or args):
+        {{ .() : .parse.expr }}
 
-  - How this relates to subjects, and how modifying subjects works with the command words
-    - subjects contain multiple pieces of data for which there are different queries/actions
+    > Slots, config, and external state should be requested using a normal expansion:
+        {{ context.get_slot(name/of/slot) : .parse.expr }}
+        {{ manifest.get_item(name/of/item) : .parse.expr }}
+        {{ info.query(name/of/query) : .parse.expr }}
+
+    > The purpose and precedence of the above inputs are determined by each command,
+      but commands should follow these guidelines:
+      - If forwarded data is given, it should be interpreted as entities to operate
+        on instead of data in any applicable slot (eg. for operations on a directory,
+        forwarded entities should be interpreted as being of the 'directory' subject,
+        and should be used instead of the 'directory/current' slot)
+      - Slots should be used for contextual information that wasn't forwarded, or
+        that varies along a different axis to forwarded data (if it's not possible to
+        index forwarded data by a composite key that would allow multi-axis variation)
+      - Config should be used for contextual information that doesn't vary.
+      - External state should be interpreted for how to execute the command, but not
+        for the intent of the command.
+
+  - How this relates to subjects, and how modifying subjects works with the command
+    words
+    - subjects contain multiple pieces of data for which there are different
+      queries/actions
     - this is effectively the problem of un-merging queries
 
-    > there should be a way of transforming the 'current' complete state into a new state,
-      eg. interactive editor or jq, then passing the bits that have changed to the relevant
-      @actions to apply the changes.
+    > there should be a way of transforming the 'current' complete state into a new
+      state, eg. interactive editor or jq, then passing the bits that have changed to
+      the relevant @actions to apply the changes.
     > this creates a changes-as-data-modification mechanism, which is good for both
       comprehension/simplicity, control/change management, and automation
 
   - How multiple entities being returned by the same 'getter' might work (eg. env)
-    - Or if the getter needs to be parameterised on the slot name?
     - What about dynamic slots, like 'env', where one query = many slots?
-
-- Change:
-  - the location that commands are parsed (info -> @query/@action)
-    - or @command? it's common to queries and actions, so move `command: ...` parsing there?
+    - Or more importantly, when `env` (the getter) and `export` (the setter) work
+      with different multiplicities. In this example, forwarded entities would have to
+      be forwarded with expansion to set all slots using `env`, or to set all env vars
+      using `export`.
 
 - Implement:
-  - @action(command: ...)
-  - @context-getter(<slot_name>)
-  - @context-setter(<slot_name>, use-shell)
-  - @context-validator(<slot_name>)
+  - @action
+  - @context-getter(<subject, ...>)
+  - @context-setter(<subject, ...>[, current-shell: true])
+    - Where 'current-shell' means that it must be run in the current shell, not as a subprocess
+  - @context-validator(<subject, ...>)
 
 - Ideally implement:
-  - @context-setter(<slot_name>) # For where it can be used, eg. git, but not pwd/cd, env/export, etc.
+  - @context(setter-for: <slot_name>) # For where it can be used, eg. git, but not pwd/cd, env/export, etc.
 """
-#@action(
-#  command: """cd {{ :dir/current || x.y(z) : .parse.expr }}"""
+
+#@tool (
+#  command: cd
+#  description: """Change directory."""
 #)
-@subjects(
-  dir: dir.id
-)
-cd         (__TODO, set,  process/environment, dir            ) # change directory
+#@command (
+#  command: """cd {{ context.get(dir/current) : ."dir.id" }}"""
+#)
+#@action(
+#)
+#@subjects(
+#  dir: dir.id
+#)
+#cd         (__TODO, set,  process/environment, dir            ) # change directory
 
 clear (__TODO, delete, channel/content) # clear previous output in the terminal
 bg    (__TODO, start,  process) # resume a process in the background of a shell
@@ -1422,6 +1563,28 @@ fg    (__TODO, set,    channel) # put a process into the foreground of a shell (
 artifact   [package | host-image]
 deployment [installation | instance]
 
-category/hardware [command & [hardware]]
-category/storage  [command & [filesystem | file | dir]]
-category/projects [command & [source | artifact | deployment | configuration]]
+/category/hardware     [command & [/hardware]]
+/category/data/general [command & [/data/filesystem | /data/file | /data/dir]]
+/category/data/process [command & [
+    /data/source
+  | /data/artifact
+  | /data/deployment
+  | /data/configuration
+]]
+/category/data/processor [command & [
+    /data/text
+  | /data/number
+  | /data/time
+  | /data/command
+  | /data/path
+  | /data/email
+  | /data/word
+]]
+# /data/process-state??
+
+# NOT YET INTEGRATED
+#/category/process             [command & []]
+#/category/process-env         [command & []]
+#/category/application         [command & []]
+#/category/channel             [command & []]
+#/category/identity-and-access [command & []]

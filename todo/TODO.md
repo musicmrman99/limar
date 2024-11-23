@@ -1,6 +1,8 @@
 # Done
 
-- 
+- ./ Change:
+  - ./ the location that commands are parsed (info -> @query/@action)
+    - ./ or @command? it's common to queries and actions, so move `command: ...` parsing there?
 
 # Quick Notes and Misc
 

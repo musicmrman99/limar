@@ -1,147 +1,8 @@
 # Todo - Unix
 Mainly Linux/Mac
 
-Entity Info (static for now)
-================================================================================
-
-**NOTE**: Should differentiate between what a thing *is* and what a thing *operates on*.
-
-```
-/subject (alias: /)
-
-/hardware
-/agent {
-  /passive (hardware? alias: /store)
-    > passive-active/attachment
-  /active (hardware? alias: /host)
-}
-
-/identity (alias: identity and trust, identity and access, iam) {
-  /user
-  /group
-  /role
-}
-
-/data (store? path?) {
-  # Basic
-  # ----------
-  /text
-  /number
-  /time
-
-  # Address of data
-  /path
-
-  # Process Data -> Process transition
-  /command
-
-  /email
-  /word
-
-  # Compound
-  # ----------
-  /host/image (project? version?)
-
-  /filesystem (alias: fs)
-  /directory (alias: dir)
-  /file
-
-  /project
-  # source code, assets, etc.
-  /source (project? version?)
-  # binaries, archives/packages, bundles, disk images, etc.
-  /artifact (project? version?)
-  # running instances of an artifact
-  /deployment (artifact? alias: instance, installation)
-  # parameter and environment bindings for a given deployment
-  /configuration (artifact? deployment (optional)? alias: config, conf, cfg)
-}
-
-# I/O
-/channel {
-  # cross-host channel = network I/O (eg. TCP/UDP connections)
-  /host/channel {
-    /config
-  }
-
-  # cross-process channel = I/O (eg. stdin/out/err, keyboard, mouse, IPC)
-  /process/channel {
-    /config
-  }
-}
-
-/process (host? installation? configuration? command? identity? alias: proc) {
-  /kernel
-  /service     (kernel? async operations?)
-  /application (kernel? sync operations? alias: app)
-  /operation   (kernel? service (optional)? alias: op)
-
-  content {
-    # subprocess that depends on and augments a parent process
-    /module
-
-    # per-process /configuration ('pushed in')
-    /parameter (alias: param)
-    # per-process /configuration, cloned from parent process and used as needed ('pulled in'); eg. env vars, current dir, vfs root, etc.
-    /environment (alias: env)
-
-    # current state (including status)
-    /state
-    # historical state
-    /log
-  }
-}
-
-# Versions and Change
-# Eg. file history, tagged versions, tasks, (the act of) deployments, etc.
-/change {
-  /tracker (alias: repo)
-  /version {
-    /reference (alias: ref)
-  }
-  /delta
-}
-
-# Other stuff (UNCATEGORISED)
-/web-resource
-/quality # tests, validity, integrity, 7 Cs, etc.
-/knowledge # comments, documentation strings, readmes, licencing, design information and visualisations, etc.
-```
-
-Plus sets of Entities.
-
-Category Info (static for now)
-================================================================================
-
-- System Entities
-  - Hardware
-
-  - Storage, Filesystems, Directories, and Files
-  - Packages and Installations
-
-  - Commands
-
-  - Hosts, Kernels, and Processes
-  - Process Environment
-  - Applications
-
-  - Channels
-
-  - Identity and Trust
-
-- Data Entities - Producers and Processors
-  - Paths
-  - Process State
-  - Text
-  - Numbers
-  - Time
-
 System Entities - Creation, Information, Management, and Destruction (CRUD)
 ================================================================================
-
-**Notes**:
-- Tags without a name represent the target entities of the command
-- Unless overridden, all items are assumed to be `is: /operation`.
 
 Hosts, Kernels, and Processes
 ====================
@@ -211,7 +72,7 @@ Hosts, Kernels, and Processes
 - edit        /process, /file  - open file with configured app for category [run-mailcap w/ default action]
 - compose     /process, /file  - open file with configured app for category [run-mailcap w/ default action]
 - print       /process, /file  - open file with configured app for category [run-mailcap w/ default action]
-- open        /process, /file, /dir, /web-resource - open file or uri with associated app [Mac only?]
+- open        /process, /file, /dir, /url - open file or uri with associated app [Mac only?]
 
 #### signal
 - kill        /process         - send SIGTERM or another signal to a given process
@@ -261,7 +122,7 @@ Applications
 - history     /process/channel, /process/log - output shell command history
 
 ### other apps
-- lynx        /web-resource, is: /app - a CLI browser
+- lynx        /url, is: /app   - a CLI browser
 - elm         /email, is: /app - a CLI email system [not on WSL by default]
 - webster     /word            - a CLI dictionary lookup (uses the webster dictionary)
 
