@@ -12,12 +12,12 @@ from modules.command_utils.cache_utils import CacheUtils
 
 # Types
 from argparse import ArgumentParser, Namespace
-from typing import Any
+from typing import Any, TypedDict
 
 from modules.command_utils.command_transformer import (
     Subquery,
-    SystemSubcommand,
-    LimarSubcommand
+    SystemSubcommandData,
+    LimarSubcommandData
 )
 from modules.manifest import Item, ItemSet
 
@@ -33,6 +33,18 @@ INFO_LIFECYCLE = PhaseSystem(
     ),
     initial_phase='INITIALISE'
 )
+
+class SystemSubcommandResult(TypedDict):
+    status: int
+    stdout: Any
+    stderr: str
+
+class LimarSubcommandResult(TypedDict):
+    status: int
+    stdout: Any # FIXME: Technically `Any | None`
+    stderr: Exception | None
+
+SubcommandResult = SystemSubcommandResult | LimarSubcommandResult
 
 # TODO/FIXME: This is really a dependency graph of *LIMAR
 #   invokations*, as *identified by their arguments*, that are
@@ -190,7 +202,7 @@ class CommandRunner:
     # --------------------------------------------------
 
     def _run_system_subcommand(self,
-        system_subcommand: SystemSubcommand,
+        system_subcommand: SystemSubcommandData,
         data: dict[Subquery, str] | None = None,
         options: dict[str, Any] | None = None
     ) -> Any:
@@ -235,7 +247,7 @@ class CommandRunner:
         }
 
     def _run_limar_subcommand(self,
-            limar_subcommand: LimarSubcommand,
+            limar_subcommand: LimarSubcommandData,
             data=None,
             options: dict[str, Any] | None = None
     ) -> Any:
@@ -284,8 +296,8 @@ class CommandRunner:
             args: tuple[str, ...],
             jq_transform: str | None,
             pq_transform: str | None
-    ) -> dict[str, Any]:
-        subcommand_output: Any = None
+    ) -> LimarSubcommandResult:
+        subcommand_output: Any | None = None
         subcommand_error: Exception | None = None
 
         # Invoke LIMAR service

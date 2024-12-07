@@ -4,20 +4,50 @@ import re
 from core.exceptions import LIMARException
 from core.utils import list_strip
 
-from typing import Any
+from typing import Literal, TypedDict, cast
 
 Subquery = tuple[str, str, tuple[str, ...], str | None, str | None]
 Interpolatable = list[str | Subquery]
 GroupedInterpolatable = tuple[Interpolatable, ...]
 
-SystemSubcommand = GroupedInterpolatable
-LimarSubcommand = tuple[
+SystemSubcommandData = GroupedInterpolatable
+LimarSubcommandData = tuple[
     str,
     str,
     GroupedInterpolatable,
     str | None,
     str | None
 ]
+
+class SystemSubcommand(TypedDict):
+    type: Literal['system']
+    allowedToFail: bool
+    parameters: set[Subquery]
+    subcommand: SystemSubcommandData
+
+class LimarSubcommand(TypedDict):
+    type: Literal['limar']
+    allowedToFail: bool
+    parameters: set[Subquery]
+    subcommand: LimarSubcommandData
+
+Subcommand = SystemSubcommand | LimarSubcommand
+
+class CommandParseOnly(TypedDict):
+    parameters: set[Subquery]
+    subcommands: list[Subcommand]
+
+class CommandOnly(CommandParseOnly):
+    dependencies: tuple[str, ...]
+    dependants: tuple[str, ...]
+    transitiveDependencies: tuple[str, ...]
+    transitiveDependants: tuple[str, ...]
+
+class QueryCommand(CommandOnly):
+    type: Literal['query']
+    parse: str
+
+Command = QueryCommand
 
 class CommandTransformer:
     # Interface
@@ -26,7 +56,7 @@ class CommandTransformer:
     # Parsing
     # --------------------
 
-    def parse(self, raw_command: str) -> dict[str, Any]:
+    def parse(self, raw_command: str) -> CommandParseOnly:
         # Split into subcommands
         raw_subcommands = [
             subcommand.strip()
@@ -37,27 +67,32 @@ class CommandTransformer:
         ]
 
         # Parse each subcommand
-        subcommands = [{} for _ in range(len(raw_subcommands))]
+        subcommands: list[Subcommand] = [
+            {
+                'type': 'system',
+                'allowedToFail': False,
+                'parameters': set(),
+                'subcommand': tuple()
+            }
+            for _ in range(len(raw_subcommands))
+        ]
         for subcommand, raw_subcommand in zip(subcommands, raw_subcommands):
             # Parse markers
-            subcommand['type'] = 'system'
-            subcommand['allowedToFail'] = False
-
             if raw_subcommand[:1] == '!':
                 subcommand['allowedToFail'] = True
                 raw_subcommand = raw_subcommand[1:]
 
             if raw_subcommand[:1] == '-':
-                subcommand['type'] = 'limar'
+                cast(LimarSubcommand, subcommand)['type'] = 'limar'
                 raw_subcommand = raw_subcommand[1:]
 
             if raw_subcommand[:1] == ' ':
                 raw_subcommand = raw_subcommand[1:]
 
-            # Parse system command
+            # Parse system subcommand
             if subcommand['type'] == 'system':
                 fragments, params = self._split_fragments_params(raw_subcommand)
-                system_subcommand: SystemSubcommand = tuple(
+                system_subcommand: SystemSubcommandData = tuple(
                     self._chain_fragments_params(fragments, params)
                     for fragments, params in self._group_fragments_params(
                         fragments, params, delim='[ \t\n]+', quote="[\"']"
@@ -67,7 +102,7 @@ class CommandTransformer:
                 subcommand['parameters'] = set(params)
                 subcommand['subcommand'] = system_subcommand
 
-            # Parse LIMAR command
+            # Parse LIMAR subcommand
             elif subcommand['type'] == 'limar':
                 match = re.match(
                     "^(?P<module>[a-z0-9-]*)\\.(?P<method>[a-z0-9_]*)\\((?P<args>.*)\\) (: (?P<jqTransform>.*)|:: (?P<pqTransform>.*))$",
@@ -80,7 +115,7 @@ class CommandTransformer:
                 fragments, params = self._split_fragments_params(
                     match.group('args')
                 )
-                limar_subcommand: LimarSubcommand = (
+                limar_subcommand: LimarSubcommandData = (
                     match.group('module'),
                     match.group('method'),
                     tuple(
@@ -108,7 +143,7 @@ class CommandTransformer:
     # To Human-Readable String
     # --------------------
 
-    def format_text(self, command: dict[str, Any]) -> str:
+    def format_text(self, command: CommandParseOnly) -> str:
         return ' && '.join(
             (
                 self.format_text_system_subcommand(
@@ -121,7 +156,7 @@ class CommandTransformer:
         )
 
     def format_text_limar_subcommand(self,
-            limar_command: LimarSubcommand
+            limar_command: LimarSubcommandData
     ) -> str:
         return (
             f"{limar_command[0]}.{limar_command[1]}(" +
@@ -135,8 +170,8 @@ class CommandTransformer:
         )
 
     def format_text_system_subcommand(self,
-            system_subcommand: SystemSubcommand
-    ):
+            system_subcommand: SystemSubcommandData
+    ) -> str:
         return self.format_text_grouped_interpolatable(system_subcommand, ' ')
 
     def format_text_grouped_interpolatable(self,

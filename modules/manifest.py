@@ -259,7 +259,7 @@ class Manifest:
 
         # Validate
         if ref in self._tags:
-            raise LIMARException(f"Manifest item already exists with ref '{ref}'")
+            raise LIMARException(f"Manifest tag already exists with ref '{ref}'")
 
           # Add to main item set
         self._tags[ref] = tags if tags is not None else {}
