@@ -170,15 +170,9 @@ class CommandRunner:
         self._mod.log.trace('Query subcommands output:', query_outputs)
 
         # Transform the output using the command's parse expression
-        query_parse_expr = (
-            query['parse']
-            if 'parse' in query
-            else '.'
-        )
-        self._mod.log.trace('Query parser:', query_parse_expr)
-
+        self._mod.log.trace('Query parser:', query['parse'])
         query_output: list[Entity] = self._mod.tr.query(
-            query_parse_expr,
+            query['parse'],
             query_outputs,
             lang='jq',
             first=True
