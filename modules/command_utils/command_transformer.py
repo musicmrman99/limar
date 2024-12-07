@@ -1,8 +1,10 @@
-from itertools import chain
+from itertools import chain, zip_longest
 import re
 
 from core.exceptions import LIMARException
 from core.utils import list_strip
+
+from typing import Any
 
 Subquery = tuple[str, str, tuple[str, ...], str | None, str | None]
 Interpolatable = list[str | Subquery]
@@ -21,7 +23,10 @@ class CommandTransformer:
     # Interface
     # --------------------------------------------------
 
-    def parse(self, raw_command):
+    # Parsing
+    # --------------------
+
+    def parse(self, raw_command: str) -> dict[str, Any]:
         # Split into subcommands
         raw_subcommands = [
             subcommand.strip()
@@ -46,21 +51,16 @@ class CommandTransformer:
                 subcommand['type'] = 'limar'
                 raw_subcommand = raw_subcommand[1:]
 
-            if raw_subcommand[:1] != ' ':
-                raise LIMARException(
-                    "Missing space after markers in subcommand"
-                    f" '{self.format_text(raw_subcommand)}'"
-                )
-            raw_subcommand = raw_subcommand[1:]
+            if raw_subcommand[:1] == ' ':
+                raw_subcommand = raw_subcommand[1:]
 
             # Parse system command
             if subcommand['type'] == 'system':
-                # Cannot shlex.split() until we know all of the arguments
                 fragments, params = self._split_fragments_params(raw_subcommand)
                 system_subcommand: SystemSubcommand = tuple(
                     self._chain_fragments_params(fragments, params)
                     for fragments, params in self._group_fragments_params(
-                        fragments, params, '[ \t\n]+'
+                        fragments, params, delim='[ \t\n]+', quote="[\"']"
                     )
                 )
 
@@ -86,7 +86,7 @@ class CommandTransformer:
                     tuple(
                         self._chain_fragments_params(fragments, params)
                         for fragments, params in self._group_fragments_params(
-                            fragments, params, ', '
+                            fragments, params, delim=', '
                         )
                     ),
                     match.groups()[4],
@@ -105,49 +105,85 @@ class CommandTransformer:
             'subcommands': subcommands
         }
 
-    def format_text(self, command):
+    # To Human-Readable String
+    # --------------------
+
+    def format_text(self, command: dict[str, Any]) -> str:
         return ' && '.join(
             (
-                self.format_text_interpolatable_subcommand(
+                self.format_text_system_subcommand(
                     subcommand['subcommand']
                 )
                 if subcommand['type'] == 'system'
-                else self.format_text_limar_subcommand(subcommand)
+                else self.format_text_limar_subcommand(subcommand['subcommand'])
             )
             for subcommand in command['subcommands']
         )
 
-    def format_text_interpolatable_subcommand(self,
-            interpolatable_subcommand: Interpolatable
-    ) -> str:
-        return ''.join(
-            (
-                part # Fragment
-                if isinstance(part, str)
-                else '{{ '+self.format_text_limar_subcommand(part)+' }}' # Param
-            )
-            for part in interpolatable_subcommand
-        )
-
     def format_text_limar_subcommand(self,
-            limar_command: Subquery | LimarSubcommand
+            limar_command: LimarSubcommand
     ) -> str:
         return (
             f"{limar_command[0]}.{limar_command[1]}(" +
-            ", ".join(
-                (
-                    arg
-                    if isinstance(arg, str)
-                    else self.format_text_interpolatable_subcommand(arg)
-                )
-                for arg in limar_command[2]
-            ) +
+            self.format_text_grouped_interpolatable(limar_command[2]) +
             ") " +
             (
                 f": {limar_command[3]}"
                 if limar_command[3] is not None
                 else f":: {limar_command[4]}"
             )
+        )
+
+    def format_text_system_subcommand(self,
+            system_subcommand: SystemSubcommand
+    ):
+        return self.format_text_grouped_interpolatable(system_subcommand, ' ')
+
+    def format_text_grouped_interpolatable(self,
+            grouped_interpolatable: GroupedInterpolatable,
+            separator: str = ', '
+    ) -> str:
+        return separator.join(
+            self.format_text_interpolatable(interpolatable)
+            for interpolatable in grouped_interpolatable
+        )
+
+    def format_text_interpolatable(self, interpolatable: Interpolatable) -> str:
+        return ''.join(
+            (
+                part # Fragment
+                if isinstance(part, str)
+                else '{{ '+self.format_text_limar_subquery(part)+' }}' # Param
+            )
+            for part in interpolatable
+        )
+
+    def format_text_limar_subquery(self, limar_subquery: Subquery) -> str:
+        return (
+            f"{limar_subquery[0]}.{limar_subquery[1]}(" +
+            ', '.join(limar_subquery[2]) +
+            ") " +
+            (
+                f": {limar_subquery[3]}"
+                if limar_subquery[3] is not None
+                else f":: {limar_subquery[4]}"
+            )
+        )
+
+    # To Runnable Command
+    # --------------------
+
+    def interpolate_grouped(self,
+            grouped_interpolatable: GroupedInterpolatable,
+            data: dict[Subquery, str]
+    ) -> tuple[str, ...]:
+        return tuple(
+            (
+                group
+                if isinstance(group, str)
+                else self.interpolate(group, data)
+            )
+            for group in grouped_interpolatable
         )
 
     def interpolate(self,
@@ -161,19 +197,6 @@ class CommandTransformer:
                 else fragment
             )
             for fragment in interpolatable
-        )
-
-    def interpolate_grouped(self,
-            grouped_interpolatable: GroupedInterpolatable,
-            data: dict[Subquery, str]
-    ):
-        return tuple(
-            (
-                group
-                if isinstance(group, str)
-                else self.interpolate(group, data)
-            )
-            for group in grouped_interpolatable
         )
 
     # Utils
@@ -205,29 +228,47 @@ class CommandTransformer:
     def _group_fragments_params(self,
             fragments: list[str],
             parameters: list[Subquery],
-            delim: str
+            delim: str,
+            quote: str | None = None
     ) -> list[tuple[list[str], list[Subquery]]]:
         groups: list[tuple[list[str], list[Subquery]]] = [
-            ([], [])
+            ([""], [])
         ]
 
         delim_regex = re.compile(delim)
+        quote_regex = None
+        if quote is not None:
+            quote_regex = re.compile(quote)
 
-        for fragment, parameter in zip(fragments[:-1], parameters):
-            split_fragment = delim_regex.split(fragment)
-            groups[-1][0].append(split_fragment[0])
-            groups.extend(
-                ([initial_fragment], [])
-                for initial_fragment in split_fragment[1:]
-            )
-            groups[-1][1].append(parameter)
+        quote_open = False
+        for fragment, parameter in zip_longest(
+            fragments, parameters,
+            fillvalue=None
+        ):
+            assert fragment is not None, 'len(fragments) == len(parameters) + 1'
+            if quote_regex is not None:
+                quote_fragments = quote_regex.split(fragment)
+            else:
+                quote_fragments = [fragment]
 
-        split_fragment = delim_regex.split(fragments[-1])
-        groups[-1][0].append(split_fragment[0])
-        groups.extend(
-            ([initial_fragment], [])
-            for initial_fragment in split_fragment[1:]
-        )
+            first_quote_fragment = True
+            for quote_fragment in quote_fragments:
+                if not first_quote_fragment:
+                    quote_open = not quote_open
+                else:
+                    first_quote_fragment = False
+
+                if quote_open:
+                    groups[-1][0][-1] = groups[-1][0][-1] + quote_fragment
+                else:
+                    split_fragment = delim_regex.split(quote_fragment)
+                    groups[-1][0][-1] = groups[-1][0][-1] + split_fragment[0]
+                    groups.extend(
+                        ([initial_fragment], [])
+                        for initial_fragment in split_fragment[1:]
+                    )
+                if parameter is not None:
+                    groups[-1][1].append(parameter)
 
         return groups
 

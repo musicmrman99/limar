@@ -1,4 +1,5 @@
 from graphlib import CycleError, TopologicalSorter
+from queue import Empty, PriorityQueue
 import random
 import string
 import subprocess
@@ -7,6 +8,7 @@ from core.exceptions import LIMARException
 from core.modulemanager import ModuleAccessor
 from core.modules.phase_utils.phase_system import PhaseSystem
 from modules.command_utils.command_transformer import CommandTransformer
+from modules.command_utils.cache_utils import CacheUtils
 
 # Types
 from argparse import ArgumentParser, Namespace
@@ -14,11 +16,12 @@ from typing import Any
 
 from modules.command_utils.command_transformer import (
     Subquery,
-    GroupedInterpolatable,
     SystemSubcommand,
     LimarSubcommand
 )
 from modules.manifest import Item, ItemSet
+
+Entity = dict[str, str]
 
 INFO_LIFECYCLE = PhaseSystem(
     f'{__name__}:lifecycle',
@@ -31,256 +34,101 @@ INFO_LIFECYCLE = PhaseSystem(
     initial_phase='INITIALISE'
 )
 
-class InfoModule:
-    """
-    MM module to manage retreiving and displaying information.
-    """
+# TODO/FIXME: This is really a dependency graph of *LIMAR
+#   invokations*, as *identified by their arguments*, that are
+#   *cacheable* (all three are essential characteristics)
+#
+#   Also, if:
+#   - A and B both depend on C, and therefore run C (forward dep)
+#   - Calls to C invalidates the caches for A and B (reverse dep)
+#   - Cache invalidation triggers calls to the dependants of C
+#     (reactive forward dep)
+#   Then you will end up with an infinite cycle: Running A
+#   invalidates B, which runs B, which invalidates A, which runs A.
+#   More precisely:
+#   1.  Start A
+#   2.  Start/Run C (because of A)
+#   3.  Invalidate A and B (because of C)
+#   4.  Run A
+#   5.  Check which caches are invalid and need update = B
+#   6.  Start B (because it needs update)
+#   7.  Start/Run C (because of B)
+#   8.  Invalidate A and B (Because of C)
+#   9.  Check which caches are invalid and need update = A
+#   10. Start A
+#      ...
+#   This is why proactive running of invalid caches (step 5 + 9) is
+#   dangerous and should not be done. You should only invalidate the
+#   cache, not cause it to update unless asked to. Also,
+#   de-duplication can avoid this trap - run C once for both, and
+#   you don't get the cycle.
 
-    # Lifecycle
-    # --------------------------------------------------
+# ------------------------------------------------------------------------------
 
-    def __init__(self):
-        self._dependency_graph: dict[str, set[str]] | None = None
-        self._reverse_dependency_graph: dict[str, set[str]] | None = None
+# - Sort commands into topological order
+# - Insert commands into queue in that order, taking note of which ones were
+#   directly requested
+#   - Note: Don't need to de-dup here, because queries fetched from cache aren't
+#           invalidated.
+# - Process each command in the queue (in topological order, per priority),
+#   fetching from cache if possible.
 
+class CommandRunner:
+    def __init__(self,
+            command_items: ItemSet,
+            command_items_id: str,
+            mod: Namespace
+    ):
+        # Tools
+        self._mod = mod
+        self._cache_utils = CacheUtils(mod)
         self._command_tr = CommandTransformer()
 
-    def dependencies(self):
-        return ['log', 'phase', 'manifest', 'command-manifest']
+        # Static
+        self._command_items = command_items
 
-    def configure_args(self, *, mod: Namespace, parser: ArgumentParser, **_):
-        parser.add_argument('-q', '--query',
-            action='store_true', default=False,
-            help="""Show information about the given subject.""")
-
-        parser.add_argument('subject', metavar='SUBJECT', nargs='+',
-            help="""Show information about the given subject.""")
-
-        # Subcommands / Resolve Item Set - Output Controls
-        mod.phase.configure_phase_control_args(parser)
-
-    def configure(self, *, mod: Namespace, **_):
-        mod.phase.register_system(INFO_LIFECYCLE)
-
-    def start(self, *, mod: Namespace, **_):
-        self._mod = mod
-
-        command_manifest_digest = mod.manifest.get_manifest_digest('command')
-        query_items = None
-
-        try:
-            self._dependency_graph = mod.cache.get(
-                f'info.dependency_graph.{command_manifest_digest}.pickle'
-            )
-        except KeyError:
-            if query_items is None:
-                query_items = mod.manifest.get_item_set('query')
-
-            self._dependency_graph = {
-                ref: {
-                    param[2][0] # 1st item of info.query() args
-                    for param in item['command']['parameters']
-                    # TODO: Only supports `info.query(<ref>)` for now
-                    if ('info', 'query') in param[0:2]
-                }
-                for ref, item in query_items.items()
+        # Build the partially ordered dep list across the whole command item set
+        dependency_graph = self._cache_utils.with_caching(
+            self._cache_utils.key(
+                "command_runner", f"dependency_graph.{command_items_id}"
+            ),
+            lambda: {
+                ref: item['command']['dependencies']
+                for ref, item in command_items.items()
             }
-            mod.cache.set(
-                f'info.dependency_graph.{command_manifest_digest}.pickle',
-                self._dependency_graph
-            )
-        mod.log.debug(
-            'dependency graph:',
-            self._dependency_graph
         )
 
+        sorter = TopologicalSorter(dependency_graph)
         try:
-            self._reverse_dependency_graph = mod.cache.get(
-                f'info.reverse_dependency_graph.{command_manifest_digest}.pickle'
-            )
-        except KeyError:
-            if query_items is None:
-                query_items = mod.manifest.get_item_set('query')
-
-            self._reverse_dependency_graph = {
-                ref: {
-                    item['ref']
-                    for _, item in query_items.items()
-                    # TODO: Only supports `info.query(<ref>)` for now
-                    if ('info', 'query', (ref,)) in (
-                        param[0:3] for param in item['command']['parameters']
-                    )
-                }
-                for ref, _ in query_items.items()
-            }
-            mod.cache.set(
-                f'info.reverse_dependency_graph.{command_manifest_digest}.pickle',
-                self._reverse_dependency_graph
-            )
-        mod.log.debug(
-            'reverse dependency graph:',
-            self._reverse_dependency_graph
-        )
-
-    def __call__(self, *,
-            mod: Namespace,
-            args: Namespace,
-            forwarded_data: Any,
-            output_is_forward: bool,
-            **_
-    ):
-        # Set up phase process and a common transition function
-        # WARNING: THIS MUTATES STATE, even though it's used in `if` statements
-        transition_to_phase = mod.phase.create_process(INFO_LIFECYCLE, args)
-
-        output: Any = forwarded_data
-
-        if transition_to_phase(INFO_LIFECYCLE.PHASES.GET):
-            if args.query is True:
-                output = self.query(args.subject[0])
-            else:
-                output = self.get(args.subject)
-
-        # Format
-        if transition_to_phase(
-            INFO_LIFECYCLE.PHASES.TABULATE, not output_is_forward
-        ):
-            output = mod.tr.tabulate(output.values(), obj_mapping='all')
-
-        if transition_to_phase(
-            INFO_LIFECYCLE.PHASES.RENDER, not output_is_forward
-        ):
-            output = mod.tr.render_table(output, has_headers=True)
-
-        # Forward
-        return output
-
-    # Invokation
-    # --------------------------------------------------
-
-    @ModuleAccessor.invokable_as_service
-    def get(self,
-            subject: list[str]
-    ) -> dict[str | tuple[str, ...], dict[str, str]]:
-        """
-        Get the list of the queries in the command manifest that match the given
-        command_spec, then return the indexed list of entities returned by those
-        queries.
-        """
-
-        assert self._dependency_graph is not None, f'{self.get.__name__}() called before {self.start.__name__}()'
-
-        self._mod.log.info('Getting info for subject:', subject)
-
-        # Get matching commands to execute
-        set_ref = 'info-query-'+''.join(random.choices(string.hexdigits, k=32))
-        set_spec = ' & '.join(subject)
-        # FIXME: Yes, I know this is an injection attack waiting to happen, eg.
-        #          get('unlikely] | something_evil | [unlikely')
-        self._mod.manifest.declare_item_set(set_ref, f'query & [{set_spec}]')
-        matched_queries: ItemSet = self._mod.manifest.get_item_set(set_ref)
-        self._mod.log.debug(f'Matched manifest items:', matched_queries)
-
-        # Sort commands into topological order to avoid issues with dependency
-        # cache invalidation.
-        # TODO: TopologicalSorter can also be used to run the commands in
-        # parallel by following its other usage pattern. See:
-        # https://docs.python.org/3/library/graphlib.html
-        sorter = TopologicalSorter({
-            ref: list(self._dependency_graph[ref])
-            for ref in matched_queries.keys()
-        })
-        try:
-            query_sort_order = tuple(sorter.static_order())
+            self._command_order = tuple(sorter.static_order())
         except CycleError as e:
             raise LIMARException(
-                f"Cannot resolve dependencies for subject '{subject}' due to"
+                f"Cannot resolve dependencies while runnign commands due to"
                 f" cycle '{e.args[1]}'"
             )
-        self._mod.log.debug(
-            f'Query run order (including dependencies):', query_sort_order
-        )
 
-        matched_queries_sorted: ItemSet = {}
-        for ref in query_sort_order:
-            # Don't run dependent queries twice
-            # FIXME: ... but won't running dependent queries out of topological
-            # order have the same issues as not running matched queries out of
-            # topological order? (I think it will)
-            # FIXME: ... and therefore won't this need doing for .query() too,
-            # including any usages of .query() as part of a LIMAR subcommand in
-            # a manifest query?
-            # At which point, would it be best to create a dedicated query
-            # runner system? (sync for now)
-            if ref in matched_queries:
-                matched_queries_sorted[ref] = matched_queries[ref]
-
-        # Ensure all matched commands are queries
-        for item in matched_queries_sorted.values():
-            if item['command']['type'] != 'query':
-                raise LIMARException(
-                    f"The info subject '{subject}' matched a non-query command"
-                    f" '{item['ref']}'. Are you using the correct subject, and"
-                    " are the tags correct in the command manifest? Run in"
-                    " debug mode (`lm -vvv ...`) to see the full list of"
-                    " matched queries."
-                )
-
-        # Execute each query. Produces a list of entity data (inc. entity ID)
-        # for each query executed.
-        #   ItemSet -> list[tuple[ Item, list[dict[str, str]] ]]
-        query_outputs =[
-            (
-                item,
-                self._run_query(item['ref'], item['command'])
-            )
-            for item in matched_queries_sorted.values()
-        ]
-        self._mod.log.debug('Query outputs:', query_outputs)
-
-        # Index and merge entity data by ID
-        return self._merge_entities(query_outputs, subject)
-
-    @ModuleAccessor.invokable_as_service
-    def query(self, ref, subject=None):
-        item = self._mod.manifest.get_item(ref)
-
-        if subject is None:
-            if 'primarySubject' in item:
-                subject = [item['primarySubject']]
-            else:
-                subject = list(item['subjects'].keys())
-
-        if (
-            'query' not in item['tags'] or
-            'command' not in item or
-            'type' not in item['command'] or
-            item['command']['type'] != 'query'
-        ):
-            raise LIMARException(
-                f"The query ref '{ref}' matched a non-query command"
-                f" '{item['ref']}'. Are you using the correct ref, and are the"
-                " tags correct in the command manifest? Run in debug mode"
-                " (`lm -vvv ...`) to see the matched item."
-            )
-
-        entities = self._run_query(item['ref'], item['command'])
-        return self._merge_entities([(item, entities)], subject)
-
-    # Utils - Runners
+    # Batch Management
     # --------------------------------------------------
 
-    def _run_query(self, ref, query) -> list[dict[str, str]]:
-        name = ref.replace('/', '.')
+    def new_batch(self, subject) -> "CommandBatch":
+        return CommandBatch(
+            subject,
+            self._command_items,
+            self._command_order,
 
-        # Try to fetch result from cache
-        try:
-            query_output: list[dict[str, str]] = (
-                self._mod.cache.get(f"info.query.{name}.pickle")
-            )
-            return query_output
-        except KeyError:
-            pass # If not, run the query ...
+            self,
+            self._mod,
+            self._cache_utils
+        )
+
+    # Command Runners
+    # --------------------------------------------------
+
+    def run_query(self, ref: str, query) -> list[Entity]:
+        """
+        Run the given query whose containing item has the given ref and return
+        the output.
+        """
 
         # Evaluate parameters to arguments
         query_args: dict[Subquery, str] = {}
@@ -294,6 +142,11 @@ class InfoModule:
                     " non-string values into the requested query."
                 )
         self._mod.log.debug('Query arguments:', query_args)
+
+        self._mod.log.info(f"Running query '{ref}'")
+        self._mod.log.debug(
+            f"  Which is: '{self._command_tr.format_text(query)}'"
+        )
 
         # Run subcommands using corresponding runner
         SUBCOMMAND_RUNNERS = {
@@ -324,25 +177,23 @@ class InfoModule:
         )
         self._mod.log.trace('Query parser:', query_parse_expr)
 
-        query_output: list[dict[str, str]] = self._mod.tr.query(
+        query_output: list[Entity] = self._mod.tr.query(
             query_parse_expr,
             query_outputs,
             lang='jq',
             first=True
         )
         self._mod.log.debug('Query output:', query_output)
+        return query_output
 
-        # Cache the result of this query and invalidate (delete) the cached
-        # results of all commands that depend on it, recursively.
-        self._mod.cache.set(f"info.query.{name}.pickle", query_output)
-
-        invalidated = self._invalidate_cache_for_query_dependents(ref)
-        self._mod.log.debug(
-            f"Invalidated cached output for dependent queries of '{ref}':",
-            invalidated
+    # TODO: Implement this
+    def run_action(self, ref, action) -> list[Entity]:
+        raise NotImplementedError(
+            f"Actions: Attempted to run action '{ref}'"
         )
 
-        return query_output
+    # Subcommand and Subquery Runners
+    # --------------------------------------------------
 
     def _run_system_subcommand(self,
         system_subcommand: SystemSubcommand,
@@ -413,7 +264,8 @@ class InfoModule:
         args = self._command_tr.interpolate_grouped(args_raw, data)
         self._mod.log.debug(
             'Evaluated LIMAR subcommand:',
-            self._command_tr.format_text_limar_subcommand(
+            # Not technically a subquery, but is kind-of equivalent to one
+            self._command_tr.format_text_limar_subquery(
                 (module, method, args, jqTransform, pqTransform)
             )
         )
@@ -439,48 +291,38 @@ class InfoModule:
             jq_transform: str | None,
             pq_transform: str | None
     ) -> dict[str, Any]:
-        subcommand_output_raw = None
-        subcommand_error = None
-
-        # Get LIMAR invokation output
-        # Manage caching for this module here. Other modules should do their
-        # own caching if needed.
-        if (module, method) == ('info', 'query'):
-            try:
-                subcommand_output_raw = self._mod.cache.get(
-                    f"info.query.{args[0]}.pickle"
-                )
-            except KeyError as e:
-                subcommand_error = e
+        subcommand_output: Any = None
+        subcommand_error: Exception | None = None
 
         # Invoke LIMAR service
-        if subcommand_error is not None:
-            try:
-                limar_service_method = (
-                    getattr(getattr(self._mod, module), method)
-                )
-                subcommand_output_raw: Any = limar_service_method(*args)
-                self._mod.log.debug(
-                    'LIMAR invokation output (pre-transform): ',
-                    subcommand_output_raw
-                )
-            except Exception as e:
-                subcommand_error = e
-                self._mod.log.error(
-                    'LIMAR invokation error (not transformed): ',
-                    subcommand_error
-                )
+        # Should only be run if the service method being invoked isn't a
+        # query/command, or if it doesn't have caching enabled.
+        try:
+            limar_service_method = (
+                getattr(getattr(self._mod, module), method)
+            )
+            subcommand_output = limar_service_method(*args)
+            subcommand_error = None
+            self._mod.log.debug(
+                'LIMAR invokation output (pre-transform): ',
+                subcommand_output
+            )
+        except Exception as e:
+            subcommand_error = e
+            self._mod.log.error(
+                'LIMAR invokation error (not transformed): ',
+                subcommand_error
+            )
 
         # Process LIMAR invokation output
         if subcommand_error is None:
-            subcommand_output = subcommand_output_raw
             if jq_transform is not None:
                 subcommand_output = self._mod.tr.query(
-                    jq_transform, subcommand_output_raw, lang='jq', first=True
+                    jq_transform, subcommand_output, lang='jq', first=True
                 )
             elif pq_transform is not None:
                 subcommand_output = self._mod.tr.query(
-                    pq_transform, subcommand_output_raw, lang='yaql'
+                    pq_transform, subcommand_output, lang='yaql'
                 )
             self._mod.log.trace(
                 'LIMAR invokation output (post-transform): ',
@@ -493,35 +335,157 @@ class InfoModule:
             'stderr': subcommand_error
         }
 
-    # Utils - Other
-    # --------------------------------------------------
+class CommandBatch:
+    def __init__(self,
+            subject: list[str],
+            command_items: ItemSet,
+            command_order: tuple[str, ...],
 
-    def _invalidate_cache_for_query_dependents(self,
-            query_ref,
-            invalidated: set[str] | None = None
-    ) -> set[str]:
-        assert self._reverse_dependency_graph is not None, f'{self._run_query.__name__}() called before {self.start.__name__}()'
+            _command_runner: CommandRunner,
+            _mod: Namespace,
+            _cache_utils: CacheUtils
+    ):
+        # Tools
+        self._command_runner = _command_runner
+        self._mod = _mod
+        self._cache_utils = _cache_utils
 
-        if invalidated is None:
-            invalidated = set()
+        # Static
+        self._subject = subject
+        self._command_items = command_items
+        self._command_order = command_order
 
-        for dep_query_ref in self._reverse_dependency_graph[query_ref]:
-            if dep_query_ref not in invalidated:
-                query_name = dep_query_ref.replace('/', '.')
-                self._mod.cache.delete(f'info.query.{query_name}.pickle')
+        # State
+        self._run_queue = PriorityQueue()
+        self._directly_requested = set()
+        # NOTE: Assumes that the batch processor caches command output by ref
+        #       only. This could cause issues for commands that use dynamic
+        #       input.
+        self._cacheable: set[str] = set()
 
-                invalidated.add(dep_query_ref)
-                self._invalidate_cache_for_query_dependents(
-                    dep_query_ref, invalidated
+    def add(self, *refs):
+        """
+        Add the commands for all given refs to the batch.
+
+        For any commands (or their transitive dependencies) that are cacheable,
+        also add them (without duplicates) to the beginning of the command queue
+        in dependency order to ensure caches are invalidated and regenerated
+        correctly.
+
+        Must not be called while `process()` is running.
+        """
+
+        for ref in refs:
+            if ref in self._directly_requested:
+                continue
+            self._directly_requested.add(ref)
+
+            item = self._command_items[ref]
+
+            # Add directly requested command to the queue (de-dup if cacheable)
+            is_cacheable = self._cache_utils.is_enabled(item)
+            if not is_cacheable or ref not in self._cacheable:
+                self._run_queue.put((
+                    self._command_order.index(ref),
+                    ref,
+                    item
+                ))
+            if is_cacheable:
+                self._cacheable.add(ref)
+
+            # Add cacheable transitive deps to the queue to ensure correct cache
+            # invalidation order.
+            for dep_ref in item['command']['transitiveDependencies']:
+                dep_item = self._command_items[dep_ref]
+                if (
+                    self._cache_utils.is_enabled(dep_item) and
+                    dep_ref not in self._cacheable
+                ):
+                    self._run_queue.put((
+                        self._command_order.index(dep_ref),
+                        dep_ref, dep_item
+                    ))
+                    self._cacheable.add(dep_ref)
+
+    def process(self) -> dict[str | tuple[str, ...], Entity]:
+        """
+        Process the commands currently on the queue and return the results of
+        those directly requested as an indexed list of entities.
+
+        The returned entities are keyed by the ID values of the batch's subject.
+        This key is singular (a single string) if the subject contains one item,
+        or composite (a tuple of strings) if the subject contains more than one
+        item.
+
+        Must be called synchronously, blocking all calls to `add()` and
+        `process()` on this or any other batch.
+        """
+
+        COMMAND_RUNNERS = {
+            'query': self._command_runner.run_query,
+            'action': self._command_runner.run_action
+        }
+
+        command_outputs: list[tuple[ Item, list[Entity] ]] = []
+        refs_with_batch_retention: set[str] = set()
+        while True:
+            try:
+                (
+                    _, command_ref, command_item
+                ) = self._run_queue.get(block=False)
+            except Empty:
+                self._directly_requested = set()
+                self._cacheable = set()
+                self._mod.cache.delete(
+                    *map(self._key_for_ref, refs_with_batch_retention)
+                )
+                break
+
+            command = command_item['command']
+            cacheable = self._cache_utils.is_enabled(command_item)
+            cache_retention = self._cache_utils.retention_of(command_item)
+
+            # Mark items with batch retention
+            if cacheable and cache_retention == 'batch':
+                refs_with_batch_retention.add(command_ref)
+
+            # Run command (or fetch from cache)
+            runner = COMMAND_RUNNERS[command['type']]
+            if not cacheable:
+                output = runner(command_ref, command)
+            else:
+                # No point in invalidating the caches of dependant commands
+                # if this one is not cacheable, as those commands are not
+                # cacheable either.
+                output = self._cache_utils.with_caching(
+                    self._key_for_ref(command_ref),
+                    runner, [command_ref, command],
+                    invalid_on_run=(
+                        map(self._key_for_ref, command['transitiveDependants'])
+                    )
                 )
 
-        return invalidated
+            # Collate output
+            if command_ref in self._directly_requested:
+                command_outputs.append((command_item, output))
+
+        self._mod.log.debug('Query outputs:', command_outputs)
+        return self._merge_entities(command_outputs, self._subject)
+
+    # Utils
+    # --------------------------------------------------
+
+    def _key_for_ref(self, command_ref):
+        return self._cache_utils.key(
+            self._command_items[command_ref]['command']['type'],
+            command_ref
+        )
 
     def _merge_entities(self,
-            query_outputs: list[tuple[ Item, list[dict[str, str]] ]],
+            query_outputs: list[tuple[ Item, list[Entity] ]],
             subject: list[str]
-    ) -> dict[str | tuple[str, ...], dict[str, str]]:
-        merged_query_output: dict[str | tuple[str, ...], dict[str, str]] = {}
+    ) -> dict[str | tuple[str, ...], Entity]:
+        merged_query_output: dict[str | tuple[str, ...], Entity] = {}
         for item, entities in query_outputs:
             self._mod.log.trace(
                 f"Subjects for item '{item['ref']}'", item['subjects']
@@ -562,3 +526,147 @@ class InfoModule:
                 merged_query_output[id].update(entity_data)
 
         return merged_query_output
+
+class InfoModule:
+    """
+    MM module to manage retreiving and displaying information.
+    """
+
+    # Lifecycle
+    # --------------------------------------------------
+
+    def dependencies(self):
+        return ['log', 'phase', 'manifest', 'command-manifest']
+
+    def configure_args(self, *, mod: Namespace, parser: ArgumentParser, **_):
+        parser.add_argument('-q', '--query',
+            action='store_true', default=False,
+            help="""Show information about the given subject.""")
+
+        parser.add_argument('subject', metavar='SUBJECT', nargs='+',
+            help="""Show information about the given subject.""")
+
+        # Subcommands / Resolve Item Set - Output Controls
+        mod.phase.configure_phase_control_args(parser)
+
+    def configure(self, *, mod: Namespace, **_):
+        mod.phase.register_system(INFO_LIFECYCLE)
+
+    def start(self, *, mod: Namespace, **_):
+        self._mod = mod
+
+        command_manifest_digest = mod.manifest.get_manifest_digest('command')
+        command_items: ItemSet = mod.manifest.get_item_set('command')
+        commands = {
+            ref: item
+            for ref, item in command_items.items()
+            # Skip anything that wasn't set and didn't fail validation due to
+            # double-underscore tags.
+            if 'command' in item
+        }
+
+        self._command_runner = CommandRunner(
+            commands,
+            command_manifest_digest,
+            mod
+        )
+
+    def __call__(self, *,
+            mod: Namespace,
+            args: Namespace,
+            forwarded_data: Any,
+            output_is_forward: bool,
+            **_
+    ):
+        # Set up phase process and a common transition function
+        # WARNING: THIS MUTATES STATE, even though it's used in `if` statements
+        transition_to_phase = mod.phase.create_process(INFO_LIFECYCLE, args)
+
+        output: Any = forwarded_data
+
+        if transition_to_phase(INFO_LIFECYCLE.PHASES.GET):
+            if args.query is True:
+                output = self.query(args.subject[0])
+            else:
+                output = self.get(args.subject)
+
+        # Format
+        if transition_to_phase(
+            INFO_LIFECYCLE.PHASES.TABULATE, not output_is_forward
+        ):
+            output = mod.tr.tabulate(output.values(), obj_mapping='all')
+
+        if transition_to_phase(
+            INFO_LIFECYCLE.PHASES.RENDER, not output_is_forward
+        ):
+            output = mod.tr.render_table(output, has_headers=True)
+
+        # Forward
+        return output
+
+    # Invokation
+    # --------------------------------------------------
+
+    @ModuleAccessor.invokable_as_service
+    def get(self,
+            subject: list[str]
+    ) -> dict[str | tuple[str, ...], Entity]:
+        """
+        Get the list of the queries in the command manifest that match the given
+        command_spec, then return the indexed list of entities returned by those
+        queries.
+        """
+
+        self._mod.log.info('Getting info for subject:', subject)
+
+        # Get matching commands to execute
+        set_ref = 'info-query-'+''.join(random.choices(string.hexdigits, k=32))
+        set_spec = ' & '.join(subject)
+        # FIXME: Yes, I know this is an injection attack waiting to happen, eg.
+        #          get(['unlikely] | something_evil | [unlikely'])
+        self._mod.manifest.declare_item_set(set_ref, f'query & [{set_spec}]')
+        matched_queries: ItemSet = self._mod.manifest.get_item_set(set_ref)
+        self._mod.log.debug(f'Matched manifest items:', matched_queries)
+
+        # Ensure all matched commands are queries
+        for item in matched_queries.values():
+            if item['command']['type'] != 'query':
+                raise LIMARException(
+                    f"The info subject '{subject}' matched a non-query command"
+                    f" '{item['ref']}'. Are you using the correct subject, and"
+                    " are the tags correct in the command manifest? Run in"
+                    " debug mode (`lm -vvv ...`) to see the full list of"
+                    " matched manifest items."
+                )
+
+        # Process the queries
+        batch = self._command_runner.new_batch(subject)
+        batch.add(*matched_queries.keys())
+        return batch.process()
+
+    @ModuleAccessor.invokable_as_service
+    def query(self, ref, subject=None):
+        item = self._mod.manifest.get_item(ref)
+
+        if subject is None:
+            if 'primarySubject' in item:
+                subject = [item['primarySubject']]
+            else:
+                subject = list(item['subjects'].keys())
+
+        if (
+            'query' not in item['tags'] or
+            'command' not in item or
+            'type' not in item['command'] or
+            item['command']['type'] != 'query'
+        ):
+            raise LIMARException(
+                f"The query ref '{ref}' matched a non-query command"
+                f" '{item['ref']}'. Are you using the correct ref, and are the"
+                " tags correct in the command manifest? Run in debug mode"
+                " (`lm -vvv ...`) to see the matched item."
+            )
+
+        batch = self._command_runner.new_batch(subject)
+        batch.add(ref)
+        return batch.process()

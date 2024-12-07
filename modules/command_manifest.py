@@ -4,9 +4,10 @@ from modules.manifest_modules import (
     tags,
 
     # Tools and Commands
-    command,
     tool,
+    command,
     query,
+    cache,
     subjects,
     primary_subject
 )
@@ -23,9 +24,10 @@ class CommandManifestModule:
         mod.manifest.add_context_modules(
             tags.Tags,
 
-            command.Command,
             tool.Tool,
+            command.Command,
             query.Query,
+            cache.Cache,
             subjects.Subjects,
             primary_subject.PrimarySubject
         )
