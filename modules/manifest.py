@@ -1176,6 +1176,18 @@ class ManifestModule:
 
         return item
 
+    @ModuleAccessor.invokable_as_service
+    def get_items(self,
+            patterns: list[str],
+            *,
+            item_set: ItemSet | None = None,
+            properties: list[str] | None = None
+    ) -> ItemSet:
+        return self._mod.tr.index([
+            self.get_item(pattern, item_set=item_set, properties=properties)
+            for pattern in patterns
+        ])
+
     # Utils
     # --------------------
 

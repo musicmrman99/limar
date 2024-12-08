@@ -177,7 +177,7 @@ dmidecode  (__TODO, hardware) # description of system's hardware components
   command: lspci
   description: """List PCI devices."""
 ) {
-  @command (
+  @command(
     command: """lspci -vvmmnn -D"""
   )
   @query (
@@ -213,7 +213,7 @@ dmidecode  (__TODO, hardware) # description of system's hardware components
   )
   lspci/main (hardware, pci)
 
-  @command (
+  @command(
     command: """lspci -vv"""
   )
   @query (
@@ -257,7 +257,7 @@ lsblk (__TODO, hardware)
   # Entity Hierarchy:
   #   Device (opt. Partition Table) > Block (opt. Partition) > Filesystem
 
-  @command (
+  @command(
     command: """
       lsblk -a -bDz -Jlo MAJ:MIN,TYPE,PATH,RM,HOTPLUG,WWN,SERIAL,REV,MODEL,VENDOR,TRAN,RQ-SIZE,PHY-SEC,LOG-SEC,MIN-IO,OPT-IO,DISC-ALN,DISC-GRAN,DISC-MAX,DISC-ZERO,RAND
     """
@@ -317,7 +317,7 @@ lsblk (__TODO, hardware)
   )
   lsblk/device (hardware, device)
 
-  @command (
+  @command(
     command: """
       lsblk -a -bDz -Jlo MAJ:MIN,PTUUID,PTTYPE
     """
@@ -346,7 +346,7 @@ lsblk (__TODO, hardware)
   )
   lsblk/device/partition-table (hardware, device, partition-table)
 
-  @command (
+  @command(
     command: """
       lsblk -a -bDz -Jlo MAJ:MIN,NAME,KNAME,PATH,TYPE,SIZE,RA,ROTA,STATE,RO,OWNER,GROUP,MODE
     """
@@ -389,7 +389,7 @@ lsblk (__TODO, hardware)
   )
   lsblk/block (hardware, block)
 
-  @command (
+  @command(
     command: """
       lsblk -a -bDz -Jlo MAJ:MIN,TYPE,PARTUUID,PARTLABEL,PARTTYPE,PARTTYPENAME,PARTFLAGS
     """
@@ -420,7 +420,7 @@ lsblk (__TODO, hardware)
   )
   lsblk/block/partition (hardware, block, partition)
 
-  @command (
+  @command(
     command: """
       lsblk -a -bDz -Jlo MAJ:MIN,UUID,LABEL,FSTYPE,FSVER,FSSIZE,FSUSED,FSAVAIL,FSROOTS,MOUNTPOINTS
     """
@@ -658,7 +658,7 @@ stty/show  (__TODO, show, process/environment, terminal       ) # get terminal o
 umask/show (__TODO, show, process/environment, identity/policy) # show the file permissions mask (ie. excluded perms) for creating files
 
 @tool (command: env, description: """Print environment variables.""")
-@command (
+@command(
   command: """env"""
 )
 @query(
@@ -679,7 +679,7 @@ umask/show (__TODO, show, process/environment, identity/policy) # show the file 
 env/show   (__TODO, show, process/environment, var            ) # set the file permissions mask (ie. excluded perms) for creating files
 
 @tool (command: pwd, description: """Print working directory.""")
-@command (
+@command(
   command: """pwd"""
 )
 @query (
@@ -716,7 +716,7 @@ TODO:
     > Slots, config, and external state should be requested using a normal expansion:
         {{ context.get_slot(name/of/slot) : .parse.expr }}
         {{ manifest.get_item(name/of/item) : .parse.expr }}
-        {{ info.query(name/of/query) : .parse.expr }}
+        {{ info.run_refs(name/of/query) : .parse.expr }}
 
     > The purpose and precedence of the above inputs are determined by each command,
       but commands should follow these guidelines:
@@ -761,19 +761,19 @@ TODO:
   - @context(setter-for: <slot_name>) # For where it can be used, eg. git, but not pwd/cd, env/export, etc.
 """
 
-#@tool (
-#  command: cd
-#  description: """Change directory."""
-#)
-#@command (
-#  command: """cd {{ context.get(dir/current) : ."dir.id" }}"""
-#)
+@tool (
+  command: cd
+  description: """Change directory."""
+)
+@command(
+  command: """cd {{ context.get(dir/current) : ."dir.id" }}"""
+)
 #@action(
 #)
-#@subjects(
-#  dir: dir.id
-#)
-#cd         (__TODO, set,  process/environment, dir            ) # change directory
+@subjects(
+  dir: dir.id
+)
+cd         (__TODO, set,  process/environment, dir            ) # change directory
 
 clear (__TODO, delete, channel/content) # clear previous output in the terminal
 bg    (__TODO, start,  process) # resume a process in the background of a shell
@@ -807,7 +807,7 @@ fg    (__TODO, set,    channel) # put a process into the foreground of a shell (
   # General Info
   # --------------------
 
-  @command (
+  @command(
     command: """
       pwd &&
     ! git rev-parse --show-toplevel &&
@@ -840,7 +840,7 @@ fg    (__TODO, set,    channel) # put a process into the foreground of a shell (
   #   (M = changed HEAD; m = normal M for the child; single ? = contains untracked files)
   #   except not in --porcelain mode, where any submodule changes are reported as M
   #   what about `--porcelain=v2`?
-  @command (
+  @command(
     command: """
       pwd &&
     ! git rev-parse --show-toplevel &&
@@ -1023,7 +1023,7 @@ fg    (__TODO, set,    channel) # put a process into the foreground of a shell (
   # ======================================================================================================================================================
 
   # IN PROGRESS
-  @command (
+  @command(
     command: """
       pwd &&
     ! git rev-parse --show-toplevel &&
@@ -1053,7 +1053,7 @@ fg    (__TODO, set,    channel) # put a process into the foreground of a shell (
   @primary-subject(version)
   delta/version/git/branch/remote
 
-  @command (
+  @command(
     command: """
       pwd &&
     ! git rev-parse --show-toplevel &&
@@ -1118,7 +1118,7 @@ fg    (__TODO, set,    channel) # put a process into the foreground of a shell (
   @primary-subject(version/ref)
   version/ref/git/branch/remote
 
-  @command (
+  @command(
     command: """
       pwd &&
     ! git rev-parse --show-toplevel &&
@@ -1187,7 +1187,7 @@ fg    (__TODO, set,    channel) # put a process into the foreground of a shell (
   @primary-subject(version/ref)
   version/ref/git/branch
 
-  @command (
+  @command(
     command: """
       pwd &&
     ! git rev-parse --show-toplevel &&
@@ -1296,7 +1296,7 @@ fg    (__TODO, set,    channel) # put a process into the foreground of a shell (
   # Specific Entities
   # --------------------
 
-  @command (
+  @command(
     command: """
       pwd &&
     ! git rev-parse --show-toplevel &&
@@ -1323,12 +1323,12 @@ fg    (__TODO, set,    channel) # put a process into the foreground of a shell (
   @primary-subject(version)
   version/current/git
 
-  @command (
+  @command(
     command: """
       pwd &&
     ! git rev-parse --show-toplevel &&
     ! git symbolic-ref --short -q HEAD &&
-    - info.query(version/ref/git/branch) :: $
+    - info.run_refs(version/ref/git/branch) :: $
     """
   )
   @query(
@@ -1353,7 +1353,7 @@ fg    (__TODO, set,    channel) # put a process into the foreground of a shell (
   @primary-subject(version/ref)
   version/ref/current/git/branch
 
-  @command (
+  @command(
     command: """
       pwd &&
     ! git rev-parse --show-toplevel &&
@@ -1377,7 +1377,7 @@ fg    (__TODO, set,    channel) # put a process into the foreground of a shell (
   @primary-subject(version/ref)
   version/ref/current/git/tag
 
-  @command (
+  @command(
     command: """
       pwd &&
     ! git rev-parse --show-toplevel &&

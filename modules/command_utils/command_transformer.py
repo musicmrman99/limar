@@ -4,7 +4,7 @@ import re
 from core.exceptions import LIMARException
 from core.utils import list_strip
 
-from typing import Literal, TypedDict, cast
+from typing import Any, Literal, TypedDict, cast
 
 Subquery = tuple[str, str, tuple[str, ...], str | None, str | None]
 Interpolatable = list[str | Subquery]
@@ -47,7 +47,10 @@ class QueryCommand(CommandOnly):
     type: Literal['query']
     parse: str
 
-Command = QueryCommand
+class ActionCommand(CommandOnly):
+    type: Literal['action']
+
+Command = QueryCommand | ActionCommand
 
 class CommandTransformer:
     # Interface
@@ -140,6 +143,58 @@ class CommandTransformer:
             'subcommands': subcommands
         }
 
+    # Checks
+    # --------------------
+
+    def is_runnable(self, item):
+        return (
+            'command' in item and     # @command
+            'type' in item['command'] # @query, @action, etc.
+        )
+
+    def command_type_of(self, command_item):
+        return command_item['command']['type']
+
+    def primary_subject_of(self, command_items: dict[str, Any]) -> list[str]:
+        subject: dict[str, Any] = {} # Values ignored
+
+        for command_item in command_items.values():
+            if 'primarySubject' in command_item:
+                subject[command_item['primarySubject']] = None
+            else:
+                subject.update(command_item['subjects'])
+
+        return list(subject.keys())
+
+    # To Runnable Command
+    # --------------------
+
+    def interpolate_grouped(self,
+            grouped_interpolatable: GroupedInterpolatable,
+            data: dict[Subquery, str]
+    ) -> tuple[str, ...]:
+        return tuple(
+            (
+                group
+                if isinstance(group, str)
+                else self.interpolate(group, data)
+            )
+            for group in grouped_interpolatable
+        )
+
+    def interpolate(self,
+            interpolatable: Interpolatable,
+            data: dict[Subquery, str]
+    ) -> str:
+        return ''.join(
+            (
+                data[fragment]
+                if isinstance(fragment, tuple)
+                else fragment
+            )
+            for fragment in interpolatable
+        )
+
     # To Human-Readable String
     # --------------------
 
@@ -203,35 +258,6 @@ class CommandTransformer:
                 if limar_subquery[3] is not None
                 else f":: {limar_subquery[4]}"
             )
-        )
-
-    # To Runnable Command
-    # --------------------
-
-    def interpolate_grouped(self,
-            grouped_interpolatable: GroupedInterpolatable,
-            data: dict[Subquery, str]
-    ) -> tuple[str, ...]:
-        return tuple(
-            (
-                group
-                if isinstance(group, str)
-                else self.interpolate(group, data)
-            )
-            for group in grouped_interpolatable
-        )
-
-    def interpolate(self,
-            interpolatable: Interpolatable,
-            data: dict[Subquery, str]
-    ) -> str:
-        return ''.join(
-            (
-                data[fragment]
-                if isinstance(fragment, tuple)
-                else fragment
-            )
-            for fragment in interpolatable
         )
 
     # Utils

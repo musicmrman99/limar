@@ -1,13 +1,11 @@
-from core.exceptions import LIMARException
-
-class Query:
+class Action:
     @staticmethod
     def context_type():
-        return 'query'
+        return 'action'
 
     def on_declare_item(self, contexts, item, *_, **__):
-        item['tags'].add('query')
-        item['command']['type'] = 'query'
+        item['tags'].add('action')
+        item['command']['type'] = 'action'
         try:
             item['command']['parse'] = next(
                 context['opts']['parse']
@@ -15,7 +13,5 @@ class Query:
                 if 'parse' in context['opts']
             )
         except StopIteration:
-            raise LIMARException(
-                f"Item '{item['ref']}' declared as query, but is missing a"
-                " parse expression"
-            )
+            pass
+

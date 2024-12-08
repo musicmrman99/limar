@@ -7,6 +7,7 @@ from modules.manifest_modules import (
     tool,
     command,
     query,
+    action,
     cache,
     subjects,
     primary_subject
@@ -27,6 +28,7 @@ class CommandManifestModule:
             tool.Tool,
             command.Command,
             query.Query,
+            action.Action,
             cache.Cache,
             subjects.Subjects,
             primary_subject.PrimarySubject

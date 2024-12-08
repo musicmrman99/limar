@@ -7,7 +7,9 @@ import subprocess
 from core.exceptions import LIMARException
 from core.modulemanager import ModuleAccessor
 from core.modules.phase_utils.phase_system import PhaseSystem
-from modules.command_utils.command_transformer import CommandTransformer
+from modules.command_utils.command_transformer import (
+    ActionCommand, Command, CommandTransformer, QueryCommand
+)
 from modules.command_utils.cache_utils import CacheUtils
 
 # Types
@@ -28,6 +30,7 @@ INFO_LIFECYCLE = PhaseSystem(
     (
         'INITIALISE',
         'GET',
+        'RUN',
         'TABULATE',
         'RENDER'
     ),
@@ -45,45 +48,6 @@ class LimarSubcommandResult(TypedDict):
     stderr: Exception | None
 
 SubcommandResult = SystemSubcommandResult | LimarSubcommandResult
-
-# TODO/FIXME: This is really a dependency graph of *LIMAR
-#   invokations*, as *identified by their arguments*, that are
-#   *cacheable* (all three are essential characteristics)
-#
-#   Also, if:
-#   - A and B both depend on C, and therefore run C (forward dep)
-#   - Calls to C invalidates the caches for A and B (reverse dep)
-#   - Cache invalidation triggers calls to the dependants of C
-#     (reactive forward dep)
-#   Then you will end up with an infinite cycle: Running A
-#   invalidates B, which runs B, which invalidates A, which runs A.
-#   More precisely:
-#   1.  Start A
-#   2.  Start/Run C (because of A)
-#   3.  Invalidate A and B (because of C)
-#   4.  Run A
-#   5.  Check which caches are invalid and need update = B
-#   6.  Start B (because it needs update)
-#   7.  Start/Run C (because of B)
-#   8.  Invalidate A and B (Because of C)
-#   9.  Check which caches are invalid and need update = A
-#   10. Start A
-#      ...
-#   This is why proactive running of invalid caches (step 5 + 9) is
-#   dangerous and should not be done. You should only invalidate the
-#   cache, not cause it to update unless asked to. Also,
-#   de-duplication can avoid this trap - run C once for both, and
-#   you don't get the cycle.
-
-# ------------------------------------------------------------------------------
-
-# - Sort commands into topological order
-# - Insert commands into queue in that order, taking note of which ones were
-#   directly requested
-#   - Note: Don't need to de-dup here, because queries fetched from cache aren't
-#           invalidated.
-# - Process each command in the queue (in topological order, per priority),
-#   fetching from cache if possible.
 
 class CommandRunner:
     def __init__(self,
@@ -136,28 +100,75 @@ class CommandRunner:
     # Command Runners
     # --------------------------------------------------
 
-    def run_query(self, ref: str, query) -> list[Entity]:
+    def run_query(self, ref: str, query: QueryCommand) -> list[Entity]:
         """
         Run the given query whose containing item has the given ref and return
         the output.
         """
 
-        # Evaluate parameters to arguments
-        query_args: dict[Subquery, str] = {}
-        for param in query['parameters']:
-            query_args[param] = self._invoke_limar_module(*param)['stdout']
-            if not isinstance(query_args[param], str):
-                raise LIMARException(
-                    f"Evaluation of query parameter {{{{"
-                    f" {self._command_tr.format_text_limar_subcommand(param)}"
-                    " }}}} did not return a string. Cannot interpolate"
-                    " non-string values into the requested query."
-                )
-        self._mod.log.debug('Query arguments:', query_args)
+        command_outputs = self.run_command(ref, query)
 
-        self._mod.log.info(f"Running query '{ref}'")
+        # Transform the output using the query's parse expression
+        self._mod.log.trace('Query parser:', query['parse'])
+        query_output: list[Entity] = self._mod.tr.query(
+            query['parse'],
+            command_outputs,
+            lang='jq',
+            first=True
+        )
+        self._mod.log.debug('Query output:', query_output)
+        return query_output
+
+    def run_action(self, ref: str, action: ActionCommand) -> list[Entity] | None:
+        """
+        Run the given query whose containing item has the given ref and return
+        the output.
+        """
+
+        command_outputs = self.run_command(ref, action)
+
+        # Transform the output using the action's parse expression if it has one
+        action_output: list[Entity] | None
+        if 'parse' in action:
+            self._mod.log.trace('Action parser:', action['parse'])
+            action_output = self._mod.tr.query(
+                action['parse'],
+                command_outputs,
+                lang='jq',
+                first=True
+            )
+            self._mod.log.debug('Action output:', action_output)
+        else:
+            action_output = None
+            self._mod.log.debug(
+                f"Action '{ref}' has no parse expression, so ignoring its"
+                " output"
+            )
+
+        return action_output
+
+    def run_command(self, ref: str, command: Command) -> list[Any]:
+        """
+        Run the given command whose containing item has the given ref and return
+        the output.
+        """
+
+        # Evaluate parameters to arguments
+        command_args: dict[Subquery, str] = {}
+        for param in command['parameters']:
+            command_args[param] = self._invoke_limar_module(*param)['stdout']
+            if not isinstance(command_args[param], str):
+                raise LIMARException(
+                    f"Evaluation of command parameter {{{{"
+                    f" {self._command_tr.format_text_limar_subquery(param)}"
+                    " }}}} did not return a string. Cannot interpolate"
+                    " non-string values into the requested command."
+                )
+        self._mod.log.debug('Command arguments:', command_args)
+
+        self._mod.log.info(f"Running {command['type']} command '{ref}'")
         self._mod.log.debug(
-            f"  Which is: '{self._command_tr.format_text(query)}'"
+            f"  Which is: '{self._command_tr.format_text(command)}'"
         )
 
         # Run subcommands using corresponding runner
@@ -165,38 +176,23 @@ class CommandRunner:
             'system': self._run_system_subcommand,
             'limar': self._run_limar_subcommand
         }
-        query_outputs: list[dict[str, Any]] = []
-        for subcommand in query['subcommands']:
+        command_outputs: list[dict[str, Any]] = []
+        for subcommand in command['subcommands']:
             try:
-                query_outputs.append(
+                command_outputs.append(
                     SUBCOMMAND_RUNNERS[subcommand['type']](
-                        subcommand['subcommand'], query_args, subcommand
+                        subcommand['subcommand'], command_args, subcommand
                     )
                 )
-                self._mod.log.trace('Command output:', query_outputs[-1])
+                self._mod.log.trace('Command output:', command_outputs[-1])
             except KeyError:
                 raise LIMARException(
                     f"Unknown subcommand type '{subcommand['type']}' for"
                     f" subcommand '{subcommand['subcommand']}' in query '{ref}'"
                 )
-        self._mod.log.trace('Query subcommands output:', query_outputs)
+        self._mod.log.trace('Subcommands output:', command_outputs)
 
-        # Transform the output using the command's parse expression
-        self._mod.log.trace('Query parser:', query['parse'])
-        query_output: list[Entity] = self._mod.tr.query(
-            query['parse'],
-            query_outputs,
-            lang='jq',
-            first=True
-        )
-        self._mod.log.debug('Query output:', query_output)
-        return query_output
-
-    # TODO: Implement this
-    def run_action(self, ref, action) -> list[Entity]:
-        raise NotImplementedError(
-            f"Actions: Attempted to run action '{ref}'"
-        )
+        return command_outputs
 
     # Subcommand and Subquery Runners
     # --------------------------------------------------
@@ -472,7 +468,7 @@ class CommandBatch:
                 )
 
             # Collate output
-            if command_ref in self._directly_requested:
+            if command_ref in self._directly_requested and output is not None:
                 command_outputs.append((command_item, output))
 
         self._mod.log.debug('Query outputs:', command_outputs)
@@ -541,18 +537,42 @@ class InfoModule:
     # Lifecycle
     # --------------------------------------------------
 
+    def __init__(self):
+        self._command_tr = CommandTransformer()
+
     def dependencies(self):
-        return ['log', 'phase', 'manifest', 'command-manifest']
+        return ['log', 'cache', 'tr', 'phase', 'manifest', 'command-manifest']
 
     def configure_args(self, *, mod: Namespace, parser: ArgumentParser, **_):
         parser.add_argument('-q', '--query',
             action='store_true', default=False,
-            help="""Show information about the given subject.""")
+            help="""
+            Fail before running any commands if the specified commands are not
+            queries.
+            """)
 
-        parser.add_argument('subject', metavar='SUBJECT', nargs='+',
-            help="""Show information about the given subject.""")
+        parser.add_argument('-a', '--action',
+            action='store_true', default=False,
+            help="""
+            Fail before running any commands if the specified commands are not
+            actions.
+            """)
 
-        # Subcommands / Resolve Item Set - Output Controls
+        parser.add_argument('-c', '--command', metavar='COMMAND_REF',
+            action='append', default=[],
+            help="""
+            Run the given command instead of all commands matched by the given
+            subject. This option may be given multiple times to run several
+            commands. If this option is given at least once, the subject may be
+            omitted, in which case the union of primary subjects (or all
+            subjects, where a primary subject is not declared) of all specified
+            commands will be used instead.
+            """)
+
+        parser.add_argument('subject', metavar='SUBJECT', nargs='*',
+            help="""The subject to show information about.""")
+
+        # Output Controls
         mod.phase.configure_phase_control_args(parser)
 
     def configure(self, *, mod: Namespace, **_):
@@ -591,10 +611,17 @@ class InfoModule:
         output: Any = forwarded_data
 
         if transition_to_phase(INFO_LIFECYCLE.PHASES.GET):
-            if args.query is True:
-                output = self.query(args.subject[0])
+            if len(args.command) > 0:
+                output = mod.manifest.get_items(args.command)
             else:
-                output = self.get(args.subject)
+                output = self.commands_with_subject(args.subject)
+
+        if transition_to_phase(INFO_LIFECYCLE.PHASES.RUN):
+            allowed_types = [
+                *(['query'] if args.query else []),
+                *(['action'] if args.action else [])
+            ]
+            output = self.run(output, args.subject, allowed_types)
 
         # Format
         if transition_to_phase(
@@ -614,65 +641,64 @@ class InfoModule:
     # --------------------------------------------------
 
     @ModuleAccessor.invokable_as_service
-    def get(self,
+    def commands_with_subject(self,
             subject: list[str]
-    ) -> dict[str | tuple[str, ...], Entity]:
-        """
-        Get the list of the queries in the command manifest that match the given
-        command_spec, then return the indexed list of entities returned by those
-        queries.
-        """
+    ) -> ItemSet:
+        """Return all commands with the given subject."""
 
-        self._mod.log.info('Getting info for subject:', subject)
+        self._mod.log.info('Getting commands for subject:', subject)
 
-        # Get matching commands to execute
-        set_ref = 'info-query-'+''.join(random.choices(string.hexdigits, k=32))
-        set_spec = ' & '.join(subject)
+        set_ref = 'command-run-'+''.join(random.choices(string.hexdigits, k=32))
         # FIXME: Yes, I know this is an injection attack waiting to happen, eg.
         #          get(['unlikely] | something_evil | [unlikely'])
-        self._mod.manifest.declare_item_set(set_ref, f'query & [{set_spec}]')
-        matched_queries: ItemSet = self._mod.manifest.get_item_set(set_ref)
-        self._mod.log.debug(f'Matched manifest items:', matched_queries)
-
-        # Ensure all matched commands are queries
-        for item in matched_queries.values():
-            if item['command']['type'] != 'query':
-                raise LIMARException(
-                    f"The info subject '{subject}' matched a non-query command"
-                    f" '{item['ref']}'. Are you using the correct subject, and"
-                    " are the tags correct in the command manifest? Run in"
-                    " debug mode (`lm -vvv ...`) to see the full list of"
-                    " matched manifest items."
-                )
-
-        # Process the queries
-        batch = self._command_runner.new_batch(subject)
-        batch.add(*matched_queries.keys())
-        return batch.process()
+        self._mod.manifest.declare_item_set(set_ref, f"[{' & '.join(subject)}]")
+        return self._mod.manifest.get_item_set(set_ref)
 
     @ModuleAccessor.invokable_as_service
-    def query(self, ref, subject=None):
-        item = self._mod.manifest.get_item(ref)
+    def run_refs(self, *command_refs: str):
+        """Run the commands with the given refs."""
 
-        if subject is None:
-            if 'primarySubject' in item:
-                subject = [item['primarySubject']]
-            else:
-                subject = list(item['subjects'].keys())
+        command_items = self._mod.manifest.get_items(command_refs)
+        return self.run(command_items)
 
-        if (
-            'query' not in item['tags'] or
-            'command' not in item or
-            'type' not in item['command'] or
-            item['command']['type'] != 'query'
-        ):
-            raise LIMARException(
-                f"The query ref '{ref}' matched a non-query command"
-                f" '{item['ref']}'. Are you using the correct ref, and are the"
-                " tags correct in the command manifest? Run in debug mode"
-                " (`lm -vvv ...`) to see the matched item."
-            )
+    @ModuleAccessor.invokable_as_service
+    def run(self,
+            command_items: ItemSet,
+            subject: list[str] | None = None,
+            allowed_types: list[str] | None = None
+    ) -> dict[str | tuple[str, ...], Entity]:
+        """
+        Run the given commands, using the given subject to index the resulting
+        indexed list of entities.
+
+        If subject is None or empty, then use the primary subject of the matched
+        command instead.
+        """
+
+        self._mod.log.debug(f'Running command items:', command_items)
+
+        for command_ref, command_item in command_items.items():
+            if not self._command_tr.is_runnable(command_item):
+                raise LIMARException(
+                    f"Attempt to run unimplemented command '{command_ref}'. Run"
+                    " in debug mode (`lm -vvv ...`) to see the full command"
+                    " item."
+                )
+
+            if allowed_types is not None and len(allowed_types) > 0:
+                command_type = self._command_tr.command_type_of(command_item)
+                if command_type not in allowed_types:
+                    raise LIMARException(
+                        f"Attempt to run command '{command_item['ref']}' that"
+                        " is not of any type in the list of allowed types for"
+                        f" this run (was '{command_type}'; allowed:"
+                        f" {allowed_types}). Run in debug mode (`lm -vvv ...`)"
+                        " to see the matched item."
+                    )
+
+        if subject is None or len(subject) == 0:
+            subject = self._command_tr.primary_subject_of(command_items)
 
         batch = self._command_runner.new_batch(subject)
-        batch.add(ref)
+        batch.add(*(command_ref for command_ref in command_items.keys()))
         return batch.process()

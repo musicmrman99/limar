@@ -91,21 +91,21 @@ class Command:
 
     # FIXME: This is bad coupling to specific modules !!!!!
     #        (but an item knowing its own deps is worth it for now)
-    # TODO: These only support `info.query(<ref>)` deps for now
+    # TODO: These only support `info.run_refs(<ref>)` deps for now
 
     def _dependency_refs_of(self, item):
         return tuple(
                 {
-                param[2][0] # 1st item of info.query() args
+                param[2][0] # 1st item of info.run_refs() args
                 for param in item['command']['parameters']
-                if param[0:2] == ('info', 'query')
+                if param[0:2] == ('info', 'run_refs')
             }.union({
-                # 1st item of info.query() args
+                # 1st item of info.run_refs() args
                 subcommand['subcommand'][2][0][0]
                 for subcommand in item['command']['subcommands']
                 if (
                     subcommand['type'] == 'limar' and
-                    subcommand['subcommand'][0:2] == ('info', 'query')
+                    subcommand['subcommand'][0:2] == ('info', 'run_refs')
                 )
             })
         )
@@ -116,7 +116,7 @@ class Command:
                 dep_ref
                 for dep_ref, dep_item in items.items()
                 if 'command' in dep_item and any(
-                    param[0:3] == ('info', 'query', (item['ref'],))
+                    param[0:3] == ('info', 'run_refs', (item['ref'],))
                     for param in dep_item['command']['parameters']
                 )
             }.union({
@@ -125,7 +125,7 @@ class Command:
                 if 'command' in dep_item and any(
                     subcommand['type'] == 'limar' and
                     subcommand['subcommand'][0:3] ==
-                        ('info', 'query', ([item['ref']],))
+                        ('info', 'run_refs', ([item['ref']],))
                     for subcommand in dep_item['command']['subcommands']
                 )
             })
