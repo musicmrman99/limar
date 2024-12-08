@@ -18,9 +18,9 @@ import sys
 import os
 import re
 import importlib
-from copy import copy
+from copy import copy, deepcopy
 from graphlib import CycleError, TopologicalSorter
-from argparse import ArgumentParser, Namespace
+from argparse import REMAINDER, ArgumentParser, Namespace
 
 from core.envparse import EnvironmentParser
 from core.utils import list_split_match
@@ -623,24 +623,38 @@ class ModuleLifecycle:
         if cli_args is None:
             cli_args = sys.argv[1:]
 
-        self._debug(f"Parsing root arguments:", cli_args)
-        root_args, remaining_args = arg_parser.parse_known_args(cli_args)
-        self._trace('Result:', root_args)
-
-        # Only add the help options to the root parser *after* we've parsed the
-        # root arguments. For some reason, `parse_known_arguments()` will
-        # interpret and action the help options even if they're after an
-        # unknown argument.
+        # Add help options
         arg_parser.add_argument('-h', '--help', action='help',
             help='Show this help message and exit')
         add_docs_arg(arg_parser)
 
+        # Parse arguments
+        self._debug(f"Parsing root arguments:", cli_args)
+
+        # By default, argparse's `parse_known_arguments()` parses options
+        # interspersed between positional arguments. The following forces it to
+        # stop at the first non-option without mutating the parser that was
+        # passed in (which is re-used later).
+        # See:
+        # - https://stackoverflow.com/a/6671440
+        # - https://github.com/python/cpython/issues/58174
+        cli_args_to_fwd = list_split_match(cli_args, '[-\\]][-][-\\[]')[0][0]
+        cli_args_from_fwd = cli_args[len(cli_args_to_fwd):]
+        root_parser = deepcopy(arg_parser)
+        root_parser.add_argument('remaining_cli_args', nargs=REMAINDER)
+
+        root_args = root_parser.parse_args(cli_args_to_fwd)
+        remaining_cli_args = [*root_args.remaining_cli_args, *cli_args_from_fwd]
+        del root_args.remaining_cli_args # type: ignore (dynamic; see above)
+        self._trace('Result:', root_args)
+        self._trace('Remaining args:', remaining_cli_args)
+
         # Manually parse remaining args into a set of module arguments, split
         # on any forwarding operator, and prefix with the root arguments so that
         # every module invokation will also have all global args available.
-        root_cli_args = cli_args[:-len(remaining_args)]
+        root_cli_args = cli_args[:-len(remaining_cli_args)]
         module_cli_args_set, forward_types = (
-            list_split_match(remaining_args, '[-\\]][-][-\\[]')
+            list_split_match(remaining_cli_args, '[-\\]][-][-\\[]')
         )
 
         module_full_cli_args_set = [
