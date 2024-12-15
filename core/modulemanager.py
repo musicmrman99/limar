@@ -521,8 +521,12 @@ class ModuleLifecycle:
         self._proceed_to_phase(LIFECYCLE.PHASES.CREATE_MODULE_ACCESSORS)
 
         return Namespace(**{
-            name: ModuleAccessor(self, name)
-            for name in all_mods
+            invokation_name: ModuleAccessor(self, module_name)
+            for module_name, mod in all_mods.items()
+            for invokation_name in [
+                module_name,
+                *(mod.aliases() if hasattr(mod, 'aliases') else [])
+            ]
         })
 
     def configure_environment(self,
@@ -660,7 +664,7 @@ class ModuleLifecycle:
         module_full_cli_args_set = [
             (
                 (
-                    module_cli_args[0] # The module name
+                    module_cli_args[0] # The module or alias name
                     if len(module_cli_args) > 0
                     else 'no-op' # See `core.modules.noop.NoOpModule`
                 ),
@@ -754,23 +758,31 @@ class ModuleLifecycle:
         self._proceed_to_phase(LIFECYCLE.PHASES.ARGUMENT_CONFIGURATION)
 
         arg_subparsers = None
-        for name, module in all_mods.items():
-            all_mod_subproc.transition_to(name)
+        for module_name, module in all_mods.items():
+            all_mod_subproc.transition_to(module_name)
 
             if hasattr(module, 'configure_args') or hasattr(module, '__call__'):
                 if arg_subparsers is None:
-                    arg_subparsers = arg_parser.add_subparsers(dest="module")
+                    arg_subparsers = arg_parser.add_subparsers(
+                        dest="_invoked_name"
+                    )
+
+                aliases = []
+                if hasattr(module, 'aliases'):
+                    aliases = module.aliases()
 
                 module_arg_parser = arg_subparsers.add_parser(
-                    name,
-                    epilog=docs_for(module)
+                    module_name,
+                    epilog=docs_for(module),
+                    aliases=aliases
                 )
+                module_arg_parser.set_defaults(_module_name=module_name)
                 add_docs_arg(module_arg_parser)
 
             if hasattr(module, 'configure_args'):
-                self._debug(f"Configuring arguments for module '{name}'")
+                self._debug(f"Configuring arguments for module '{module_name}'")
                 module.configure_args(
-                    env=envs[name],
+                    env=envs[module_name],
                     parser=module_arg_parser,
                     mod=accessor_object
                 )
@@ -782,12 +794,12 @@ class ModuleLifecycle:
             module_full_cli_args_set: list[
                 tuple[str, list[str], str | None, str | None]
             ]
-    ) -> list[tuple[str, Namespace, str | None, str | None]]:
+    ) -> list[tuple[str, str, Namespace, str | None, str | None]]:
         raw_invokations_sys = self._create_subsystem(
             f'{__name__}:raw_invokations',
             tuple(
-                f'{invokation_index}-{name}'
-                for invokation_index, (name, _args, _pe_f, _po_f) in
+                f'{invokation_index}-{invoked_name}'
+                for invokation_index, (invoked_name, args, pre_fwd, post_fwd) in
                     enumerate(module_full_cli_args_set)
             )
         )
@@ -799,24 +811,24 @@ class ModuleLifecycle:
         self._proceed_to_phase(LIFECYCLE.PHASES.ARGUMENT_PARSING)
 
         module_args_set: list[
-            tuple[str, Namespace, str | None, str | None]
+            tuple[str, str, Namespace, str | None, str | None]
         ] = []
         for raw_invokation_index, raw_invokation in enumerate(
                 module_full_cli_args_set
         ):
             (
-                name,
+                invoked_name,
                 module_cli_args,
                 pre_forward_type,
                 post_forward_type
             ) = raw_invokation
 
             raw_invokations_process.transition_to(
-                f'{raw_invokation_index}-{name}'
+                f'{raw_invokation_index}-{invoked_name}'
             )
 
             self._debug(
-                f"Parsing arguments for module '{name}':",
+                f"Parsing arguments for invokation '{invoked_name}':",
                 module_cli_args
             )
             try:
@@ -826,7 +838,8 @@ class ModuleLifecycle:
                 raise e
 
             module_args_set.append((
-                name,
+                module_args._module_name,
+                invoked_name,
                 module_args,
                 pre_forward_type,
                 post_forward_type
@@ -838,7 +851,7 @@ class ModuleLifecycle:
 
     def invoke_and_call(self,
             module_args_set: list[
-                tuple[str, Namespace, str | None, str | None]
+                tuple[str, str, Namespace, str | None, str | None]
             ],
             envs: dict[str, Namespace],
             start_exceptions: list[Exception | KeyboardInterrupt],
@@ -853,10 +866,10 @@ class ModuleLifecycle:
         invokations_subsystem = self._create_subsystem(
             f'{__name__}:invokations',
             tuple(
-                f'{invokation_index}-{name}'
-                for invokation_index, (name, _args, _pe_f, _po_f) in enumerate(
-                    module_args_set
-                )
+                f'{invokation_index}-{invoked_name}'
+                for invokation_index, (
+                    module_name, invoked_name, args, pe_f, po_f
+                ) in enumerate(module_args_set)
             )
         )
         invokations_process = self._create_subprocess(invokations_subsystem)
@@ -869,31 +882,40 @@ class ModuleLifecycle:
             forward_carry[0] = sys.stdin.read()
             if len(module_args_set) > 0:
                 module_args_set[0] = (
-                    *module_args_set[0][:2],
+                    *module_args_set[0][:3],
                     '---',
-                    *module_args_set[0][3:]
+                    *module_args_set[0][4:]
                 )
 
         for invokation_index, raw_module_args in enumerate(module_args_set):
             (
-                name,
+                module_name,
+                invoked_name,
                 module_args,
                 pre_forward_type,
                 post_forward_type
             ) = raw_module_args
 
-            invokations_process.transition_to(f'{invokation_index}-{name}')
+            invokations_process.transition_to(
+                f'{invokation_index}-{invoked_name}'
+            )
 
-            self._info(f"--- Running Module '{name}' ----------")
+            self._info(
+                f"--- Invoking '{invoked_name}' (Module '{module_name}')"
+                " ----------"
+            )
             try:
                 # Eww, using object state instead of args ... yes, but modules
                 # have to be able to do this anyway (via the accessors), so it's
                 # a precondition of this function that the state needed for
                 # `invoke_module()` is set. This asserts that precondition to be
                 # true.
-                module = self._invoke_module(name)
+                module = self._invoke_module(
+                    module_name,
+                    invoke_as=invoked_name
+                )
                 if not callable(module):
-                    raise LIMARException(f"Module not callable: '{name}'")
+                    raise LIMARException(f"Module not callable: '{module_name}'")
 
                 # Call module and collect output(s)
                 if pre_forward_type is None or pre_forward_type[2] == '-':
@@ -911,8 +933,9 @@ class ModuleLifecycle:
                     self._debug('Forwarded input:', forward_input)
                     return module(
                         mod=accessor_object,
-                        env=envs[name],
+                        env=envs[module_name],
                         args=module_args,
+                        invoked_as=invoked_name,
                         forwarded_data=forward_input,
                         output_is_forward=(post_forward_type is not None)
                     )
@@ -937,7 +960,8 @@ class ModuleLifecycle:
 
             except (Exception, KeyboardInterrupt) as e:
                 self._error(
-                    f"Run of module '{name}' failed, aborting further calls"
+                    f"Invokation of '{invoked_name}' (module '{module_name}')"
+                    " failed, aborting further calls"
                 )
                 self._stop_subprocess(LIFECYCLE.PHASES.RUNNING)
                 return e
@@ -1041,27 +1065,34 @@ class ModuleLifecycle:
     def _trace(self, *objs):
         self._log(*objs, log_type='trace')
 
-    def _invoke_module(self, name: str) -> Any:
+    def _invoke_module(self,
+            module_name: str,
+            invoke_as: str | None = None
+    ) -> Any:
         """
         Invoke and return the instance of the module with the given name.
 
         If the named module has not been initialised, raise a LIMARException.
         """
 
-        if not name in self._all_mods:
+        if not module_name in self._all_mods:
             raise LIMARException(
-                f"Attempt to invoke uninitialised module '{name}'"
+                f"Attempt to invoke uninitialised module '{module_name}'"
             )
 
         # Lifecycle: Invoke
-        if hasattr(self._all_mods[name], 'invoke'):
-            self._debug(f"Invoking module: {name}")
-            self._all_mods[name].invoke(
+        if hasattr(self._all_mods[module_name], 'invoke'):
+            self._debug(
+                f"Invoking module '{module_name}'"
+                + (f" as '{invoke_as}'" if invoke_as is not None else "")
+            )
+            self._all_mods[module_name].invoke(
                 phase=self._controller.phase(),
-                mod=self._accessor_object
+                mod=self._accessor_object,
+                invoked_as=invoke_as
             )
 
-        return self._all_mods[name]
+        return self._all_mods[module_name]
 
     # Phasing
     # --------------------

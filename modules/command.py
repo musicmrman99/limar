@@ -498,7 +498,10 @@ class CommandBatch:
                 raise LIMARException(
                     f"Query '{item['ref']}' missing field mapping for subject"
                     f" '{e.args[0]}'."
-                    " This is likely to be an issue with the command manifest."
+                    f" If you did not intend '{e.args[0]}' to be treated as a"
+                    " subject, then re-check your command line. If that should"
+                    " be a valid subject, then there may be an issue with the"
+                    " command manifest."
                 )
             for entity_data in entities:
                 try:
@@ -529,9 +532,9 @@ class CommandBatch:
 
         return merged_query_output
 
-class InfoModule:
+class CommandModule:
     """
-    MM module to manage retreiving and displaying information.
+    MM module for running commands and managing their I/O.
     """
 
     # Lifecycle
@@ -542,6 +545,9 @@ class InfoModule:
 
     def dependencies(self):
         return ['log', 'cache', 'tr', 'phase', 'manifest', 'command-manifest']
+
+    def aliases(self):
+        return ['show']
 
     def configure_args(self, *, mod: Namespace, parser: ArgumentParser, **_):
         parser.add_argument('-q', '--query',

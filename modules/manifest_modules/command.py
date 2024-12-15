@@ -98,14 +98,14 @@ class Command:
                 {
                 param[2][0] # 1st item of info.run_refs() args
                 for param in item['command']['parameters']
-                if param[0:2] == ('info', 'run_refs')
+                if param[0:2] == ('command', 'run_refs')
             }.union({
                 # 1st item of info.run_refs() args
                 subcommand['subcommand'][2][0][0]
                 for subcommand in item['command']['subcommands']
                 if (
                     subcommand['type'] == 'limar' and
-                    subcommand['subcommand'][0:2] == ('info', 'run_refs')
+                    subcommand['subcommand'][0:2] == ('command', 'run_refs')
                 )
             })
         )
@@ -116,7 +116,7 @@ class Command:
                 dep_ref
                 for dep_ref, dep_item in items.items()
                 if 'command' in dep_item and any(
-                    param[0:3] == ('info', 'run_refs', (item['ref'],))
+                    param[0:3] == ('command', 'run_refs', (item['ref'],))
                     for param in dep_item['command']['parameters']
                 )
             }.union({
@@ -125,7 +125,7 @@ class Command:
                 if 'command' in dep_item and any(
                     subcommand['type'] == 'limar' and
                     subcommand['subcommand'][0:3] ==
-                        ('info', 'run_refs', ([item['ref']],))
+                        ('command', 'run_refs', ([item['ref']],))
                     for subcommand in dep_item['command']['subcommands']
                 )
             })
