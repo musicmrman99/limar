@@ -656,18 +656,23 @@ class ModuleLifecycle:
         # Manually parse remaining args into a set of module arguments, split
         # on any forwarding operator, and prefix with the root arguments so that
         # every module invokation will also have all global args available.
-        root_cli_args = cli_args[:-len(remaining_cli_args)]
+        if len(remaining_cli_args) > 0:
+            root_cli_args = cli_args[:-len(remaining_cli_args)]
+        else:
+            root_cli_args = cli_args.copy()
         module_cli_args_set, forward_types = (
             list_split_match(remaining_cli_args, '[-\\]][-][-\\[]')
         )
 
+        # Set the module to `core.modules.noop.NoOpModule` if no other module
+        # was specified.
+        for module_cli_args in module_cli_args_set:
+            if len(module_cli_args) == 0:
+                module_cli_args.append('no-op')
+
         module_full_cli_args_set = [
             (
-                (
-                    module_cli_args[0] # The module or alias name
-                    if len(module_cli_args) > 0
-                    else 'no-op' # See `core.modules.noop.NoOpModule`
-                ),
+                module_cli_args[0], # The module or alias name,
                 [*root_cli_args, *module_cli_args],
                 forward_types[i-1] if i > 0 else None,
                 forward_types[i] if i < len(module_cli_args_set) - 1 else None
