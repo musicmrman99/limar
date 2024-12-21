@@ -155,13 +155,28 @@ class CommandTransformer:
     def command_type_of(self, command_item):
         return command_item['command']['type']
 
+    def subject_of(self,
+            command_items: dict[str, Any],
+            subject: list[str]
+    ) -> list[str]:
+        all_subjects = set() # Values ignored
+        for command_item in command_items.values():
+            if 'subjects' in command_item:
+                all_subjects.update(command_item['subjects'].keys())
+
+        return [
+            single_subject
+            for single_subject in subject
+            if single_subject in all_subjects
+        ]
+
     def primary_subject_of(self, command_items: dict[str, Any]) -> list[str]:
         subject: dict[str, Any] = {} # Values ignored
 
         for command_item in command_items.values():
             if 'primarySubject' in command_item:
                 subject[command_item['primarySubject']] = None
-            else:
+            elif 'subjects' in command_item:
                 subject.update(command_item['subjects'])
 
         return list(subject.keys())

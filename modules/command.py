@@ -30,6 +30,7 @@ INFO_LIFECYCLE = PhaseSystem(
     (
         'INITIALISE',
         'GET',
+        'SUBJECT',
         'RUN',
         'TABULATE',
         'RENDER'
@@ -618,16 +619,21 @@ class CommandModule:
 
         if transition_to_phase(INFO_LIFECYCLE.PHASES.GET):
             if len(args.command) > 0:
-                output = mod.manifest.get_items(args.command)
+                command_items = mod.manifest.get_items(args.command)
             else:
-                output = self.commands_with_subject(args.subject)
+                command_items = self.commands_with_subject(args.subject)
+            output = command_items
 
-        if transition_to_phase(INFO_LIFECYCLE.PHASES.RUN):
+        if transition_to_phase(INFO_LIFECYCLE.PHASES.SUBJECT):
             allowed_types = [
                 *(['query'] if args.query else []),
                 *(['action'] if args.action else [])
             ]
-            output = self.run(output, args.subject, allowed_types)
+            subject = self.effective_subject_for(command_items, args.subject)
+            output = subject
+
+        if transition_to_phase(INFO_LIFECYCLE.PHASES.RUN):
+            output = self.run(command_items, subject, allowed_types)
 
         # Format
         if transition_to_phase(
@@ -661,27 +667,53 @@ class CommandModule:
         return self._mod.manifest.get_item_set(set_ref)
 
     @ModuleAccessor.invokable_as_service
+    def effective_subject_for(self,
+            command_items: ItemSet,
+            given_subject: list[str] | None = None
+    ) -> list[str]:
+        """
+        Return the effective subject for the given command items.
+
+        Return the given subject filtered for elements declared as a subject of
+        at least one of the given commands.
+
+        If the given_subject is None or empty, then return the primary subject
+        of the commands instead.
+        """
+
+        if given_subject is None or len(given_subject) == 0:
+            subject = self._command_tr.primary_subject_of(command_items)
+            self._mod.log.debug(
+                'Effective subject from primary subject:', subject
+            )
+        else:
+            subject = self._command_tr.subject_of(command_items, given_subject)
+            self._mod.log.debug(
+                'Effective subject from given subject:', subject
+            )
+
+        return subject
+
+    @ModuleAccessor.invokable_as_service
     def run_refs(self, *command_refs: str):
         """Run the commands with the given refs."""
 
         command_items = self._mod.manifest.get_items(command_refs)
-        return self.run(command_items)
+        subject = self.effective_subject_for(command_items)
+        return self.run(command_items, subject)
 
     @ModuleAccessor.invokable_as_service
     def run(self,
             command_items: ItemSet,
-            subject: list[str] | None = None,
+            subject: list[str],
             allowed_types: list[str] | None = None
     ) -> dict[str | tuple[str, ...], Entity]:
         """
         Run the given commands, using the given subject to index the resulting
         indexed list of entities.
-
-        If subject is None or empty, then use the primary subject of the matched
-        command instead.
         """
 
-        self._mod.log.debug(f'Running command items:', command_items)
+        self._mod.log.debug('Running command items:', command_items)
 
         for command_ref, command_item in command_items.items():
             if not self._command_tr.is_runnable(command_item):
@@ -701,9 +733,6 @@ class CommandModule:
                         f" {allowed_types}). Run in debug mode (`lm -vvv ...`)"
                         " to see the matched item."
                     )
-
-        if subject is None or len(subject) == 0:
-            subject = self._command_tr.primary_subject_of(command_items)
 
         batch = self._command_runner.new_batch(subject)
         batch.add(*(command_ref for command_ref in command_items.keys()))
