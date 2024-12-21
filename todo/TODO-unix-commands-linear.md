@@ -7,31 +7,6 @@ System Entities - Creation, Information, Management, and Destruction (CRUD)
 Hosts, Kernels, and Processes
 ====================
 
-### kernel
-- uname       /kernel/artifact - show system information
-- arch        /kernel/artifact - equivalent to `uname -m`
-- lsb_release /kernel/artifact - release info for 'standard linux base' (LSB)
-- modprobe    /kernel/module   - add or remove (`-r`) modules from the linux kernel
-- lsmod       /kernel/module   - list active modules in the running linux kernel
-- insmod      /kernel/module   - insert a module into the running linux kernel
-- rmmod       /kernel/module   - remove a module from the running linux kernel
-- sysctl      /kernel/param    - show and modify linux kernel parameters while the kernel is running
-- dmesg       /kernel/log      - show the contents of the kernel message buffer
-
-### boot and service
-- service     /kernel, /service, /service/config, __OLD - manage the system and services (don't use on systemd systems)
-- systemctl   /kernel, /service, /service/config - manage the system and services (see: `systemctl --help`)
-- journalctl  /kernel/log, /service/log - manage the systemd journal
-- uptime      /kernel          - show how long the system has been running
-- shutdown    /kernel          - shut down the system; alias for `systemctl shutdown`
-- halt        /kernel          - halt the system; alias for `systemctl halt`
-- poweroff    /kernel          - power off the system; alias for `systemctl poweroff`
-- reboot      /kernel          - reboot the system; alias for `systemctl reboot`
-
-### names and addresses
-- hostname    /host            - show hostname of current host
-- host        /host            - resolve DNS records of given hostname
-
 ### services and operations
 
 #### show metadata

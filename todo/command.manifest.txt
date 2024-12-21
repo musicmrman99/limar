@@ -13,11 +13,11 @@ Subjects and Entities
 Subjects are like types or database tables, except that subjects are 'specified', rather than
 'static' or 'dynamic'. That means that LIMAR doesn't check what you're doing before it runs commands
 based on what you've told it in this manifest (static typing), nor do fetched entities record what
-type they are (dynamic typing), but rather that LIMAR interprets entities to contain information
-about the subjects you are operating on at the time you operate on them, usually after fetching
-only the entities that include the specified subjects.
+type they are (dynamic typing). Instead, LIMAR interprets entities to contain information about the
+subjects you are operating on at the time you operate on them, usually after fetching only the
+entities that include the specified subjects.
 
-Entities are like objects or records in a database. They are composed of 'entity data', which is the
+Entities are like objects, or records in a database. They are composed of 'entity data', which is the
 output of each query that matches a subject request, which are then merged to form a list of
 entities indexed by the IDs of each subject in the request. If there are multiple subjects in the
 request, they will be indexed by a composite key (a tuple) consisting of the IDs of each subject in
@@ -29,7 +29,7 @@ The LIMAR Model
 The LIMAR Model consists of a hierarchy of subjects. The first level of nodes are:
 
 ```
-/subject  - The subject of subjects. Aliased to "/", and is the root of the hierarchy.
+/subject  - Subjects (ie. subject metadata).
 /hardware - Physical devices that make up agents.
 /agent    - Performs actions.
 /identity - Determines what actions agents are allowed to perform, and with what requirements.
@@ -43,12 +43,12 @@ The LIMAR Model consists of a hierarchy of subjects. The first level of nodes ar
 
 The full model is:
 ===== TODO =========================================================================================
-This is static for now, but should be retrievable using manifest commands, or at least from the
-`/subject` subject.
+This is static for now, but should be retrievable using manifest commands, or from the `/subject`
+subject.
 ====================================================================================================
 
 ```
-/subject (alias: /)
+/subject
 
 /hardware
 /agent {
@@ -69,8 +69,8 @@ This is static for now, but should be retrievable using manifest commands, or at
   /application (kernel? sync operations? alias: app)
   /operation   (kernel? service (optional)? alias: op)
 
-  content {
-    # subprocess that depends on and augments a parent process
+  /process/content {
+    # sub-process that depends on and augments a parent process
     /module
 
     # per-process /configuration ('pushed in')
@@ -88,12 +88,12 @@ This is static for now, but should be retrievable using manifest commands, or at
 # I/O
 /channel {
   # cross-host channel = network I/O (eg. TCP/UDP connections)
-  /host/channel {
+  /host {
     /config
   }
 
   # cross-process channel = I/O (eg. stdin/out/err, keyboard, mouse, IPC)
-  /process/channel {
+  /process {
     /config
   }
 }
@@ -123,7 +123,9 @@ This is static for now, but should be retrievable using manifest commands, or at
   /directory (alias: dir)
   /file
 
+  # a collection of related entities
   /project
+
   # source code, assets, etc.
   /source (project? version?)
   # binaries, archives/packages, bundles, disk images, etc.
@@ -475,7 +477,12 @@ lsusb (__TODO, hardware) # List USB devices
 #   (/agent)
 # ----------------------------------------------------------------------------------------------------
 
-# TODO
+# Network Addresses
+#   (/agent/active (aka. /host))
+# --------------------
+
+hostname (__TODO, show, host) # show hostname of current host
+host     (__TODO, show, host) # resolve DNS records of given hostname
 
 # Data
 #   (/data)
@@ -565,18 +572,18 @@ vi           (__TODO, show, set, text,  file,                content, is: app) #
 vim          (__TODO, show, set, text,  file,                content, is: app) # edit one or more files
 emacs        (__TODO, show, set, text,  file,                content, is: app) # edit one or more files
 cp           (__TODO, copy,             file, dir, metadata, content) # copy a file/dir
-dd           (__TODO, copy,             file,      metadata, content, over: process/channel) # copy (and convert) a file (or dir??) (as a stream) to any other file, including a device file
-ftp          (__TODO, copy,             file, dir, metadata, content, over: host/channel) # transfer files/dirs to/from another host using FTP
-sftp         (__TODO, copy,             file, dir, metadata, content, over: host/channel) # transfer files/dirs to/from another host using SFTP (FTP + SSL/TLS)
-rcp          (__TODO, copy,             file, dir, metadata, content, over: host/channel) # transfer files/dirs to/from another host using RSH (stands for 'remote copy')
-scp          (__TODO, copy,             file, dir, metadata, content, over: host/channel) # transfer files/dirs to/from another host using SSH (stands for 'secure copy')
+dd           (__TODO, copy,             file,      metadata, content, over: channel/process) # copy (and convert) a file (or dir??) (as a stream) to any other file, including a device file
+ftp          (__TODO, copy,             file, dir, metadata, content, over: channel/host) # transfer files/dirs to/from another host using FTP
+sftp         (__TODO, copy,             file, dir, metadata, content, over: channel/host) # transfer files/dirs to/from another host using SFTP (FTP + SSL/TLS)
+rcp          (__TODO, copy,             file, dir, metadata, content, over: channel/host) # transfer files/dirs to/from another host using RSH (stands for 'remote copy')
+scp          (__TODO, copy,             file, dir, metadata, content, over: channel/host) # transfer files/dirs to/from another host using SSH (stands for 'secure copy')
 # FIXME: This can copy more than just files - it can copy any HTTP resource
-wget         (__TODO, copy,             file, dir, metadata, content, over: host/channel) # fetch a file from another host using HTTP or HTTPS
+wget         (__TODO, copy,             file, dir, metadata, content, over: channel/host) # fetch a file from another host using HTTP or HTTPS
 # FIXME: This can more than just copy files - it can send any HTTP request
-curl         (__TODO, copy,             file, dir, metadata, content, over: host/channel) # fetch a file from another host using HTTP or HTTPS
+curl         (__TODO, copy,             file, dir, metadata, content, over: channel/host) # fetch a file from another host using HTTP or HTTPS
 mv           (__TODO, move,             file, dir, metadata, content) # move a file/dir
 rsync/local  (__TODO, sync,             file, dir, metadata, content) # sync files/dirs
-rsync/remote (__TODO, sync,             file, dir, metadata, content, over: host/channel) # sync files/dirs over the network
+rsync/remote (__TODO, sync,             file, dir, metadata, content, over: channel/host) # sync files/dirs over the network
 
 # Process Data: Sources, Artifacts, Deployments, and Configurations
 #   (/data/source, /data/artifact, /data/deployment, /data/configuration)
@@ -647,7 +654,32 @@ unalias    (__TODO, delete, command          ) # remove a command alias
 #   (/process)
 # ----------------------------------------------------------------------------------------------------
 
-# TODO
+# Kernel
+#   (/process/kernel)
+# --------------------
+
+uname       (__TODO, show,         kernel/artifact) # show system information
+arch        (__TODO, show,         kernel/artifact) # equivalent to `uname -m`
+lsb_release (__TODO, show,         kernel/artifact) # release info for 'standard linux base' (LSB)
+modprobe    (__TODO, add, remove,  kernel/module  ) # add or remove (`-r`) modules from the linux kernel
+lsmod       (__TODO, show,         kernel/module  ) # list active modules in the running linux kernel
+insmod      (__TODO, add,          kernel/module  ) # insert a module into the running linux kernel
+rmmod       (__TODO, remove,       kernel/module  ) # remove a module from the running linux kernel
+sysctl      (__TODO, show, modify, kernel/param   ) # show and modify linux kernel parameters while the kernel is running
+dmesg       (__TODO, show,         kernel/log     ) # show the contents of the kernel message buffer
+
+# Boot and Services
+#   (/process/kernel, /process/service)
+# --------------------
+
+service    (__OLD,  show, modify, kernel, service, service/config) # manage the system and services (don't use on systemd systems)
+systemctl  (__TODO, show, modify, kernel, service, service/config) # manage the system and services (see: `systemctl --help`)
+journalctl (__TODO, show, modify, kernel/log, service/log        ) # manage the systemd journal
+uptime     (__TODO, show,         kernel                         ) # show how long the system has been running
+shutdown   (__TODO, stop,         kernel                         ) # shut down the system; alias for `systemctl shutdown`
+halt       (__TODO, stop,         kernel                         ) # halt the system; alias for `systemctl halt`
+poweroff   (__TODO, stop,         kernel                         ) # power off the system; alias for `systemctl poweroff`
+reboot     (__TODO, restart,      kernel                         ) # reboot the system; alias for `systemctl reboot`
 
 # Process Environment
 #   (/process/environment)
@@ -679,16 +711,8 @@ umask/show (__TODO, show, process/environment, identity/policy) # show the file 
 env/show   (__TODO, show, process/environment, var            ) # set the file permissions mask (ie. excluded perms) for creating files
 
 @tool (command: pwd, description: """Print working directory.""")
-@command(
-  command: """pwd"""
-)
-@query (
-  parse: """
-    [{
-      "dir.id": .[0].stdout
-    }]
-  """
-)
+@command (command: """pwd""")
+@query (parse: """[{ "dir.id": .[0].stdout }]""")
 @subjects (dir: dir.id)
 @primary-subject (dir)
 pwd        (__TODO, show, process/environment, dir            ) # print working directory
@@ -706,17 +730,25 @@ setenv     (__TODO, set,  process/environment, var            ) # csh-style equi
 TODO:
 - Consider/design:
   - How args/forwarded-data/slots/config/external-state should be handled by commands
+    > Note: these correspond to the below subjects for *this* /process/module:
+      - config         = /data/process/configuration
+      - slots          = /process/environment
+      - args           = /process/parameter
+      - forwarded-data = /channel/process
+      - external-state = various (all subjects)
+
     > Args shouldn't need to be accessed. Forwarded data, slots, config, and external
       state should provide sufficient information to run a query or action.
 
     > Forwarded data should be requested using a special 'dynamic' expansion (which
-      is like a normal expansion, but has no module, method, or args):
+      is like a normal expansion, but has no module, method, or args, and
+      automatically makes the command non-cacheable):
         {{ .() : .parse.expr }}
 
     > Slots, config, and external state should be requested using a normal expansion:
         {{ context.get_slot(name/of/slot) : .parse.expr }}
         {{ manifest.get_item(name/of/item) : .parse.expr }}
-        {{ info.run_refs(name/of/query) : .parse.expr }}
+        {{ show.run_refs(name/of/query) : .parse.expr }}
 
     > The purpose and precedence of the above inputs are determined by each command,
       but commands should follow these guidelines:
@@ -739,7 +771,7 @@ TODO:
 
     > there should be a way of transforming the 'current' complete state into a new
       state, eg. interactive editor or jq, then passing the bits that have changed to
-      the relevant @actions to apply the changes.
+      the relevant `@action`s to apply the changes.
     > this creates a changes-as-data-modification mechanism, which is good for both
       comprehension/simplicity, control/change management, and automation
 
@@ -831,7 +863,7 @@ fg    (__TODO, set,    channel) # put a process into the foreground of a shell (
   @primary-subject(repo)
   repo/git
 
-  # Delta - Store to Version
+  # Deltas
   # --------------------
 
   # TODO: Handle quoted file names (ie. those with spaces and escape sequences)
@@ -999,59 +1031,88 @@ fg    (__TODO, set,    channel) # put a process into the foreground of a shell (
   @primary-subject(file)
   delta/file/git/status
 
-  # Versions and Version References
-  # --------------------
-
-  # ======================================================================================================================================================
-  # ISSUE:
-  #
-  # If you want to know what your current branch is, what your remote is, and what commit each of them is on, you may end up with two commits - one for
-  # the local (tracking) branch, and one for the remote branch. How do you show them both?
-  # - Rename the fields of the remote branch's entity data?
-  # - Show the branch + remote branch as two separate records?
-  # - Get information about one set of subject(s) (branches, remote branches), but index by a different subject (version)?
-  # - Setup the manifest so that you have to specify all identifying subjects to get their data
-  #   - This would probably also require omitting the ID fields for subjects with a higher multiplicity (which is hard to detect)
-  #
-  # The general case is any self-join (A - A), or transitive self-join (A - B - C - A, as in the above example)
-  #
-  # How does this relate to the delta between the local and remote branches?
-  # - Usually, a delta would exclude the version at 'beginning', but maybe it shouldn't?
-  # - Is there really any difference between `length > 0` and `length > 1`?
-  #   - What about "there is *no* difference between A and B"? Shouldn't that yield no results?
-  # - Could you tell it to omit the entries in the middle, or is that the *whole point* of a delta - the bit between the two
-  # ======================================================================================================================================================
-
-  # IN PROGRESS
   @command(
     command: """
       pwd &&
     ! git rev-parse --show-toplevel &&
-    ! git for-each-ref --format='%(objectname:short)|%(refname:short)|%(upstream:short)|%(HEAD)|%(upstream:track,nobracket)' refs/heads
+    ! git for-each-ref --format='%(objectname:short)|%(refname:short)|%(upstream:short)|%(upstream:track,nobracket)' refs/heads
     """
   )
   @query(
     parse: """
+      [
+        .[0].stdout,
+        (if .[1].status == 0 then .[1].stdout else null end)
+      ] as [
+        $dirPath,
+        $repoPath
+      ]
+      | [
+        .[2].stdout
+        | split("\n")[]
+        | split("|")
+        | {
+          "version.id":            (.[0]),
+          "version.ref.id":        (.[1]),
+          "version.ref.remote.id": (.[2]),
+
           "version.ref.ahead.remote":  (
-            .[4]
+            .[3]
             | sub("^(ahead (?<ahead>[0-9]*))?(, )?(behind (?<behind>[0-9]*))?$";"\(.ahead)")
             | if . != "" and . != "null" then tonumber else 0 end
           ),
           "version.ref.behind.remote": (
-            .[4]
+            .[3]
             | sub("^(ahead (?<ahead>[0-9]*))?(, )?(behind (?<behind>[0-9]*))?$";"\(.behind)")
             | if . != "" and . != "null" then tonumber else 0 end
-          ),
+          )
+        }
+      ]
+      | map(
+        {
+          "dir.id": ($dirPath),
+          "repo.id": ($repoPath)
+        } + .
+      )
     """
   )
   @subjects(
     dir: dir.id
     repo: repo.id
-    delta: delta.id
     version: version.id
+    version/ref: version.ref.id
+    delta: delta.id
   )
   @primary-subject(version)
   delta/version/git/branch/remote
+
+  # Versions and Version References
+  # --------------------
+
+  # ================================================================================================
+  # ISSUE:
+  #
+  # If you want to know what your current branch is, what your remote is, and what commit each of
+  # them is on, you may end up with two commits - one for the local (tracking) branch, and one for
+  # the remote branch. How do you show them both?
+  # - Rename the fields of the remote branch's entity data?
+  # - Show the branch + remote branch as two separate records?
+  # - Get information about one set of subject(s) (branches, remote branches), but index by a
+  #   different subject (version)?
+  # - Setup the manifest so that you have to specify all identifying subjects to get their data
+  #   - This would probably also require omitting the ID fields for subjects with a higher
+  #     multiplicity (which is hard to detect)
+  #
+  # The general case is any self-join (A - A), or transitive self-join (A - B - C - A, as in the
+  # above example)
+  #
+  # How does this relate to the delta between the local and remote branches?
+  # - Usually, a delta would exclude the version at 'beginning', but maybe it shouldn't?
+  # - Is there really any difference between `length > 0` and `length > 1`?
+  #   - What about "there is *no* difference between A and B"? Shouldn't that yield no results?
+  # - Could you tell it to omit the entries in the middle, or is that the *whole point* of a delta -
+  # the bit between the two
+  # ================================================================================================
 
   @command(
     command: """
@@ -1293,6 +1354,48 @@ fg    (__TODO, set,    channel) # put a process into the foreground of a shell (
   @primary-subject(version/ref)
   version/ref/git/tag
 
+  @command(
+    command: """
+      pwd &&
+    ! git rev-parse --show-toplevel &&
+    ! git reflog stash --pretty='%h|%gd'
+    """
+  )
+  @query(
+    parse: """
+      [
+        .[0].stdout,
+        (if .[1].status == 0 then .[1].stdout else null end)
+      ] as [
+        $dirPath,
+        $repoPath
+      ]
+      | [
+        .[2].stdout
+        | split("\n")[]
+        | split("|")
+        | {
+          "version.id":     (.[0]),
+          "version.ref.id": (.[1])
+        }
+      ]
+      | map(
+        {
+          "dir.id": ($dirPath),
+          "repo.id": ($repoPath)
+        } + .
+      )
+    """
+  )
+  @subjects(
+    dir: dir.id
+    repo: repo.id
+    version: version.id
+    version/ref: version.ref.id
+  )
+  @primary-subject(version/ref)
+  version/ref/git/stash
+
   # Specific Entities
   # --------------------
 
@@ -1328,7 +1431,7 @@ fg    (__TODO, set,    channel) # put a process into the foreground of a shell (
       pwd &&
     ! git rev-parse --show-toplevel &&
     ! git symbolic-ref --short -q HEAD &&
-    - info.run_refs(version/ref/git/branch) :: $
+    - show.run_refs(version/ref/git/branch) :: $
     """
   )
   @query(
@@ -1433,53 +1536,6 @@ fg    (__TODO, set,    channel) # put a process into the foreground of a shell (
     --------------------
 
     - See: https://git-scm.com/docs/giteveryday
-
-    # Info for refs
-    # ----------
-
-    # DONE
-    git for-each-ref --format='%(objectname:short)|%(refname:short)|%(upstream:short)|%(HEAD)|%(upstream:track,nobracket)|%(objectname)|%(authorname)|%(authoremail:trim)|%(authordate:iso-local)|%(committername)|%(committeremail:trim)|%(committerdate:iso-local)' refs/heads
-    git for-each-ref --format='%(contents:subject)' refs/heads
-    git for-each-ref --format='%(contents:body)' refs/heads
-    git for-each-ref --format='%(trailers:only)' refs/heads
-    git for-each-ref --format='%(contents:signature)' refs/heads
-      - refname:short [PKEY]    -> version.ref.id
-      - objectname:short [FKEY] -> version.id (commit this branch references)
-      - upstream [FKEY]         -> version.ref.remote.id (remote branch that this branch is tracking)
-
-    git for-each-ref --format='%(objectname:short)|%(refname:short)|%(HEAD)|%(objecttype)|%(objectname:short)|%(objectname)|%(*objectname:short)|%(*objectname)|%(taggername)|%(taggeremail:trim)|%(taggerdate:iso-local)|%(*authorname)|%(*authoremail:trim)|%(*authordate:iso-local)|%(*committername)|%(*committeremail:trim)|%(*committerdate:iso-local)|%(authorname)|%(authoremail:trim)|%(authordate:iso-local)|%(committername)|%(committeremail:trim)|%(committerdate:iso-local)' refs/tags
-    git for-each-ref --format='%(contents:subject)' refs/tags
-    git for-each-ref --format='%(contents:body)' refs/tags
-    git for-each-ref --format='%(trailers:only)' refs/tags
-    git for-each-ref --format='%(contents:signature)' refs/tags
-    git for-each-ref --format='%(*contents:subject)' refs/tags
-    git for-each-ref --format='%(*contents:body)' refs/tags
-    git for-each-ref --format='%(*trailers:only)' refs/tags
-    git for-each-ref --format='%(*contents:signature)' refs/tags
-      - refname:short [PKEY]                                  -> version.ref.id
-      [IF]
-        - objecttype                                          -> annotated ("tag") or lightweight ("commit") tag?
-      [is annotated; THEN]
-        - objectname... + *objectname...                      -> version.ref.obj.id[.full] + version.id[.full] [*objectname:short = FKEY]
-        - tagger... + *author... + *committer...              -> version.ref.author... + version.author.* + version.creator.*
-        - contents.../trailers... + *contents.../*trailers... -> version.ref.* + version.*
-      [is lightweight; THEN]
-        - objectname...                                       -> version.id[.full] [objectname:short = FKEY]
-        - author... + committer...                            -> version.author.* + version.creator.*
-        - contents.../trailers...                             -> version.*
-
-    # TODO
-    git for-each-ref --format='%(refname:short)|%(objectname:short)|%(HEAD)|%(objectname)|%(authorname)|%(authoremail:trim)|%(authordate:iso-local)|%(committername)|%(committeremail:trim)|%(committerdate:iso-local)' refs/remotes
-    git for-each-ref --format='%(contents:subject)' refs/remotes
-    git for-each-ref --format='%(contents:body)' refs/remotes
-    git for-each-ref --format='%(trailers:only)' refs/remotes
-    git for-each-ref --format='%(contents:signature)' refs/remotes
-      - refname:short [PKEY]    -> version.ref.remote.id
-      - objectname:short [FKEY] -> version.ref.remote.commit.id (commit this remote tracking branch references)
-
-    git for-each-ref --format='%(refname:short)|%(objectname:short)|%(objectname)' refs/stash
-      - refname:short [PKEY] -> git.stash.id
-      - objectname:short [FKEY] -> git.stash.commit.id
 
     # Write/Modify Commands (workflow)
     # ----------
