@@ -800,6 +800,13 @@ class ManifestModule:
             properties. The default is ':none'.
             """)
 
+        item_set_parser.add_argument('-G', '--grid',
+            action='store_true', default=False,
+            help="""
+            Render lines between rows of the table (useful for wide tables, but
+            almost doubles the table hight).
+            """)
+
         mod.phase.configure_phase_control_args(item_set_parser)
 
     def configure(self, *, mod: Namespace, env: Namespace, **_):
@@ -1006,7 +1013,9 @@ class ManifestModule:
             if transition_to_phase(
                 MANIFEST_LIFECYCLE.PHASES.RENDER, not output_is_forward
             ):
-                output = mod.tr.render_table(output, has_headers=True)
+                output = mod.tr.render_table(
+                    output, has_headers=True, show_lines=args.grid
+                )
 
         return output
 
