@@ -386,21 +386,19 @@ class Manifest:
         left_item_set = self._compute_set(ops_btree['left'])
         right_item_set = self._compute_set(ops_btree['right'])
 
+        combined_set = {}
+        combined_set.update(left_item_set)
+        combined_set.update(right_item_set)
+
         if ops_btree['operator'] == '&':
             return {
-                item_set_name: left_item_set[item_set_name]
-                for item_set_name in left_item_set.keys() & right_item_set.keys()
+                item_name: item
+                for item_name, item in combined_set.items()
+                if item_name in left_item_set and item_name in right_item_set
             }
 
         elif ops_btree['operator'] == '|':
-            return {
-                item_set_name: (
-                    left_item_set[item_set_name]
-                    if item_set_name in left_item_set
-                    else right_item_set[item_set_name]
-                )
-                for item_set_name in left_item_set.keys() | right_item_set.keys()
-            }
+            return combined_set
 
         else:
             raise LIMARException(
