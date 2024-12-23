@@ -735,7 +735,7 @@ TODO:
       - slots          = /process/environment
       - args           = /process/parameter
       - forwarded-data = /channel/process
-      - external-state = various (all subjects)
+      - external-state = various (any subject(s))
 
     > Args shouldn't need to be accessed. Forwarded data, slots, config, and external
       state should provide sufficient information to run a query or action.
@@ -1543,8 +1543,7 @@ fg    (__TODO, set,    channel) # put a process into the foreground of a shell (
     # Might require `--no-optional-locks`, ie. don't write things you don't need to
 
     git clone $remote_url $local_path
-    git fetch -p
-    git fetch --tags -f
+    git fetch --tags -p -f
 
     git branch $branch $source_ref
     git branch -m # rename branch
