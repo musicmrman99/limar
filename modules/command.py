@@ -548,23 +548,9 @@ class CommandModule:
         return ['log', 'cache', 'tr', 'phase', 'manifest', 'command-manifest']
 
     def aliases(self):
-        return ['show']
+        return ['show', 'run']
 
     def configure_args(self, *, mod: Namespace, parser: ArgumentParser, **_):
-        parser.add_argument('-q', '--query',
-            action='store_true', default=False,
-            help="""
-            Fail before running any commands if the specified commands are not
-            queries.
-            """)
-
-        parser.add_argument('-a', '--action',
-            action='store_true', default=False,
-            help="""
-            Fail before running any commands if the specified commands are not
-            actions.
-            """)
-
         parser.add_argument('-c', '--command', metavar='COMMAND_REF',
             action='append', default=[],
             help="""
@@ -606,6 +592,7 @@ class CommandModule:
 
     def __call__(self, *,
             mod: Namespace,
+            invoked_as: str,
             args: Namespace,
             forwarded_data: Any,
             output_is_forward: bool,
@@ -626,8 +613,8 @@ class CommandModule:
 
         if transition_to_phase(INFO_LIFECYCLE.PHASES.SUBJECT):
             allowed_types = [
-                *(['query'] if args.query else []),
-                *(['action'] if args.action else [])
+                *(['query'] if invoked_as == 'show' else []),
+                *(['action'] if invoked_as == 'run' else [])
             ]
             subject = self.effective_subject_for(command_items, args.subject)
             output = subject
