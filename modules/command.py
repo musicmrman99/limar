@@ -52,6 +52,7 @@ SubcommandResult = SystemSubcommandResult | LimarSubcommandResult
 
 class CommandRunner:
     def __init__(self,
+            subject_items: ItemSet,
             command_items: ItemSet,
             command_items_id: str,
             mod: Namespace
@@ -62,6 +63,7 @@ class CommandRunner:
         self._command_tr = CommandTransformer()
 
         # Static
+        self._subject_items = subject_items
         self._command_items = command_items
 
         # Build the partially ordered dep list across the whole command item set
@@ -90,6 +92,7 @@ class CommandRunner:
     def new_batch(self, subject) -> "CommandBatch":
         return CommandBatch(
             subject,
+            self._subject_items,
             self._command_items,
             self._command_order,
 
@@ -341,6 +344,7 @@ class CommandRunner:
 class CommandBatch:
     def __init__(self,
             subject: list[str],
+            subject_items: ItemSet,
             command_items: ItemSet,
             command_order: tuple[str, ...],
 
@@ -355,6 +359,7 @@ class CommandBatch:
 
         # Static
         self._subject = subject
+        self._subject_items = subject_items
         self._command_items = command_items
         self._command_order = command_order
 
@@ -491,19 +496,29 @@ class CommandBatch:
         merged_query_output: dict[str | tuple[str, ...], Entity] = {}
         for item, entities in query_outputs:
             self._mod.log.trace(
-                f"Subjects for item '{item['ref']}'", item['subjects']
+                f"Subjects for item '{item['ref']}':", item['subjects']
             )
+
+            # Get ID field names for the command's subject
             try:
-                id_fields = tuple(item['subjects'][tag] for tag in subject)
+                id_fields = tuple(
+                    self._subject_items[tag]['id']
+                    for tag in subject
+                )
             except KeyError as e:
                 raise LIMARException(
-                    f"Query '{item['ref']}' missing field mapping for subject"
+                    f"Command '{item['ref']}' includes undeclared subject"
                     f" '{e.args[0]}'."
                     f" If you did not intend '{e.args[0]}' to be treated as a"
                     " subject, then re-check your command line. If that should"
                     " be a valid subject, then there may be an issue with the"
-                    " command manifest."
+                    " subject manifest or command manifest."
                 )
+            self._mod.log.trace(
+                f"Subject ID fields for item '{item['ref']}':", id_fields
+            )
+
+            # Get ID field values from each output entity
             for entity_data in entities:
                 try:
                     id = tuple(entity_data[id_field] for id_field in id_fields)
@@ -574,6 +589,15 @@ class CommandModule:
     def start(self, *, mod: Namespace, **_):
         self._mod = mod
 
+        subject_items = self._mod.manifest.get_item_set('subject')
+        subjects = {
+            ref: item
+            for ref, item in subject_items.items()
+            # Skip anything that wasn't set and didn't fail validation due to
+            # double-underscore tags.
+            if 'id' in item
+        }
+
         command_manifest_digest = mod.manifest.get_manifest_digest('command')
         command_items: ItemSet = mod.manifest.get_item_set('command')
         commands = {
@@ -585,6 +609,7 @@ class CommandModule:
         }
 
         self._command_runner = CommandRunner(
+            subjects,
             commands,
             command_manifest_digest,
             mod

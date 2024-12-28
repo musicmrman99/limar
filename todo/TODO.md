@@ -12,7 +12,7 @@
 - Rearrange into LIMAR (Local Information Management, Architecture, and Representation system)
   - goals:
     - management - the continuous adjustment of the more mutable configuration of a system to meet the needs of its stakeholders
-    - architecture - the less mutable configuration of a system
+    - architecture - an understanding of, and decision-making support for, the less mutable configuration of a system
     - representation - the display of the configuration of a system and changes to it in a comprehensible manner
 
     - in this context, configuration = structure and function (to meet context)

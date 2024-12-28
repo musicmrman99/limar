@@ -3,7 +3,10 @@ from modules.manifest_modules import (
     # Generic
     tags,
 
-    # Tools and Commands
+    # Subjects
+    subject,
+
+    # Commands
     tool,
     command,
     query,
@@ -22,9 +25,18 @@ class CommandManifestModule:
         return ['manifest']
 
     def configure(self, *, mod: Namespace, **_):
+        # Generic
         mod.manifest.add_context_modules(
-            tags.Tags,
+            tags.Tags
+        )
 
+        # Subjects
+        mod.manifest.add_context_modules(
+            subject.Subject
+        )
+
+        # Commands
+        mod.manifest.add_context_modules(
             tool.Tool,
             command.Command,
             query.Query,

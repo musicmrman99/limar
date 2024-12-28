@@ -53,16 +53,15 @@ class Command:
     def on_exit_manifest(self, items, item_sets, *_, **__):
         # Verify that required contexts were declared for all commands
         for item in items.values():
-            if (
-                'command' in item['tags'] and
-                'command' not in item and
-
-                # Ignore any items with a tag that starts with `__`
-                all(
-                    not name.startswith('__')
-                    for name in item['tags'].raw().keys()
-                )
+            # Ignore any items with a tag that starts with `__`
+            if any(
+                name.startswith('__')
+                for name in item['tags'].raw().keys()
             ):
+                continue
+
+            # Verify
+            if 'command' in item['tags'] and 'command' not in item:
                 raise LIMARException(
                     "@command context requires a command to be declared for"
                     f" item '{item['ref']}'"

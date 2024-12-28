@@ -162,7 +162,7 @@ class CommandTransformer:
         all_subjects = set() # Values ignored
         for command_item in command_items.values():
             if 'subjects' in command_item:
-                all_subjects.update(command_item['subjects'].keys())
+                all_subjects.update(command_item['subjects'])
 
         return [
             single_subject
@@ -171,15 +171,16 @@ class CommandTransformer:
         ]
 
     def primary_subject_of(self, command_items: dict[str, Any]) -> list[str]:
-        subject: dict[str, Any] = {} # Values ignored
+        primary_subject: dict[str, Any] = {} # Values ignored
 
         for command_item in command_items.values():
             if 'primarySubject' in command_item:
-                subject[command_item['primarySubject']] = None
+                primary_subject[command_item['primarySubject']] = None
             elif 'subjects' in command_item:
-                subject.update(command_item['subjects'])
+                for subject in command_item['subjects']:
+                    primary_subject[subject] = None
 
-        return list(subject.keys())
+        return list(primary_subject.keys())
 
     # To Runnable Command
     # --------------------

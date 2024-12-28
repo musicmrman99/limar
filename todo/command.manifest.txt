@@ -41,129 +41,22 @@ The LIMAR Model consists of a hierarchy of subjects. The first level of nodes ar
 /change   - Changes to data and other relevant aspects of tracking those changes.
 ```
 
-The full model is:
-===== TODO =========================================================================================
-This is static for now, but should be retrievable using manifest commands, or from the `/subject`
-subject.
-====================================================================================================
-
-```
-/subject
-
-/hardware
-/agent {
-  /passive (hardware? alias: /store)
-    > passive-active/attachment
-  /active (hardware? alias: /host)
-}
-
-/identity (alias: identity and trust, identity and access, iam) {
-  /user
-  /group
-  /role
-}
-
-/process (host? installation? configuration? command? identity? alias: proc) {
-  /kernel
-  /service     (kernel? async operations?)
-  /application (kernel? sync operations? alias: app)
-  /operation   (kernel? service (optional)? alias: op)
-
-  /process/content {
-    # sub-process that depends on and augments a parent process
-    /module
-
-    # per-process /configuration ('pushed in')
-    /parameter (alias: param)
-    # per-process /configuration, cloned from parent process and used as needed ('pulled in'); eg. env vars, current dir, vfs root, etc.
-    /environment (alias: env)
-
-    # current state (including status)
-    /state
-    # historical state
-    /log
-  }
-}
-
-# I/O
-/channel {
-  # cross-host channel = network I/O (eg. TCP/UDP connections)
-  /host {
-    /config
-  }
-
-  # cross-process channel = I/O (eg. stdin/out/err, keyboard, mouse, IPC)
-  /process {
-    /config
-  }
-}
-
-/data (store? path?) {
-  # Basic
-  # ----------
-  /text
-  /number
-  /time
-
-  # Address of data
-  /path
-  /url
-
-  # Process Data -> Process transition
-  /command
-
-  /email
-  /word
-
-  # Compound
-  # ----------
-  /host/image (project? version?)
-
-  /filesystem (alias: fs)
-  /directory (alias: dir)
-  /file
-
-  # a collection of related entities
-  /project
-
-  # source code, assets, etc.
-  /source (project? version?)
-  # binaries, archives/packages, bundles, disk images, etc.
-  /artifact (project? version?)
-  # running instances of an artifact
-  /deployment (artifact? alias: instance, installation)
-  # parameter and environment bindings for a given deployment
-  /configuration (artifact? deployment (optional)? alias: config, conf, cfg)
-}
-
-# Versions and Change
-# Eg. file history, tagged versions, tasks, (the act of) deployments, etc.
-/change {
-  /tracker (alias: repo)
-  /version {
-    /reference (alias: ref)
-  }
-  /delta
-}
-
-# Other stuff (UNCATEGORISED)
-/quality # tests, validity, integrity, 7 Cs, etc.
-/knowledge # comments, documentation strings, readmes, licencing, design information and visualisations, etc.
-```
+For the full model, see the subject manifest, or run `lm manifest item-set subject`.
 
 Self-Classification
 --------------------------------------------------
 
 LIMAR differentiates between what a thing *is* and what a thing *operates on*. Tags without a name
-represent the *target* entities of the command. Unless overridden, all commands are assumed to be
-`is: /process/operation`.
+represent the subjects of the target entities of the command. The special `is` tag (which must have
+a value) represents the subject of the command itself. Unless overridden, all commands are assumed
+to be `is: /process/operation`.
 """
 
 # Tags
 # ----------------------------------------------------------------------------------------------------
 
 :__DUPLICATE (description: """Unused because it only contains functionality that another tool has, and the other tool does it better""")
-:__OLD (description: """Out of date, and should no longer be used""")
+:__OLD (description: """Deprecated, or should otherwise no longer be used""")
 :__TODO (description: """Not fully defined in the manifest yet""")
 
 # Hardware
@@ -685,14 +578,12 @@ reboot     (__TODO, restart,      kernel                         ) # reboot the 
 #   (/process/environment)
 # --------------------------------------------------
 
-tty        (__TODO, show, process/environment, terminal       ) # return terminal name, eg. '/dev/tty4' from WSL
-stty/show  (__TODO, show, process/environment, terminal       ) # get terminal options
-umask/show (__TODO, show, process/environment, identity/policy) # show the file permissions mask (ie. excluded perms) for creating files
+tty        (__TODO, show, /process/environment, terminal       ) # return terminal name, eg. '/dev/tty4' from WSL
+stty/show  (__TODO, show, /process/environment, terminal       ) # get terminal options
+umask/show (__TODO, show, /process/environment, identity/policy) # show the file permissions mask (ie. excluded perms) for creating files
 
 @tool (command: env, description: """Print environment variables.""")
-@command(
-  command: """env"""
-)
+@command(command: """env""")
 @query(
   parse: """
     [
@@ -700,30 +591,30 @@ umask/show (__TODO, show, process/environment, identity/policy) # show the file 
       | split("\n")[]
       | capture("^(?<name>[^=]*)=(?<value>.*)$")
       | {
-        "process.env.var.id":    (.name),
-        "process.env.var.value": (.value)
+        "process.environment.id":    (.name),
+        "process.environment.value": (.value)
       }
     ]
   """
 )
-@subjects (process/env/var: process.env.var.id)
+@subjects (/process/environment)
 @primary-subject (process/env/var)
-env/show   (__TODO, show, process/environment, var            ) # set the file permissions mask (ie. excluded perms) for creating files
+env/show   (__TODO, show, /process/environment) # show the environment variables of the current process
 
 @tool (command: pwd, description: """Print working directory.""")
 @command (command: """pwd""")
-@query (parse: """[{ "dir.id": .[0].stdout }]""")
-@subjects (dir: dir.id)
+@query (parse: """[{ "directory.id": .[0].stdout }]""")
+@subjects (/data/directory)
 @primary-subject (dir)
-pwd        (__TODO, show, process/environment, dir            ) # print working directory
+pwd        (__TODO, show, /process/environment, /data/structure/directory) # print working directory
 
-stty/set   (__TODO, set,  process/environment, terminal       ) # set terminal options
-tput       (__TODO, set,  process/environment, terminal       ) # set terminal options (see `tput`)
-tset       (__TODO, set,  process/environment, terminal       ) # set terminal options (see `tput`)
-reset      (__TODO, set,  process/environment, terminal       ) # reset terminal options (see `tput`)
-umask/set  (__TODO, set,  process/environment, identity/policy) # set the file permissions mask (ie. excluded perms) for creating files
-export     (__TODO, set,  process/environment, var            ) # make environment variable available to programs [sh and dirivatives]
-setenv     (__TODO, set,  process/environment, var            ) # csh-style equivalent of the bash-style `export` [csh and dirivatives]
+stty/set   (__TODO, set,  /process/environment, terminal       ) # set terminal options
+tput       (__TODO, set,  /process/environment, terminal       ) # set terminal options (see `tput`)
+tset       (__TODO, set,  /process/environment, terminal       ) # set terminal options (see `tput`)
+reset      (__TODO, set,  /process/environment, terminal       ) # reset terminal options (see `tput`)
+umask/set  (__TODO, set,  /process/environment, /identity/policy) # set the file permissions mask (ie. excluded perms) for creating files
+export     (__TODO, set,  /process/environment, var            ) # make environment variable available to programs [sh and dirivatives]
+setenv     (__TODO, set,  /process/environment, var            ) # csh-style equivalent of the bash-style `export` [csh and dirivatives]
 # Shell options?? (eg. pipefail, fail on error, etc.)
 
 #"""
@@ -793,19 +684,11 @@ TODO:
   - @context(setter-for: <slot_name>) # For where it can be used, eg. git, but not pwd/cd, env/export, etc.
 """
 
-@tool (
-  command: cd
-  description: """Change directory."""
-)
-@command(
-  command: """cd {{ context.get(dir/current) : ."dir.id" }}"""
-)
-#@action(
-#)
-@subjects(
-  dir: dir.id
-)
-cd         (__TODO, set,  process/environment, dir            ) # change directory
+@tool (command: cd, description: """Change directory.""")
+@command (command: """cd {{ context.get(dir/current) : ."dir.id" }}""")
+@action
+@subjects (dir: dir.id)
+cd (__TODO, set,  /process/environment, /data/structure/directory) # change directory
 
 clear (__TODO, delete, channel/content) # clear previous output in the terminal
 bg    (__TODO, start,  process) # resume a process in the background of a shell
@@ -839,28 +722,25 @@ fg    (__TODO, set,    channel) # put a process into the foreground of a shell (
   # General Info
   # --------------------
 
-  @command(
+  @command (
     command: """
       pwd &&
     ! git rev-parse --show-toplevel &&
     ! git status --porcelain=v2 --untracked-files=all
     """
   )
-  @query(
+  @query (
     parse: """
       [{
-        "dir.id": (.[0].stdout),
-        "repo.id": (if .[1].status == 0 then .[1].stdout else null end),
+        "directory.id": (.[0].stdout),
+        "tracker.id":   (if .[1].status == 0 then .[1].stdout else null end),
 
-        "repo.isClean": (if .[2].status == 0 then .[2].stdout == "" else null end)
+        "tracker.isClean": (if .[2].status == 0 then .[2].stdout == "" else null end)
       }]
     """
   )
-  @subjects(
-    dir: dir.id
-    repo: repo.id
-  )
-  @primary-subject(repo)
+  @subjects (/data/structure/directory, /change/tracker)
+  @primary-subject (/change/tracker)
   repo/git
 
   # Deltas
@@ -1016,78 +896,20 @@ fg    (__TODO, set,    channel) # put a process into the foreground of a shell (
       )
       | map(
         {
-          "dir.id": ($dirPath),
-          "repo.id": ($repoPath)
+          "directory.id": ($dirPath),
+          "tracker.id":   ($repoPath)
         } + .
       )
     """
   )
   @subjects(
-    dir: dir.id
-    repo: repo.id
-    delta: delta.id
-    file: file.id
+    /data/structure/directory
+    /data/structure/file
+    /change/tracker
+    /change/delta
   )
-  @primary-subject(file)
+  @primary-subject(/data/structure/directory)
   delta/file/git/status
-
-  @command(
-    command: """
-      pwd &&
-    ! git rev-parse --show-toplevel &&
-    ! git for-each-ref --format='%(objectname:short)|%(refname:short)|%(upstream:short)|%(upstream:track,nobracket)' refs/heads
-    """
-  )
-  @query(
-    parse: """
-      [
-        .[0].stdout,
-        (if .[1].status == 0 then .[1].stdout else null end)
-      ] as [
-        $dirPath,
-        $repoPath
-      ]
-      | [
-        .[2].stdout
-        | split("\n")[]
-        | split("|")
-        | {
-          "version.id":            (.[0]),
-          "version.ref.id":        (.[1]),
-          "version.ref.remote.id": (.[2]),
-
-          "version.ref.ahead.remote":  (
-            .[3]
-            | sub("^(ahead (?<ahead>[0-9]*))?(, )?(behind (?<behind>[0-9]*))?$";"\(.ahead)")
-            | if . != "" and . != "null" then tonumber else 0 end
-          ),
-          "version.ref.behind.remote": (
-            .[3]
-            | sub("^(ahead (?<ahead>[0-9]*))?(, )?(behind (?<behind>[0-9]*))?$";"\(.behind)")
-            | if . != "" and . != "null" then tonumber else 0 end
-          )
-        }
-      ]
-      | map(
-        {
-          "dir.id": ($dirPath),
-          "repo.id": ($repoPath)
-        } + .
-      )
-    """
-  )
-  @subjects(
-    dir: dir.id
-    repo: repo.id
-    version: version.id
-    version/ref: version.ref.id
-    delta: delta.id
-  )
-  @primary-subject(version)
-  delta/version/git/branch/remote
-
-  # Versions and Version References
-  # --------------------
 
   # ================================================================================================
   # ISSUE:
@@ -1113,6 +935,79 @@ fg    (__TODO, set,    channel) # put a process into the foreground of a shell (
   # - Could you tell it to omit the entries in the middle, or is that the *whole point* of a delta -
   # the bit between the two
   # ================================================================================================
+
+  @command(
+    command: """
+      pwd &&
+    ! git rev-parse --show-toplevel &&
+    ! git for-each-ref --format='%(refname:short)|%(upstream:short)|%(upstream:track,nobracket)' refs/heads
+    """
+  )
+  @query(
+    parse: """
+      [
+        .[0].stdout,
+        (if .[1].status == 0 then .[1].stdout else null end)
+      ] as [
+        $dirPath,
+        $repoPath
+      ]
+      | [
+        .[2].stdout
+        | split("\n")[]
+        | split("|")
+        | [
+          (
+            .[2]
+            | sub("^(ahead (?<ahead>[0-9]*))?(, )?(behind (?<behind>[0-9]*))?$";"\(.ahead)")
+            | if . != "" and . != "null" then tonumber else 0 end
+          ),
+          (
+            .[2]
+            | sub("^(ahead (?<ahead>[0-9]*))?(, )?(behind (?<behind>[0-9]*))?$";"\(.behind)")
+            | if . != "" and . != "null" then tonumber else 0 end
+          )
+        ] as [
+          $commitsAhead,
+          $commitsBehind
+        ]
+        | [
+          {
+            "delta.id":       (.[0]+":"+.[1]),
+            "version.ref.id": (.[0]),
+
+            "delta.version.ahead":  $commitsAhead,
+            "delta.version.behind": $commitsBehind
+          },
+          {
+            "delta.id":       (.[0]+":"+.[1]),
+            "version.ref.id": (.[1]),
+
+            "delta.version.ahead":  $commitsAhead,
+            "delta.version.behind": $commitsBehind
+          }
+        ]
+      ]
+      | flatten
+      | map(
+        {
+          "directory.id": ($dirPath),
+          "tracker.id":   ($repoPath)
+        } + .
+      )
+    """
+  )
+  @subjects(
+    /data/structure/directory
+    /change/tracker
+    /change/version/reference
+    /change/delta
+  )
+  @primary-subject(/change/version)
+  delta/version/git/branch/remote
+
+  # Versions and Version References
+  # --------------------
 
   @command(
     command: """
@@ -1164,21 +1059,22 @@ fg    (__TODO, set,    channel) # put a process into the foreground of a shell (
       ]
       | map(
         {
-          "dir.id": ($dirPath),
-          "repo.id": ($repoPath)
+          "directory.id": ($dirPath),
+          "tracker.id":   ($repoPath)
         } + .
       )
     """
   )
   @subjects(
-    dir: dir.id
-    repo: repo.id
-    version: version.id
-    version/ref: version.ref.id
+    /data/structure/directory
+    /change/tracker
+    /change/version
+    /change/version/reference
   )
-  @primary-subject(version/ref)
+  @primary-subject(/change/version/reference)
   version/ref/git/branch/remote
 
+  # TODO: Does this need to be split into two entities per branch (local + remote)?
   @command(
     command: """
       pwd &&
@@ -1233,26 +1129,26 @@ fg    (__TODO, set,    channel) # put a process into the foreground of a shell (
       ]
       | map(
         {
-          "dir.id": ($dirPath),
-          "repo.id": ($repoPath)
+          "directory.id": ($dirPath),
+          "tracker.id":   ($repoPath)
         } + .
       )
     """
   )
   @subjects(
-    dir: dir.id
-    repo: repo.id
-    version: version.id
-    version/ref: version.ref.id
+    /data/structure/directory
+    /change/tracker
+    /change/version
+    /change/version/reference
   )
-  @primary-subject(version/ref)
+  @primary-subject(/change/version/reference)
   version/ref/git/branch
 
   @command(
     command: """
       pwd &&
     ! git rev-parse --show-toplevel &&
-    ! git for-each-ref --format='%(objectname:short)|%(refname:short)|%(HEAD)|%(objecttype)|%(objectname:short)|%(objectname)|%(*objectname:short)|%(*objectname)|%(taggername)|%(taggeremail:trim)|%(taggerdate:iso-local)|%(*authorname)|%(*authoremail:trim)|%(*authordate:iso-local)|%(*committername)|%(*committeremail:trim)|%(*committerdate:iso-local)|%(authorname)|%(authoremail:trim)|%(authordate:iso-local)|%(committername)|%(committeremail:trim)|%(committerdate:iso-local)' refs/tags &&
+    ! git for-each-ref --format='%(refname:short)|%(HEAD)|%(objecttype)|%(objectname:short)|%(objectname)|%(*objectname:short)|%(*objectname)|%(taggername)|%(taggeremail:trim)|%(taggerdate:iso-local)|%(*authorname)|%(*authoremail:trim)|%(*authordate:iso-local)|%(*committername)|%(*committeremail:trim)|%(*committerdate:iso-local)|%(authorname)|%(authoremail:trim)|%(authordate:iso-local)|%(committername)|%(committeremail:trim)|%(committerdate:iso-local)' refs/tags &&
     ! git for-each-ref --format='%(contents:subject)==========' refs/tags &&
     ! git for-each-ref --format='%(contents:body)==========' refs/tags &&
     ! git for-each-ref --format='%(trailers:only)==========' refs/tags &&
@@ -1292,44 +1188,43 @@ fg    (__TODO, set,    channel) # put a process into the foreground of a shell (
         | $coreInfo
         | split("|")
         | {
-          "version.id":            (.[0]),
-          "version.ref.id":        (.[1]),
+          "version.ref.id":        (.[0]),
 
-          # Even if .[2] == "+", then it is still not in this dir (dir.id) or repo (repo.id)
-          "version.ref.isCurrent": (.[2] == "*")
+          # Even if .[1] == "+", then it is still not in this dir (dir.id) or repo (repo.id)
+          "version.ref.isCurrent": (.[1] == "*")
         } + (
-          if .[3] == "tag" then {
-            "version.ref.obj.id":        (.[4]),
-            "version.ref.obj.id.full":   (.[5]),
-            "version.ref.author.name":   (.[8]),
-            "version.ref.author.email":  (.[9]),
-            "version.ref.authored.date": (.[10]),
+          if .[2] == "tag" then {
+            "version.ref.obj.id":        (.[3]),
+            "version.ref.obj.id.full":   (.[4]),
+            "version.ref.author.name":   (.[7]),
+            "version.ref.author.email":  (.[8]),
+            "version.ref.authored.date": (.[9]),
             "version.ref.summary":       ($subject),
             "version.ref.description":   (if $body != "" then $body else null end),
             "version.ref.footers":       ($trailers | split("\n")),
             "version.ref.signature":     (if $signature != "" then $signature else null end),
 
-            "version.id":                (.[6]),
-            "version.id.full":           (.[7]),
-            "version.author.name":       (.[11]),
-            "version.author.email":      (.[12]),
-            "version.authored.date":     (.[13]),
-            "version.creator.name":      (.[14]),
-            "version.creator.email":     (.[15]),
-            "version.created.date":      (.[16]),
+            "version.id":                (.[5]),
+            "version.id.full":           (.[6]),
+            "version.author.name":       (.[10]),
+            "version.author.email":      (.[11]),
+            "version.authored.date":     (.[12]),
+            "version.creator.name":      (.[13]),
+            "version.creator.email":     (.[14]),
+            "version.created.date":      (.[15]),
             "version.summary":           ($peeledSubject),
             "version.description":       (if $peeledBody != "" then $peeledBody else null end),
             "version.footers":           ($peeledTrailers | split("\n")),
             "version.signature":         (if $peeledSignature != "" then $peeledSignature else null end)
           } else {
-            "version.id":            (.[4]),
-            "version.id.full":       (.[5]),
-            "version.author.name":   (.[17]),
-            "version.author.email":  (.[18]),
-            "version.authored.date": (.[19]),
-            "version.creator.name":  (.[20]),
-            "version.creator.email": (.[21]),
-            "version.created.date":  (.[22]),
+            "version.id":            (.[3]),
+            "version.id.full":       (.[4]),
+            "version.author.name":   (.[16]),
+            "version.author.email":  (.[17]),
+            "version.authored.date": (.[18]),
+            "version.creator.name":  (.[19]),
+            "version.creator.email": (.[20]),
+            "version.created.date":  (.[21]),
             "version.summary":       ($subject),
             "version.description":   (if $body != "" then $body else null end),
             "version.footers":       ($trailers | split("\n")),
@@ -1339,19 +1234,19 @@ fg    (__TODO, set,    channel) # put a process into the foreground of a shell (
       ]
       | map(
         {
-          "dir.id": ($dirPath),
-          "repo.id": ($repoPath)
+          "directory.id": ($dirPath),
+          "tracker.id":   ($repoPath)
         } + .
       )
     """
   )
   @subjects(
-    dir: dir.id
-    repo: repo.id
-    version: version.id
-    version/ref: version.ref.id
+    /data/structure/directory
+    /change/tracker
+    /change/version
+    /change/version/reference
   )
-  @primary-subject(version/ref)
+  @primary-subject(/change/version/reference)
   version/ref/git/tag
 
   @command(
@@ -1381,19 +1276,19 @@ fg    (__TODO, set,    channel) # put a process into the foreground of a shell (
       ]
       | map(
         {
-          "dir.id": ($dirPath),
-          "repo.id": ($repoPath)
+          "directory.id": ($dirPath),
+          "tracker.id":   ($repoPath)
         } + .
       )
     """
   )
   @subjects(
-    dir: dir.id
-    repo: repo.id
-    version: version.id
-    version/ref: version.ref.id
+    /data/structure/directory
+    /change/tracker
+    /change/version
+    /change/version/reference
   )
-  @primary-subject(version/ref)
+  @primary-subject(/change/version/reference)
   version/ref/git/stash
 
   # Specific Entities
@@ -1410,20 +1305,20 @@ fg    (__TODO, set,    channel) # put a process into the foreground of a shell (
   @query(
     parse: """
       [{
-        "dir.id":     (.[0].stdout),
-        "repo.id":    (if .[1].status == 0 then .[1].stdout else null end),
-        "version.id": (if .[2].status == 0 then .[2].stdout else null end),
+        "directory.id": (.[0].stdout),
+        "tracker.id":   (if .[1].status == 0 then .[1].stdout else null end),
+        "version.id":   (if .[2].status == 0 then .[2].stdout else null end),
 
         "version.id.full": (if .[3].status == 0 then .[3].stdout else null end)
       }]
     """
   )
   @subjects(
-    dir: dir.id
-    repo: repo.id
-    version: version.id
+    /data/structure/directory
+    /change/tracker
+    /change/version
   )
-  @primary-subject(version)
+  @primary-subject(/change/version)
   version/current/git
 
   @command(
@@ -1438,8 +1333,8 @@ fg    (__TODO, set,    channel) # put a process into the foreground of a shell (
     parse: """
       [
         {
-          "dir.id":         (.[0].stdout),
-          "repo.id":        (if .[1].status == 0 then .[1].stdout else null end),
+          "directory.id":   (.[0].stdout),
+          "tracker.id":     (if .[1].status == 0 then .[1].stdout else null end),
           "version.ref.id": (if .[2].status == 0 and .[2].stdout != "" then .[2].stdout else null end)
         } + (
           [.[3].stdout, .[2].stdout] as [$branches, $curBranch]
@@ -1449,11 +1344,11 @@ fg    (__TODO, set,    channel) # put a process into the foreground of a shell (
     """
   )
   @subjects(
-    dir: dir.id
-    repo: repo.id
-    version/ref: version.ref.id
+    /data/structure/directory
+    /change/tracker
+    /change/version/reference
   )
-  @primary-subject(version/ref)
+  @primary-subject(/change/version/reference)
   version/ref/current/git/branch
 
   @command(
@@ -1466,18 +1361,18 @@ fg    (__TODO, set,    channel) # put a process into the foreground of a shell (
   @query(
     parse: """
       [{
-        "dir.id":         (.[0].stdout),
-        "repo.id":        (if .[1].status == 0 then .[1].stdout else null end),
+        "directory.id":   (.[0].stdout),
+        "tracker.id":     (if .[1].status == 0 then .[1].stdout else null end),
         "version.ref.id": (if .[2].status == 0 and .[2].stdout != "" then .[2].stdout else null end)
       }]
     """
   )
   @subjects(
-    dir: dir.id
-    repo: repo.id
-    version/ref: version.ref.id
+    /data/structure/directory
+    /change/tracker
+    /change/version/reference
   )
-  @primary-subject(version/ref)
+  @primary-subject(/change/version/reference)
   version/ref/current/git/tag
 
   @command(
@@ -1501,8 +1396,8 @@ fg    (__TODO, set,    channel) # put a process into the foreground of a shell (
           | select(startswith("tag: "))
           | sub("^tag: ";"")
           | {
-            "dir.id":         ($_0.stdout),
-            "repo.id":        (if $_1.status == 0 then $_1.stdout else null end),
+            "directory.id":   ($_0.stdout),
+            "tracker.id":     (if $_1.status == 0 then $_1.stdout else null end),
             "version.id":     (if $_2.status == 0 and $_2.stdout != "" then $_2.stdout | split("\n")[1] else null end),
             "version.ref.id": (.),
 
@@ -1512,8 +1407,8 @@ fg    (__TODO, set,    channel) # put a process into the foreground of a shell (
       ) + (
         if .[5].status == 0 and .[5].stdout != "" then [
           {
-            "dir.id":         (.[0].stdout),
-            "repo.id":        (if .[1].status == 0 then .[1].stdout else null end),
+            "directory.id":   (.[0].stdout),
+            "tracker.id":     (if .[1].status == 0 then .[1].stdout else null end),
             "version.id":     (if .[4].status == 0 and .[4].stdout != "" then .[4].stdout else null end),
             "version.ref.id": (.[5].stdout),
 
@@ -1524,11 +1419,11 @@ fg    (__TODO, set,    channel) # put a process into the foreground of a shell (
     """
   )
   @subjects(
-    dir: dir.id
-    repo: repo.id
-    version/ref: version.ref.id
+    /data/structure/directory
+    /change/tracker
+    /change/version/reference
   )
-  @primary-subject(version/ref)
+  @primary-subject(/change/version/reference)
   version/ref/latest/git/tag
 
   #"""

@@ -1,0 +1,143 @@
+#"""
+The subject manifest contains all of the 'things' in the LIMAR model. See the command manifest for
+details.
+"""
+
+# Tags
+# ----------------------------------------------------------------------------------------------------
+
+:__OLD (description: """Deprecated, or should otherwise no longer be used""")
+:__TODO (description: """Not fully defined in the manifest yet""")
+
+# The LIMAR Model
+# ----------------------------------------------------------------------------------------------------
+
+# NOTE: /subject is the subject of all subjects in this manifest
+/subject                        (id: """subject.id""")
+
+# Hardware and Agents
+# --------------------
+
+/hardware                       (id: """hardware.id""")
+@tags (/hardware) {
+  /agent                        (id: """agent.id""")
+  /agent/passive                (id: """store.id""") # TODO: alias: /store
+  /agent/active                 (id: """host.id""")  # TODO: alias: /host
+  /agent/attachment             (id: """agent.attachment.id""", /agent/passive, /agent/active)
+}
+
+# Identity and Access
+# --------------------
+
+/identity                       (id: """identity.id""") # TODO: alias: identity and trust, identity and access, iam
+/identity/user                  (id: """user.id""")
+/identity/group                 (id: """group.id""")
+/identity/role                  (id: """role.id""")
+/identity/policy                (id: """policy.id""")
+
+# Processes
+# --------------------
+
+@tags (
+    /agent/active,
+    /data/process/deployment,
+    /data/process/configuration,
+    /data/command,
+    /identity
+) {
+  /process                      (id: """process.id""")     # TODO: alias: proc
+  /process/kernel               (id: """kernel.id""")
+  /process/service              (id: """service.id""")     # TODO: kernel? async operations?
+  /process/application          (id: """application.id""") # TODO: kernel? sync operations? alias: app
+  /process/operation            (id: """operation.id""")   # TODO: kernel? service (optional)? alias: op
+}
+
+@tags (/process) {
+  /process/module               (id: """module.id""")      # Sub-process that depends on and augments a parent process
+  /process/parameter            (id: """parameter.id""")   # Per-process /data/configuration ('pushed in'); alias: param
+  /process/environment          (id: """environment.id""") # Per-process /data/configuration ('pulled in'); alias: env
+  /process/state                (id: """state.id""")       # Current state (including status)
+  /process/log                  (id: """log.id""")         # Historical state
+}
+
+# Channels
+# --------------------
+
+/channel                        (id: """channel.id""") # I/O
+# Cross-host channel = network I/O (eg. TCP/UDP connections)
+/channel/host                   (id: """channel.host.id""")
+/channel/host/config            (id: """channel.host.config.id""")
+# Cross-process channel = I/O (eg. stdin/out/err, keyboard, mouse, IPC)
+/channel/process                (id: """channel.process.id""")
+/channel/process/config         (id: """channel.process.config.id""")
+
+# Data
+# --------------------
+
+/data                           (__TODO)
+
+# Types
+/data/type/text                 (__TODO)
+/data/type/number               (__TODO)
+/data/type/time                 (__TODO)
+/data/type/word                 (__TODO)
+/data/type/email                (__TODO)
+/data/type/image                (__TODO)
+/data/type/audio                (__TODO)
+/data/type/video                (__TODO)
+/data/type/host/image           (__TODO)
+
+# Data identifiers and locators (these are IDs by definition, so they omit '.id' from the ID field name)
+/data/id                        (id: """id""")
+/data/id/path                   (id: """path""")
+/data/id/url                    (id: """url""")
+
+# Commands (/data for initiating a /process)
+# NOTE: /data/command is the subject of all of commands in the command manifest
+/data/command                   (id: """command.id""")
+
+# Compound
+@tags (/agent/passive, /data/id) {
+  /data/structure/filesystem    (id: """filesystem.id""") # TODO: alias: fs
+  /data/structure/directory     (id: """directory.id""")  # TODO: alias: dir
+  /data/structure/file          (id: """file.id""")
+
+  @tags (/change/version, /project) { # TODO: /project and /change/version are optional
+    # Manually created data; usually managed by a /change/tracker
+    # Eg. source code, assets, etc.
+    /data/process/source        (id: """source.id""")
+
+    # Built /data/source placed on an /agent/passive
+    # Eg. binaries, archives/packages, bundles, disk/machine images, etc.)
+    /data/process/artifact      (id: """artifact.id""")
+
+    # Runnable state of a /data/artifact placed on an /agent/passive that is attached to an /agent/active
+    /data/process/deployment    (id: """deployment.id""", /data/artifact) # alias: installation
+
+    # Parameter and environment bindings for a given /data/deployment, possibly itself coming from a
+    # /data/artifact
+    /data/process/configuration (id: """config.id""", /data/artifact, /data/deployment) # TODO: /data/deployment is many-to-many with this; alias: config, conf, cfg
+  }
+}
+
+# Changes and Versions
+# --------------------
+# Eg. file history, tagged versions, tasks, (the act of) deployments, etc.
+
+/change                         (id: """change.id""")
+/change/tracker                 (id: """tracker.id""") # TODO: alias: repo
+/change/version                 (id: """version.id""")
+/change/version/reference       (id: """version.ref.id""") # TODO: alias: ref
+/change/delta                   (id: """delta.id""")
+
+# Projects
+# --------------------
+# A planned and coordinated human endeavour
+
+/project                        (id: """project.id""")
+
+# Other Stuff (UNCATEGORISED)
+# --------------------
+
+/quality                        (__TODO) # tests, validity, integrity, 7 Cs, etc.
+/knowledge                      (__TODO) # comments, documentation strings, readmes, licencing, design information and visualisations, etc.
