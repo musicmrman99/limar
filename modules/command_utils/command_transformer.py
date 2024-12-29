@@ -345,7 +345,11 @@ class CommandTransformer:
                 (
                     match.group('module'),
                     match.group('method'),
-                    tuple(match.group('args').split(', ')),
+                    (
+                        tuple(match.group('args').split(', '))
+                        if len(match.group('args')) > 0
+                        else tuple()
+                    ),
                     match.groups()[4],
                     match.groups()[5]
                 )
