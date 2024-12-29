@@ -12,7 +12,7 @@ from modules.command_utils.cache_utils import CacheUtils
 
 # Types
 from argparse import ArgumentParser, Namespace
-from typing import Any, Callable, TypedDict
+from typing import Any, Callable, Sequence, TypedDict
 
 from modules.command_utils.command_types import (
     Command, QueryCommand, ActionCommand,
@@ -25,8 +25,9 @@ INFO_LIFECYCLE = PhaseSystem(
     f'{__name__}:lifecycle',
     (
         'INITIALISE',
-        'GET',
-        'SUBJECT',
+        'GET_INPUT',
+        'GET_COMMANDS',
+        'GET_SUBJECT',
         'RUN',
         'TABULATE',
         'RENDER'
@@ -101,13 +102,17 @@ class CommandRunner:
     # Command Runners
     # --------------------------------------------------
 
-    def run_query(self, ref: str, query: QueryCommand) -> list[Entity]:
+    def run_query(self,
+            ref: str,
+            query: QueryCommand,
+            input: Any
+    ) -> list[Entity]:
         """
-        Run the given query whose containing item has the given ref and return
-        the output.
+        Run the given query whose containing item has the given ref, passing the
+        given input, and return the output.
         """
 
-        command_outputs = self.run_command(ref, query)
+        command_outputs = self.run_command(ref, query, input)
 
         # Transform the output using the query's parse expression
         self._mod.log.trace('Query parser:', query['parse'])
@@ -120,13 +125,17 @@ class CommandRunner:
         self._mod.log.debug('Query output:', query_output)
         return query_output
 
-    def run_action(self, ref: str, action: ActionCommand) -> list[Entity] | None:
+    def run_action(self,
+            ref: str,
+            action: ActionCommand,
+            input: Any
+    ) -> list[Entity] | None:
         """
-        Run the given query whose containing item has the given ref and return
-        the output.
+        Run the given query whose containing item has the given ref, passing the
+        given input, and return the output.
         """
 
-        command_outputs = self.run_command(ref, action)
+        command_outputs = self.run_command(ref, action, input)
 
         # Transform the output using the action's parse expression if it has one
         action_output: list[Entity] | None
@@ -148,16 +157,32 @@ class CommandRunner:
 
         return action_output
 
-    def run_command(self, ref: str, command: Command) -> list[Any]:
+    def run_command(self,
+            ref: str,
+            command: Command,
+            input: Any
+    ) -> list[Any]:
         """
-        Run the given command whose containing item has the given ref and return
-        the output.
+        Run the given command whose containing item has the given ref, passing
+        the given input, and return the output.
         """
 
         # Evaluate parameters to arguments
         command_args: dict[Subquery, str] = {}
         for param in command['parameters']:
-            command_args[param] = self._invoke_limar_module(*param)['stdout']
+            if param[0] == '.':
+                output, error = input, None
+            else:
+                output, error = self._invoke_limar_module(*param[:3])
+
+            command_args[param] = self._transform_limar_module_output(
+                output, error,
+                *param[3:]
+            )['stdout']
+            self._mod.log.trace(
+                'Command argument:', param, '=', command_args[param]
+            )
+
             if not isinstance(command_args[param], str):
                 raise LIMARException(
                     f"Evaluation of command parameter {{{{"
@@ -275,8 +300,12 @@ class CommandRunner:
 
         # LIMAR subcommands are the same process as parameter evaluation, but
         # with support for one level of nesting in the arguments.
-        output = self._invoke_limar_module(
-            module, method, args, jqTransform, pqTransform
+        output, error = self._invoke_limar_module(module, method, args)
+        output = self._transform_limar_module_output(
+            output,
+            error,
+            jqTransform,
+            pqTransform
         )
 
         if output['status'] != 0 and not final_options['allowedToFail']:
@@ -290,52 +319,54 @@ class CommandRunner:
     def _invoke_limar_module(self,
             module: str,
             method: str,
-            args: tuple[str, ...],
-            jq_transform: str | None,
-            pq_transform: str | None
-    ) -> LimarSubcommandResult:
-        subcommand_output: Any | None = None
-        subcommand_error: Exception | None = None
+            args: tuple[str, ...]
+    ) -> tuple[Any | None, Exception | None]:
+        invokation_output: Any | None = None
+        invokation_error: Exception | None = None
 
-        # Invoke LIMAR service
-        # Should only be run if the service method being invoked isn't a
-        # query/command, or if it doesn't have caching enabled.
         try:
             limar_service_method = (
                 getattr(getattr(self._mod, module), method)
             )
-            subcommand_output = limar_service_method(*args)
-            subcommand_error = None
+            invokation_output = limar_service_method(*args)
+            invokation_error = None
             self._mod.log.debug(
-                'LIMAR invokation output (pre-transform): ',
-                subcommand_output
+                'LIMAR invokation output (pre-transform):',
+                invokation_output
             )
         except Exception as e:
-            subcommand_error = e
+            invokation_error = e
             self._mod.log.error(
-                'LIMAR invokation error (not transformed): ',
-                subcommand_error
+                'LIMAR invokation error (not transformed):',
+                invokation_error
             )
 
-        # Process LIMAR invokation output
-        if subcommand_error is None:
+        return invokation_output, invokation_error
+
+    def _transform_limar_module_output(self,
+            invokation_output: Any | None,
+            invokation_error: Any | None,
+            jq_transform: str | None,
+            pq_transform: str | None
+    ) -> LimarSubcommandResult:
+        if invokation_error is None:
             if jq_transform is not None:
-                subcommand_output = self._mod.tr.query(
-                    jq_transform, subcommand_output, lang='jq', first=True
+                invokation_output = self._mod.tr.query(
+                    jq_transform, invokation_output, lang='jq', first=True
                 )
             elif pq_transform is not None:
-                subcommand_output = self._mod.tr.query(
-                    pq_transform, subcommand_output, lang='yaql'
+                invokation_output = self._mod.tr.query(
+                    pq_transform, invokation_output, lang='yaql'
                 )
             self._mod.log.trace(
-                'LIMAR invokation output (post-transform): ',
-                subcommand_output
+                'LIMAR invokation output (post-transform):',
+                invokation_output
             )
 
         return {
-            'status': 0 if subcommand_error is None else 1,
-            'stdout': subcommand_output,
-            'stderr': subcommand_error
+            'status': 0 if invokation_error is None else 1,
+            'stdout': invokation_output,
+            'stderr': invokation_error
         }
 
 class CommandBatch:
@@ -414,7 +445,9 @@ class CommandBatch:
                     ))
                     self._cacheable.add(dep_ref)
 
-    def process(self) -> dict[str | tuple[str, ...], Entity]:
+    def process(self,
+            command_input: Any = None
+    ) -> dict[str | tuple[str, ...], Entity]:
         """
         Process the commands currently on the queue and return the results of
         those directly requested as an indexed list of entities.
@@ -460,14 +493,14 @@ class CommandBatch:
             runner = COMMAND_RUNNERS[command['type']]
             output: list[Entity]
             if not cacheable:
-                output = runner(command_ref, command)
+                output = runner(command_ref, command, command_input)
             else:
                 # No point in invalidating the caches of dependant commands
                 # if this one is not cacheable, as those commands are not
                 # cacheable either.
                 output = self._cache_utils.with_caching(
                     self._key_for_ref(command_ref),
-                    runner, [command_ref, command],
+                    runner, [command_ref, command, command_input],
                     invalid_on_run=(
                         map(self._key_for_ref, command['transitiveDependants'])
                     )
@@ -512,6 +545,13 @@ class CommandModule:
         return ['show', 'run']
 
     def configure_args(self, *, mod: Namespace, parser: ArgumentParser, **_):
+        parser.add_argument('-d', '--data',
+            action='append', default=[],
+            help="""
+            Add data to be passed into the command. If used multiple times, the
+            given data is merged before being passed to each matching command.
+            """)
+
         parser.add_argument('-c', '--command', metavar='COMMAND_REF',
             action='append', default=[],
             help="""
@@ -536,14 +576,16 @@ class CommandModule:
         self._mod = mod
 
         subject_items = self._mod.manifest.get_item_set('subject')
-        subjects = {
+        self._subject_items = {
             ref: item
             for ref, item in subject_items.items()
             # Skip anything that wasn't set and didn't fail validation due to
             # double-underscore tags.
             if 'id' in item
         }
-        self._subject_mapping = self._command_tr.subject_mapping_from(subjects)
+        self._subject_mapping = (
+            self._command_tr.subject_mapping_from(self._subject_items)
+        )
 
         command_manifest_digest = mod.manifest.get_manifest_digest('command')
         command_items: ItemSet = mod.manifest.get_item_set('command')
@@ -556,7 +598,7 @@ class CommandModule:
         }
 
         self._command_runner = CommandRunner(
-            subjects,
+            self._subject_items,
             commands,
             command_manifest_digest,
             mod
@@ -574,16 +616,42 @@ class CommandModule:
         # WARNING: THIS MUTATES STATE, even though it's used in `if` statements
         transition_to_phase = mod.phase.create_process(INFO_LIFECYCLE, args)
 
+        # FIXME:
+        # - getting entities requires dereferencing IDs
+        # - dereferencing IDs requires a subject
+        #   - as there is no unambiguous reverse mapping of ID -> command
+        # - getting the entities for a subject is exactly what this module is
+        #   for ... (ie. recursive definition)
+        #
+        # - unless inputs of 'partial' entities (aka. ID entities /
+        #   identities) is sufficient, eg. wrap the ID into an entity-like
+        #   structure and allow that as input if that's all the command requires
+        # - but how does it know what the ID field name should be? it varies by
+        #   command ...
+        #
+        # - it doesn't any more!
+
         output: Any = forwarded_data
 
-        if transition_to_phase(INFO_LIFECYCLE.PHASES.GET):
+        if transition_to_phase(INFO_LIFECYCLE.PHASES.GET_INPUT):
+            command_input = [
+                *(
+                    self._entities_from(forwarded_data)
+                    if forwarded_data is not None
+                    else []
+                ),
+                *self._entities_from(args.data)
+            ]
+            output = command_input
+
+        if transition_to_phase(INFO_LIFECYCLE.PHASES.GET_COMMANDS):
             if len(args.command) > 0:
                 command_items = mod.manifest.get_items(args.command)
             else:
                 command_items = self.commands_with_subject(args.subject)
             output = command_items
 
-        if transition_to_phase(INFO_LIFECYCLE.PHASES.SUBJECT):
+        if transition_to_phase(INFO_LIFECYCLE.PHASES.GET_SUBJECT):
             allowed_types = [
                 *(['query'] if invoked_as == 'show' else []),
                 *(['action'] if invoked_as == 'run' else [])
@@ -592,7 +660,12 @@ class CommandModule:
             output = subject
 
         if transition_to_phase(INFO_LIFECYCLE.PHASES.RUN):
-            output = self.run(command_items, subject, allowed_types)
+            output = self.run(
+                command_items,
+                subject,
+                allowed_types=allowed_types,
+                command_input=command_input
+            )
 
         # Format
         if transition_to_phase(
@@ -687,7 +760,8 @@ class CommandModule:
     def run(self,
             command_items: ItemSet,
             subject: list[str],
-            allowed_types: list[str] | None = None
+            allowed_types: list[str] | None = None,
+            command_input: Sequence[Entity | str] | str | None = None
     ) -> dict[str | tuple[str, ...], Entity]:
         """
         Run the given commands, using the given subject to index the resulting
@@ -717,4 +791,22 @@ class CommandModule:
 
         batch = self._command_runner.new_batch(subject)
         batch.add(*(command_ref for command_ref in command_items.keys()))
-        return batch.process()
+        return batch.process(command_input)
+
+    # Utils
+    # --------------------------------------------------
+
+    def _entities_from(self, data: Any) -> list[Entity]:
+        return [
+            (
+                self._command_tr.entity_from(
+                    self._subject_items,
+                    *([component] for component in entity_data.split('=', 1))
+                )
+                if isinstance(entity_data, str)
+                else entity_data
+            )
+            for entity_data in (
+                data if isinstance(data, list) else [data]
+            )
+        ]

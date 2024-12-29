@@ -1,5 +1,7 @@
 from itertools import chain, zip_longest
+import random
 import re
+import string
 
 from core.exceptions import LIMARException
 from core.utils import list_strip
@@ -15,112 +17,6 @@ from modules.command_utils.command_types import (
 )
 
 class CommandTransformer:
-    # Commands
-    # --------------------------------------------------
-
-    # Parsing
-    # --------------------
-
-    def parse(self, raw_command: str) -> CommandParseOnly:
-        # Split into subcommands
-        raw_subcommands = [
-            subcommand.strip()
-            for subcommand in re.split(
-                '[ \\n]&&[ \\n]',
-                raw_command
-            )
-        ]
-
-        # Parse each subcommand
-        subcommands: list[Subcommand] = [
-            {
-                'type': 'system',
-                'allowedToFail': False,
-                'parameters': [],
-                'subcommand': tuple()
-            }
-            for _ in range(len(raw_subcommands))
-        ]
-        for subcommand, raw_subcommand in zip(subcommands, raw_subcommands):
-            # Parse markers
-            if raw_subcommand[:1] == '!':
-                subcommand['allowedToFail'] = True
-                raw_subcommand = raw_subcommand[1:]
-
-            if raw_subcommand[:1] == '-':
-                cast(LimarSubcommand, subcommand)['type'] = 'limar'
-                raw_subcommand = raw_subcommand[1:]
-
-            if raw_subcommand[:1] == ' ':
-                raw_subcommand = raw_subcommand[1:]
-
-            # Parse system subcommand
-            if subcommand['type'] == 'system':
-                fragments, params = self._split_fragments_params(raw_subcommand)
-                system_subcommand: SystemSubcommandData = tuple(
-                    self._chain_fragments_params(fragments, params)
-                    for fragments, params in self._group_fragments_params(
-                        fragments, params, delim='[ \t\n]+', quote="[\"']"
-                    )
-                )
-
-                subcommand['parameters'] = list(
-                    {param: None for param in params}.keys()
-                )
-                subcommand['subcommand'] = system_subcommand
-
-            # Parse LIMAR subcommand
-            elif subcommand['type'] == 'limar':
-                match = re.match(
-                    "^(?P<module>[a-z0-9-]*)\\.(?P<method>[a-z0-9_]*)\\((?P<args>.*)\\) (: (?P<jqTransform>.*)|:: (?P<pqTransform>.*))$",
-                    raw_subcommand
-                )
-                if match is None:
-                    raise LIMARException(
-                        f"Failed to parse limar subcommand '{raw_subcommand}'"
-                    )
-                fragments, params = self._split_fragments_params(
-                    match.group('args')
-                )
-                limar_subcommand: LimarSubcommandData = (
-                    match.group('module'),
-                    match.group('method'),
-                    tuple(
-                        self._chain_fragments_params(fragments, params)
-                        for fragments, params in self._group_fragments_params(
-                            fragments, params, delim=', '
-                        )
-                    ),
-                    match.groups()[4],
-                    match.groups()[5]
-                )
-
-                subcommand['parameters'] = list(
-                    {param: None for param in params}.keys()
-                )
-                subcommand['subcommand'] = limar_subcommand
-
-        return {
-            'parameters': list({
-                param: None
-                for subcommand in subcommands
-                for param in subcommand['parameters']
-            }.keys()),
-            'subcommands': subcommands
-        }
-
-    # Checks
-    # --------------------
-
-    def is_runnable(self, item):
-        return (
-            'command' in item and     # @command
-            'type' in item['command'] # @query, @action, etc.
-        )
-
-    def command_type_of(self, command_item):
-        return command_item['command']['type']
-
     # Subjects
     # --------------------------------------------------
 
@@ -187,6 +83,16 @@ class CommandTransformer:
     # Entities
     # --------------------------------------------------
 
+    def entity_from(self,
+            subject_items: dict[str, Any],
+            resolved_subject: list[str],
+            ids: list[str]
+    ) -> dict[str, str]:
+        return {
+            subject_items[subject_entry]['id']: id
+            for subject_entry, id in zip(resolved_subject, ids)
+        }
+
     def merge_entities(self,
             subject_items: dict[str, Any],
             entities: list[Entity],
@@ -235,6 +141,114 @@ class CommandTransformer:
             merged_entities[id].update(entity_data)
 
         return merged_entities
+
+    # Commands
+    # --------------------------------------------------
+
+    # Parsing
+    # --------------------
+
+    def parse(self, raw_command: str) -> CommandParseOnly:
+        # Split into subcommands
+        raw_subcommands = [
+            subcommand.strip()
+            for subcommand in re.split(
+                '[ \\n]&&[ \\n]',
+                raw_command
+            )
+        ]
+
+        # Parse each subcommand
+        subcommands: list[Subcommand] = [
+            {
+                'type': 'system',
+                'allowedToFail': False,
+                'parameters': [],
+                'subcommand': tuple()
+            }
+            for _ in range(len(raw_subcommands))
+        ]
+        for subcommand, raw_subcommand in zip(subcommands, raw_subcommands):
+            # Parse markers
+            if raw_subcommand[:1] == '!':
+                subcommand['allowedToFail'] = True
+                raw_subcommand = raw_subcommand[1:]
+
+            if raw_subcommand[:1] == '-':
+                cast(LimarSubcommand, subcommand)['type'] = 'limar'
+                raw_subcommand = raw_subcommand[1:]
+
+            if raw_subcommand[:1] == ' ':
+                raw_subcommand = raw_subcommand[1:]
+
+            # Parse system subcommand
+            if subcommand['type'] == 'system':
+                fragments, params = self._split_fragments_params(raw_subcommand)
+                system_subcommand: SystemSubcommandData = tuple(
+                    self._chain_fragments_params(fragments, params)
+                    for fragments, params in self._group_fragments_params(
+                        fragments, params, delim='[ \t\n]+', quote="[\"']"
+                    )
+                )
+
+                subcommand['parameters'] = list(
+                    {param: None for param in params}.keys()
+                )
+                subcommand['subcommand'] = system_subcommand
+
+            # Parse LIMAR subcommand
+            elif subcommand['type'] == 'limar':
+                match = re.match(
+                    "^(?P<module>[a-z0-9-]*)\\.(?P<method>[a-z0-9_]*)(?:\\((?P<args>[^)]*)\\))? (: (?P<jqTransform>.*)|:: (?P<pqTransform>.*))$",
+                    raw_subcommand
+                )
+                if match is None:
+                    raise LIMARException(
+                        f"Failed to parse limar subcommand '{raw_subcommand}'"
+                    )
+                # FIXME [?]: if this is blank or omitted, does this yield an
+                #            empty tuple?
+                fragments, params = self._split_fragments_params(
+                    match.group('args') if match.group('args') != None else ""
+                )
+                limar_subcommand: LimarSubcommandData = (
+                    match.group('module'),
+                    match.group('method'),
+                    tuple(
+                        self._chain_fragments_params(fragments, params)
+                        for fragments, params in self._group_fragments_params(
+                            fragments, params, delim=', '
+                        )
+                    ),
+                    match.groups()[4],
+                    match.groups()[5]
+                )
+
+                subcommand['parameters'] = list(
+                    {param: None for param in params}.keys()
+                )
+                subcommand['subcommand'] = limar_subcommand
+
+        return {
+            'parameters': list({
+                param: None
+                for subcommand in subcommands
+                for param in subcommand['parameters']
+            }.keys()),
+            'subcommands': subcommands
+        }
+
+    # Checks
+    # --------------------
+
+    def is_runnable(self, item):
+        return (
+            'command' in item and     # @command
+            'type' in item['command'] # @query, @action, etc.
+        )
+
+    def command_type_of(self, command_item):
+        return command_item['command']['type']
 
     # To Runnable Command
     # --------------------
@@ -320,10 +334,15 @@ class CommandTransformer:
 
     def format_text_limar_subquery(self, limar_subquery: Subquery) -> str:
         return (
-            f"{limar_subquery[0]}.{limar_subquery[1]}(" +
-            ', '.join(limar_subquery[2]) +
-            ") " +
             (
+                (
+                    f"{limar_subquery[0]}.{limar_subquery[1]}("
+                    + ', '.join(limar_subquery[2]) +
+                    ")"
+                )
+                if limar_subquery[0] != '.'
+                else '.'
+            ) + " " + (
                 f": {limar_subquery[3]}"
                 if limar_subquery[3] is not None
                 else f":: {limar_subquery[4]}"
@@ -334,28 +353,39 @@ class CommandTransformer:
     # --------------------
 
     def _split_fragments_params(self,
-            string: str
+            subcommand: str
     ) -> tuple[list[str], list[Subquery]]:
         return (
             re.split(
-                '\\{\\{ [a-z0-9-]*\\.[a-z0-9_]*\\(.*\\) ::? .* \\}\\}',
-                string
+                '\\{\\{ [a-z0-9-]*\\.[a-z0-9_]*(?:\\([^)]*\\))? ::? .* \\}\\}',
+                subcommand
             ),
             [
                 (
-                    match.group('module'),
-                    match.group('method'),
+                    (
+                        match.group('module')
+                        if match.group('module') != ''
+                        else '.'
+                    ),
+                    (
+                        match.group('method')
+                        if match.group('method') != ''
+                        else ''.join(random.choices(string.hexdigits, k=32))
+                    ),
                     (
                         tuple(match.group('args').split(', '))
-                        if len(match.group('args')) > 0
+                        if (
+                            match.group('args') is not None and
+                            len(match.group('args')) > 0
+                        )
                         else tuple()
                     ),
                     match.groups()[4],
                     match.groups()[5]
                 )
                 for match in re.finditer(
-                    '\\{\\{ (?P<module>[a-z0-9-]*)\\.(?P<method>[a-z0-9_]*)\\((?P<args>.*)\\) (: (?P<jqTransform>.*)|:: (?P<pqTransform>.*)) \\}\\}',
-                    string
+                    '\\{\\{ (?P<module>[a-z0-9-]*)\\.(?P<method>[a-z0-9_]*)(?:\\((?P<args>[^)]*)\\))? (: (?P<jqTransform>.*)|:: (?P<pqTransform>.*)) \\}\\}',
+                    subcommand
                 )
             ]
         )

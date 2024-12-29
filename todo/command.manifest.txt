@@ -618,70 +618,70 @@ setenv     (__TODO, set,  /process/environment, var            ) # csh-style equ
 # Shell options?? (eg. pipefail, fail on error, etc.)
 
 #"""
-TODO:
-- Consider/design:
-  - How args/forwarded-data/slots/config/external-state should be handled by commands
-    > Note: these correspond to the below subjects for *this* /process/module:
-      - config         = /data/process/configuration
-      - slots          = /process/environment
-      - args           = /process/parameter
-      - forwarded-data = /channel/process
-      - external-state = various (any subject(s))
+  TODO:
+  - Consider/design:
+    - How args/forwarded-data/slots/config/external-state should be handled by commands
+      > Note: these correspond to the below subjects for *this* /process/module:
+        - config         = /data/process/configuration
+        - slots          = /process/environment
+        - args           = /process/parameter
+        - forwarded-data = /channel/process
+        - external-state = various (any subject(s))
 
-    > Args shouldn't need to be accessed. Forwarded data, slots, config, and external
-      state should provide sufficient information to run a query or action.
+      > Args shouldn't need to be accessed. Forwarded data, slots, config, and external
+        state should provide sufficient information to run a query or action.
 
-    > Forwarded data should be requested using a special 'dynamic' expansion (which
-      is like a normal expansion, but has no module, method, or args, and
-      automatically makes the command non-cacheable):
-        {{ .() : .parse.expr }}
+      > Forwarded data should be requested using a special 'dynamic' expansion (which
+        is like a normal expansion, but has no module, method, or args, and
+        automatically makes the command non-cacheable):
+          {{ .() : .parse.expr }}
 
-    > Slots, config, and external state should be requested using a normal expansion:
-        {{ context.get_slot(name/of/slot) : .parse.expr }}
-        {{ manifest.get_item(name/of/item) : .parse.expr }}
-        {{ show.run_refs(name/of/query) : .parse.expr }}
+      > Slots, config, and external state should be requested using a normal expansion:
+          {{ context.get_slot(name/of/slot) : .parse.expr }}
+          {{ manifest.get_item(name/of/item) : .parse.expr }}
+          {{ show.run_refs(name/of/query) : .parse.expr }}
 
-    > The purpose and precedence of the above inputs are determined by each command,
-      but commands should follow these guidelines:
-      - If forwarded data is given, it should be interpreted as entities to operate
-        on instead of data in any applicable slot (eg. for operations on a directory,
-        forwarded entities should be interpreted as being of the 'directory' subject,
-        and should be used instead of the 'directory/current' slot)
-      - Slots should be used for contextual information that wasn't forwarded, or
-        that varies along a different axis to forwarded data (if it's not possible to
-        index forwarded data by a composite key that would allow multi-axis variation)
-      - Config should be used for contextual information that doesn't vary.
-      - External state should be interpreted for how to execute the command, but not
-        for the intent of the command.
+      > The purpose and precedence of the above inputs are determined by each command,
+        but commands should follow these guidelines:
+        - If forwarded data is given, it should be interpreted as entities to operate
+          on instead of data in any applicable slot (eg. for operations on a directory,
+          forwarded entities should be interpreted as being of the 'directory' subject,
+          and should be used instead of the 'directory/current' slot)
+        - Slots should be used for contextual information that wasn't forwarded, or
+          that varies along a different axis to forwarded data (if it's not possible to
+          index forwarded data by a composite key that would allow multi-axis variation)
+        - Config should be used for contextual information that doesn't vary.
+        - External state should be interpreted for how to execute the command, but not
+          for the intent of the command.
 
-  - How this relates to subjects, and how modifying subjects works with the command
-    words
-    - subjects contain multiple pieces of data for which there are different
-      queries/actions
-    - this is effectively the problem of un-merging queries
+    - How this relates to subjects, and how modifying subjects works with the command
+      words
+      - subjects contain multiple pieces of data for which there are different
+        queries/actions
+      - this is effectively the problem of un-merging queries
 
-    > there should be a way of transforming the 'current' complete state into a new
-      state, eg. interactive editor or jq, then passing the bits that have changed to
-      the relevant `@action`s to apply the changes.
-    > this creates a changes-as-data-modification mechanism, which is good for both
-      comprehension/simplicity, control/change management, and automation
+      > there should be a way of transforming the 'current' complete state into a new
+        state, eg. interactive editor or jq, then passing the bits that have changed to
+        the relevant `@action`s to apply the changes.
+      > this creates a changes-as-data-modification mechanism, which is good for both
+        comprehension/simplicity, control/change management, and automation
 
-  - How multiple entities being returned by the same 'getter' might work (eg. env)
-    - What about dynamic slots, like 'env', where one query = many slots?
-    - Or more importantly, when `env` (the getter) and `export` (the setter) work
-      with different multiplicities. In this example, forwarded entities would have to
-      be forwarded with expansion to set all slots using `env`, or to set all env vars
-      using `export`.
+    - How multiple entities being returned by the same 'getter' might work (eg. env)
+      - What about dynamic slots, like 'env', where one query = many slots?
+      - Or more importantly, when `env` (the getter) and `export` (the setter) work
+        with different multiplicities. In this example, forwarded entities would have to
+        be forwarded with expansion to set all slots using `env`, or to set all env vars
+        using `export`.
 
-- Implement:
-  - @action
-  - @context-getter(<subject, ...>)
-  - @context-setter(<subject, ...>[, current-shell: true])
-    - Where 'current-shell' means that it must be run in the current shell, not as a subprocess
-  - @context-validator(<subject, ...>)
+  - Implement:
+    - @action
+    - @context-getter(<subject, ...>)
+    - @context-setter(<subject, ...>[, current-shell: true])
+      - Where 'current-shell' means that it must be run in the current shell, not as a subprocess
+    - @context-validator(<subject, ...>)
 
-- Ideally implement:
-  - @context(setter-for: <slot_name>) # For where it can be used, eg. git, but not pwd/cd, env/export, etc.
+  - Ideally implement:
+    - @context(setter-for: <slot_name>) # For where it can be used, eg. git, but not pwd/cd, env/export, etc.
 """
 
 @tool (command: cd, description: """Change directory.""")

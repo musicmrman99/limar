@@ -3,7 +3,10 @@ from typing import Literal, TypedDict
 # Commands
 # --------------------
 
+# Semantics: (module, method, (args, ...), jq_query, yaql_query)
+# One of jq_query or yaql_query must be present (even if it's just `.`/`$`).
 Subquery = tuple[str, str, tuple[str, ...], str | None, str | None]
+
 Interpolatable = list[str | Subquery]
 GroupedInterpolatable = tuple[Interpolatable, ...]
 
