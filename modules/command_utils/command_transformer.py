@@ -22,19 +22,19 @@ LimarSubcommandData = tuple[
 class SystemSubcommand(TypedDict):
     type: Literal['system']
     allowedToFail: bool
-    parameters: set[Subquery]
+    parameters: list[Subquery]
     subcommand: SystemSubcommandData
 
 class LimarSubcommand(TypedDict):
     type: Literal['limar']
     allowedToFail: bool
-    parameters: set[Subquery]
+    parameters: list[Subquery]
     subcommand: LimarSubcommandData
 
 Subcommand = SystemSubcommand | LimarSubcommand
 
 class CommandParseOnly(TypedDict):
-    parameters: set[Subquery]
+    parameters: list[Subquery]
     subcommands: list[Subcommand]
 
 class CommandOnly(CommandParseOnly):
@@ -74,7 +74,7 @@ class CommandTransformer:
             {
                 'type': 'system',
                 'allowedToFail': False,
-                'parameters': set(),
+                'parameters': [],
                 'subcommand': tuple()
             }
             for _ in range(len(raw_subcommands))
@@ -102,7 +102,9 @@ class CommandTransformer:
                     )
                 )
 
-                subcommand['parameters'] = set(params)
+                subcommand['parameters'] = list(
+                    {param: None for param in params}.keys()
+                )
                 subcommand['subcommand'] = system_subcommand
 
             # Parse LIMAR subcommand
@@ -131,15 +133,17 @@ class CommandTransformer:
                     match.groups()[5]
                 )
 
-                subcommand['parameters'] = set(params)
+                subcommand['parameters'] = list(
+                    {param: None for param in params}.keys()
+                )
                 subcommand['subcommand'] = limar_subcommand
 
         return {
-            'parameters': {
-                param
+            'parameters': list({
+                param: None
                 for subcommand in subcommands
                 for param in subcommand['parameters']
-            },
+            }.keys()),
             'subcommands': subcommands
         }
 
