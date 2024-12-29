@@ -20,7 +20,7 @@ class CacheUtils:
 
     def with_caching(self,
             key: str,
-            fn: Callable,
+            fn: Callable[..., Any],
             args: list[Any] = [],
             invalid_on_run: Iterable[str] = set()
     ):

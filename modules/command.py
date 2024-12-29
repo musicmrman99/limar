@@ -7,23 +7,19 @@ import subprocess
 from core.exceptions import LIMARException
 from core.modulemanager import ModuleAccessor
 from core.modules.phase_utils.phase_system import PhaseSystem
-from modules.command_utils.command_transformer import (
-    ActionCommand, Command, CommandTransformer, QueryCommand
-)
+from modules.command_utils.command_transformer import CommandTransformer
 from modules.command_utils.cache_utils import CacheUtils
 
 # Types
 from argparse import ArgumentParser, Namespace
-from typing import Any, TypedDict
+from typing import Any, Callable, TypedDict
 
-from modules.command_utils.command_transformer import (
-    Subquery,
-    SystemSubcommandData,
-    LimarSubcommandData
+from modules.command_utils.command_types import (
+    Command, QueryCommand, ActionCommand,
+    LimarSubcommandData, SystemSubcommandData, Subquery,
+    Entity
 )
-from modules.manifest import Item, ItemSet
-
-Entity = dict[str, str]
+from modules.manifest import ItemSet
 
 INFO_LIFECYCLE = PhaseSystem(
     f'{__name__}:lifecycle',
@@ -98,7 +94,8 @@ class CommandRunner:
 
             self,
             self._mod,
-            self._cache_utils
+            self._cache_utils,
+            self._command_tr
         )
 
     # Command Runners
@@ -350,12 +347,14 @@ class CommandBatch:
 
             _command_runner: CommandRunner,
             _mod: Namespace,
-            _cache_utils: CacheUtils
+            _cache_utils: CacheUtils,
+            _command_tr: CommandTransformer
     ):
         # Tools
         self._command_runner = _command_runner
         self._mod = _mod
         self._cache_utils = _cache_utils
+        self._command_tr = _command_tr
 
         # Static
         self._subject = subject
@@ -429,12 +428,12 @@ class CommandBatch:
         `process()` on this or any other batch.
         """
 
-        COMMAND_RUNNERS = {
+        COMMAND_RUNNERS: dict[str, Callable[..., Any]] = {
             'query': self._command_runner.run_query,
             'action': self._command_runner.run_action
         }
 
-        command_outputs: list[tuple[ Item, list[Entity] ]] = []
+        command_outputs: list[Entity] = []
         refs_with_batch_retention: set[str] = set()
         while True:
             try:
@@ -459,6 +458,7 @@ class CommandBatch:
 
             # Run command (or fetch from cache)
             runner = COMMAND_RUNNERS[command['type']]
+            output: list[Entity]
             if not cacheable:
                 output = runner(command_ref, command)
             else:
@@ -475,10 +475,15 @@ class CommandBatch:
 
             # Collate output
             if command_ref in self._directly_requested and output is not None:
-                command_outputs.append((command_item, output))
+                command_outputs.extend(output)
 
         self._mod.log.debug('Query outputs:', command_outputs)
-        return self._merge_entities(command_outputs, self._subject)
+        self._mod.log.trace("Merging entities using subject:", self._subject)
+        return self._command_tr.merge_entities(
+            self._subject_items,
+            command_outputs,
+            self._subject
+        )
 
     # Utils
     # --------------------------------------------------
@@ -488,65 +493,6 @@ class CommandBatch:
             self._command_items[command_ref]['command']['type'],
             command_ref
         )
-
-    def _merge_entities(self,
-            query_outputs: list[tuple[ Item, list[Entity] ]],
-            subject: list[str]
-    ) -> dict[str | tuple[str, ...], Entity]:
-        merged_query_output: dict[str | tuple[str, ...], Entity] = {}
-        for item, entities in query_outputs:
-            self._mod.log.trace(
-                f"Subjects for item '{item['ref']}':", item['subjects']
-            )
-
-            # Get ID field names for the command's subject
-            try:
-                id_fields = tuple(
-                    self._subject_items[tag]['id']
-                    for tag in subject
-                )
-            except KeyError as e:
-                raise LIMARException(
-                    f"Command '{item['ref']}' includes undeclared subject"
-                    f" '{e.args[0]}'."
-                    f" If you did not intend '{e.args[0]}' to be treated as a"
-                    " subject, then re-check your command line. If that should"
-                    " be a valid subject, then there may be an issue with the"
-                    " subject manifest or command manifest."
-                )
-            self._mod.log.trace(
-                f"Subject ID fields for item '{item['ref']}':", id_fields
-            )
-
-            # Get ID field values from each output entity
-            for entity_data in entities:
-                try:
-                    id = tuple(entity_data[id_field] for id_field in id_fields)
-                except KeyError as e:
-                    self._mod.log.error(
-                        'Entity that caused the error below:', entity_data
-                    )
-                    raise LIMARException(
-                        f"Above result of query '{item['ref']}' missing"
-                        f" identity field '{e.args[0]}' mapped from subject"
-                        f" '{subject[id_fields.index(e.args[0])]}'."
-                        " This is likely to be an issue with the command"
-                        " manifest."
-                    )
-
-                # If there is only one item in the composite key, then unwrap
-                # it. Neither jq nor yaql support indexing into dictionaries
-                # with tuple keys. Unwrapping permits queries (and subqueries)
-                # to be indexed into to improve performance when joining data
-                # about different subjects.
-                if len(id) == 1:
-                    id = id[0]
-
-                if id not in merged_query_output:
-                    merged_query_output[id] = {}
-                merged_query_output[id].update(entity_data)
-
-        return merged_query_output
 
 class CommandModule:
     """

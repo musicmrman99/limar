@@ -4,56 +4,18 @@ import re
 from core.exceptions import LIMARException
 from core.utils import list_strip
 
-from typing import Any, Literal, TypedDict, cast
+# Types
+from typing import Any, cast
 
-Subquery = tuple[str, str, tuple[str, ...], str | None, str | None]
-Interpolatable = list[str | Subquery]
-GroupedInterpolatable = tuple[Interpolatable, ...]
-
-SystemSubcommandData = GroupedInterpolatable
-LimarSubcommandData = tuple[
-    str,
-    str,
-    GroupedInterpolatable,
-    str | None,
-    str | None
-]
-
-class SystemSubcommand(TypedDict):
-    type: Literal['system']
-    allowedToFail: bool
-    parameters: list[Subquery]
-    subcommand: SystemSubcommandData
-
-class LimarSubcommand(TypedDict):
-    type: Literal['limar']
-    allowedToFail: bool
-    parameters: list[Subquery]
-    subcommand: LimarSubcommandData
-
-Subcommand = SystemSubcommand | LimarSubcommand
-
-class CommandParseOnly(TypedDict):
-    parameters: list[Subquery]
-    subcommands: list[Subcommand]
-
-class CommandOnly(CommandParseOnly):
-    dependencies: tuple[str, ...]
-    dependants: tuple[str, ...]
-    transitiveDependencies: tuple[str, ...]
-    transitiveDependants: tuple[str, ...]
-
-class QueryCommand(CommandOnly):
-    type: Literal['query']
-    parse: str
-
-class ActionCommand(CommandOnly):
-    type: Literal['action']
-
-Command = QueryCommand | ActionCommand
+from modules.command_utils.command_types import (
+    CommandParseOnly,
+    Subcommand, LimarSubcommand, LimarSubcommandData, SystemSubcommandData,
+    Subquery, Interpolatable, GroupedInterpolatable,
+    Entity
+)
 
 class CommandTransformer:
-    # Interface
+    # Commands
     # --------------------------------------------------
 
     # Parsing
@@ -159,6 +121,9 @@ class CommandTransformer:
     def command_type_of(self, command_item):
         return command_item['command']['type']
 
+    # Subjects
+    # --------------------------------------------------
+
     def subject_mapping_from(self,
             subject_items: dict[str, Any]
     ) -> dict[str, str]:
@@ -218,6 +183,58 @@ class CommandTransformer:
                     primary_subject[subject] = None
 
         return list(primary_subject.keys())
+
+    # Entities
+    # --------------------------------------------------
+
+    def merge_entities(self,
+            subject_items: dict[str, Any],
+            entities: list[Entity],
+            subject: list[str]
+    ) -> dict[str | tuple[str, ...], Entity]:
+        # Get ID field names for the command's subject
+        try:
+            id_fields = tuple(
+                subject_items[tag]['id']
+                for tag in subject
+            )
+        except KeyError as e:
+            raise LIMARException(
+                f"Attempt to merge entities using undeclared subject"
+                f" '{e.args[0]}'."
+                f" If you did not intend '{e.args[0]}' to be treated as a"
+                " subject, then re-check your command line. If that should"
+                " be a valid subject, then there may be an issue with the"
+                " subject manifest or command manifest."
+            )
+
+        # Get ID field values from each output entity
+        merged_entities: dict[str | tuple[str, ...], Entity] = {}
+        for entity_data in entities:
+            try:
+                id = tuple(entity_data[id_field] for id_field in id_fields)
+            except KeyError as e:
+                raise LIMARException(
+                    "Entity being merged (below) is missing identity field"
+                    f" '{e.args[0]}' mapped from subject"
+                    f" '{subject[id_fields.index(e.args[0])]}'."
+                    " This is likely to be an issue with the subject manifest"
+                    f" or command manifest.\n\n{entity_data}"
+                )
+
+            # If there is only one item in the composite key, then unwrap
+            # it. Neither jq nor yaql support indexing into dictionaries
+            # with tuple keys. Unwrapping permits queries (and subqueries)
+            # to be indexed into to improve performance when joining data
+            # about different subjects.
+            if len(id) == 1:
+                id = id[0]
+
+            if id not in merged_entities:
+                merged_entities[id] = {}
+            merged_entities[id].update(entity_data)
+
+        return merged_entities
 
     # To Runnable Command
     # --------------------
@@ -314,7 +331,7 @@ class CommandTransformer:
         )
 
     # Utils
-    # --------------------------------------------------
+    # --------------------
 
     def _split_fragments_params(self,
             string: str
