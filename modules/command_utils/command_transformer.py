@@ -177,12 +177,20 @@ class CommandTransformer:
 
     def resolved_subject(self,
             subject_mapping: dict[str, str],
-            subject: list[str]
+            given_subject: list[str],
+            keep_unrecognised: bool = False
     ) -> list[str]:
-        return [
-            subject_mapping[ref] if ref in subject_mapping else ref
-            for ref in subject
-        ]
+        if keep_unrecognised:
+            return [
+                subject_mapping[ref] if ref in subject_mapping else ref
+                for ref in given_subject
+            ]
+        else:
+            return [
+                subject_mapping[ref]
+                for ref in given_subject
+                if ref in subject_mapping
+            ]
 
     def subject_in(self,
             command_items: dict[str, Any],

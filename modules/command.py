@@ -671,21 +671,25 @@ class CommandModule:
     ) -> ItemSet:
         """Return all commands with the given subject."""
 
-        self._mod.log.debug('Resolving subject:', given_subject)
-        resolved_subject = self._command_tr.resolved_subject(
-            self._subject_mapping, given_subject
+        self._mod.log.debug(
+            'Resolving subject (keeping unrecognised):',
+            given_subject
+        )
+        partially_resolved_subject = self._command_tr.resolved_subject(
+            self._subject_mapping, given_subject,
+            keep_unrecognised=True
         )
 
         self._mod.log.info(
-            'Getting commands for resolved subject:',
-            resolved_subject
+            'Getting commands for resolved subject (with unrecognised kept):',
+            partially_resolved_subject
         )
         set_ref = 'command-run-'+''.join(random.choices(string.hexdigits, k=32))
         # FIXME: Yes, I know this is an injection attack waiting to happen, eg.
         #          get(['unlikely] | something_evil | [unlikely'])
         self._mod.manifest.declare_item_set(
             set_ref,
-            f"[{' & '.join(resolved_subject)}]"
+            f"[{' & '.join(partially_resolved_subject)}]"
         )
         return self._mod.manifest.get_item_set(set_ref)
 
@@ -712,7 +716,8 @@ class CommandModule:
         else:
             self._mod.log.debug('Resolving subject:', given_subject)
             resolved_subject = self._command_tr.resolved_subject(
-                self._subject_mapping, given_subject
+                self._subject_mapping, given_subject,
+                keep_unrecognised=False
             )
             self._mod.log.debug('Resolved subject:', resolved_subject)
             subject = self._command_tr.subject_in(
