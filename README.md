@@ -10,10 +10,10 @@ LIMAR has a variety of sub-commands for different purposes:
 
 | Area    | Usable? | In Dev? | Command    | Summary                                                         |
 |---------|---------|---------|------------|-----------------------------------------------------------------|
-| Data    | &check; | &check; | `phase`    | \[**INTERNAL**\] List phase systems and show their phases       |
+| Data    | &check; |         | `phase`    | \[**INTERNAL**\] List phase systems and show their phases       |
 | Data    | &check; |         | `cache`    | Manage data stored in the LIMAR cache                           |
 | Data    | &check; |         | `manifest` | Manage data declared in manifest files, eg. project definitions |
-| Data    | &check; | &check; | `info`     | Manage data discoverable using available commands               |
+| Data    | &check; | &check; | `show`     | Manage data discoverable using available commands               |
 | Util    |         |         | `for`      | Execute a supported LIMAR command against many repos at once    |
 | Util    | &check; |         | `tr`       | Transforms data using any of various available tools            |
 | Context | &check; | &check; | `env`      | Manage the shell environment, eg. current dir, env vars, etc.   |
@@ -63,10 +63,10 @@ limar cache clear
 Provides storage services to other modules. Configuration of this module is
 required for any modules that use it to function.
 
-Has commands for listing, showing, and deleting the resulting cached data. Has
-no command for setting cached data because no modules would use new files, and
-the structure of existing files is considered an implementation detail of the
-modules that create them.
+Has commands for listing, showing, and deleting cached data. Has no command for
+setting cached data because no modules would use new files, and the structure of
+existing files is considered an implementation detail of the modules that create
+them.
 
 ## `manifest`
 

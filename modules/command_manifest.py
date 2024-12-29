@@ -5,6 +5,7 @@ from modules.manifest_modules import (
 
     # Subjects
     subject,
+    alias,
 
     # Commands
     tool,
@@ -32,7 +33,8 @@ class CommandManifestModule:
 
         # Subjects
         mod.manifest.add_context_modules(
-            subject.Subject
+            subject.Subject,
+            alias.Alias
         )
 
         # Commands

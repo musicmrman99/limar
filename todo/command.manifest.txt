@@ -801,7 +801,7 @@ fg    (__TODO, set,    channel) # put a process into the foreground of a shell (
             $remaining
             | if $type == "?" or $type == "!" then [{
               "file.id": ($repoPath + "/" + .),
-              "delta.id": "staging-store",
+              "delta.id": "staging:store",
 
               "delta.summary":    (summary_of_change_type($type)),
               "delta.index.type": (null)

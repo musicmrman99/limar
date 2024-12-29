@@ -21,18 +21,33 @@ details.
 /hardware                       (id: """hardware.id""")
 @tags (/hardware) {
   /agent                        (id: """agent.id""")
-  /agent/passive                (id: """store.id""") # TODO: alias: /store
-  /agent/active                 (id: """host.id""")  # TODO: alias: /host
+
+  @alias (/store)
+  /agent/passive                (id: """store.id""")
+
+  @alias (/host)
+  /agent/active                 (id: """host.id""")
+
   /agent/attachment             (id: """agent.attachment.id""", /agent/passive, /agent/active)
 }
 
 # Identity and Access
 # --------------------
 
-/identity                       (id: """identity.id""") # TODO: alias: identity and trust, identity and access, iam
+# TODO: alias: identity and trust, identity and access, iam
+@alias (/id)
+/identity                       (id: """identity.id""")
+
+@alias (/id/user, /user)
 /identity/user                  (id: """user.id""")
+
+@alias (/id/group, /group)
 /identity/group                 (id: """group.id""")
+
+@alias (/id/role, /role)
 /identity/role                  (id: """role.id""")
+
+@alias (/id/policy, /policy)
 /identity/policy                (id: """policy.id""")
 
 # Processes
@@ -45,31 +60,68 @@ details.
     /data/command,
     /identity
 ) {
-  /process                      (id: """process.id""")     # TODO: alias: proc
+  @alias (/proc)
+  /process                      (id: """process.id""")
+
+  @alias (/proc/kernel, /kernel)
   /process/kernel               (id: """kernel.id""")
-  /process/service              (id: """service.id""")     # TODO: kernel? async operations?
-  /process/application          (id: """application.id""") # TODO: kernel? sync operations? alias: app
-  /process/operation            (id: """operation.id""")   # TODO: kernel? service (optional)? alias: op
+
+  @tags (/process/kernel) {
+    @alias (/process/svc, /proc/service, /proc/svc, /service, /svc)
+    /process/service            (id: """service.id""")     # TODO: async operations?
+
+    @alias (/process/app, /proc/application, /proc/app, /application, /app)
+    /process/application        (id: """application.id""") # TODO: sync operations? alias: app
+
+    @alias (/process/op, /proc/operation, /proc/op, /operation, /op)
+    /process/operation          (id: """operation.id""")   # TODO: service (optional)? alias: op
+  }
 }
 
 @tags (/process) {
+  @alias (/process/mod, /proc/module, /proc/mod, /module, /mod)
   /process/module               (id: """module.id""")      # Sub-process that depends on and augments a parent process
+
+  @alias (/process/param, /proc/parameter, /proc/param, /parameter, /param)
   /process/parameter            (id: """parameter.id""")   # Per-process /data/configuration ('pushed in'); alias: param
+
+  @alias (/process/env, /proc/environment, /proc/env, /environment, /env)
   /process/environment          (id: """environment.id""") # Per-process /data/configuration ('pulled in'); alias: env
+
+  @alias (/proc/state, /state)
   /process/state                (id: """state.id""")       # Current state (including status)
+
+  @alias (/proc/log, /log)
   /process/log                  (id: """log.id""")         # Historical state
 }
 
 # Channels
 # --------------------
 
+@alias (/chan)
 /channel                        (id: """channel.id""") # I/O
+
 # Cross-host channel = network I/O (eg. TCP/UDP connections)
+@alias (/chan/host)
 /channel/host                   (id: """channel.host.id""")
-/channel/host/config            (id: """channel.host.config.id""")
+
+@alias (
+  /channel/host/config, /channel/host/conf, /channel/host/cfg,
+  /chan/host/configuration, /chan/host/config, /chan/host/conf, /chan/host/cfg
+)
+/channel/host/configuration     (id: """channel.host.config.id""")
+
 # Cross-process channel = I/O (eg. stdin/out/err, keyboard, mouse, IPC)
+@alias (/channel/proc, /chan/process, /chan/proc)
 /channel/process                (id: """channel.process.id""")
-/channel/process/config         (id: """channel.process.config.id""")
+
+@alias (
+  /channel/process/config, /channel/process/conf, /channel/process/cfg,
+  /channel/proc/configuration, /channel/proc/config, /channel/proc/conf, /channel/proc/cfg,
+  /chan/process/configuration, /chan/process/config, /chan/process/conf, /chan/process/cfg,
+  /chan/proc/configuration, /chan/proc/config, /chan/proc/conf, /chan/proc/cfg
+)
+/channel/process/configuration  (id: """channel.process.config.id""")
 
 # Data
 # --------------------
@@ -77,14 +129,31 @@ details.
 /data                           (__TODO)
 
 # Types
+@alias (/text)
 /data/type/text                 (__TODO)
+
+@alias (/number)
 /data/type/number               (__TODO)
+
+@alias (/time)
 /data/type/time                 (__TODO)
+
+@alias (/word)
 /data/type/word                 (__TODO)
+
+@alias (/email)
 /data/type/email                (__TODO)
+
+@alias (/image, /img)
 /data/type/image                (__TODO)
+
+@alias (/audio)
 /data/type/audio                (__TODO)
+
+@alias (/video, /vid)
 /data/type/video                (__TODO)
+
+@alias (/host/image)
 /data/type/host/image           (__TODO)
 
 # Data identifiers and locators (these are IDs by definition, so they omit '.id' from the ID field name)
@@ -94,29 +163,46 @@ details.
 
 # Commands (/data for initiating a /process)
 # NOTE: /data/command is the subject of all of commands in the command manifest
+@alias (/command)
 /data/command                   (id: """command.id""")
 
 # Compound
 @tags (/agent/passive, /data/id) {
-  /data/structure/filesystem    (id: """filesystem.id""") # TODO: alias: fs
-  /data/structure/directory     (id: """directory.id""")  # TODO: alias: dir
+  @alias (/data/structure/fs, /data/struct/filesystem, /data/struct/fs, /filesystem, /fs)
+  /data/structure/filesystem    (id: """filesystem.id""")
+
+  @alias (/data/structure/dir, /data/struct/directory, /data/struct/dir, /directory, /dir)
+  /data/structure/directory     (id: """directory.id""")
+
+  @alias (/data/struct/file, /file)
   /data/structure/file          (id: """file.id""")
 
   @tags (/change/version, /project) { # TODO: /project and /change/version are optional
     # Manually created data; usually managed by a /change/tracker
     # Eg. source code, assets, etc.
+    @alias (/data/process/src, /data/proc/source, /data/proc/src, /source, /src)
     /data/process/source        (id: """source.id""")
 
     # Built /data/source placed on an /agent/passive
     # Eg. binaries, archives/packages, bundles, disk/machine images, etc.)
+    @alias (/data/proc/artifact, /artifact)
     /data/process/artifact      (id: """artifact.id""")
 
     # Runnable state of a /data/artifact placed on an /agent/passive that is attached to an /agent/active
-    /data/process/deployment    (id: """deployment.id""", /data/artifact) # alias: installation
+    @alias (
+      /data/proc/deployment, /deployment,
+      /data/process/installation, /data/proc/installation, /installation
+    )
+    /data/process/deployment    (id: """deployment.id""", /data/artifact)
 
     # Parameter and environment bindings for a given /data/deployment, possibly itself coming from a
     # /data/artifact
-    /data/process/configuration (id: """config.id""", /data/artifact, /data/deployment) # TODO: /data/deployment is many-to-many with this; alias: config, conf, cfg
+    @alias (
+      /data/process/config, /data/process/conf, /data/process/cfg,
+      /data/proc/configuration, /data/proc/config, /data/proc/conf, /data/proc/cfg,
+      /configuration, /config, /conf, /cfg
+    )
+    /data/process/configuration (id: """config.id""", /data/artifact, /data/deployment) # TODO: /data/deployment is many-to-many with this
   }
 }
 
@@ -125,9 +211,20 @@ details.
 # Eg. file history, tagged versions, tasks, (the act of) deployments, etc.
 
 /change                         (id: """change.id""")
-/change/tracker                 (id: """tracker.id""") # TODO: alias: repo
+
+@alias (/tracker, /repository, /repo)
+/change/tracker                 (id: """tracker.id""")
+
+@alias (/change/ver, /version, /ver)
 /change/version                 (id: """version.id""")
-/change/version/reference       (id: """version.ref.id""") # TODO: alias: ref
+
+@alias (
+  /change/version/ref, /change/ver/reference, /change/ver/ref,
+  /version/reference, /version/ref, /ver/reference, /ver/ref
+)
+/change/version/reference       (id: """version.ref.id""")
+
+@alias (/delta)
 /change/delta                   (id: """delta.id""")
 
 # Projects

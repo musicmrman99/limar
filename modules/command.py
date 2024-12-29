@@ -597,6 +597,7 @@ class CommandModule:
             # double-underscore tags.
             if 'id' in item
         }
+        self._subject_mapping = self._command_tr.subject_mapping_from(subjects)
 
         command_manifest_digest = mod.manifest.get_manifest_digest('command')
         command_items: ItemSet = mod.manifest.get_item_set('command')
@@ -666,16 +667,26 @@ class CommandModule:
 
     @ModuleAccessor.invokable_as_service
     def commands_with_subject(self,
-            subject: list[str]
+            given_subject: list[str]
     ) -> ItemSet:
         """Return all commands with the given subject."""
 
-        self._mod.log.info('Getting commands for subject:', subject)
+        self._mod.log.debug('Resolving subject:', given_subject)
+        resolved_subject = self._command_tr.resolved_subject(
+            self._subject_mapping, given_subject
+        )
 
+        self._mod.log.info(
+            'Getting commands for resolved subject:',
+            resolved_subject
+        )
         set_ref = 'command-run-'+''.join(random.choices(string.hexdigits, k=32))
         # FIXME: Yes, I know this is an injection attack waiting to happen, eg.
         #          get(['unlikely] | something_evil | [unlikely'])
-        self._mod.manifest.declare_item_set(set_ref, f"[{' & '.join(subject)}]")
+        self._mod.manifest.declare_item_set(
+            set_ref,
+            f"[{' & '.join(resolved_subject)}]"
+        )
         return self._mod.manifest.get_item_set(set_ref)
 
     @ModuleAccessor.invokable_as_service
@@ -699,7 +710,14 @@ class CommandModule:
                 'Effective subject from primary subject:', subject
             )
         else:
-            subject = self._command_tr.subject_of(command_items, given_subject)
+            self._mod.log.debug('Resolving subject:', given_subject)
+            resolved_subject = self._command_tr.resolved_subject(
+                self._subject_mapping, given_subject
+            )
+            self._mod.log.debug('Resolved subject:', resolved_subject)
+            subject = self._command_tr.subject_in(
+                command_items, resolved_subject
+            )
             self._mod.log.debug(
                 'Effective subject from given subject:', subject
             )

@@ -159,7 +159,32 @@ class CommandTransformer:
     def command_type_of(self, command_item):
         return command_item['command']['type']
 
-    def subject_of(self,
+    def subject_mapping_from(self,
+            subject_items: dict[str, Any]
+    ) -> dict[str, str]:
+        return {
+            alias_ref: resolved_ref
+            for resolved_ref, item in subject_items.items()
+            for alias_ref in [
+                resolved_ref,
+                *(
+                    item['aliases']
+                    if 'aliases' in item
+                    else []
+                )
+            ]
+        }
+
+    def resolved_subject(self,
+            subject_mapping: dict[str, str],
+            subject: list[str]
+    ) -> list[str]:
+        return [
+            subject_mapping[ref] if ref in subject_mapping else ref
+            for ref in subject
+        ]
+
+    def subject_in(self,
             command_items: dict[str, Any],
             subject: list[str]
     ) -> list[str]:
