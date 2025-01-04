@@ -156,10 +156,13 @@ class FinancialTransaction:
             return CurrencyAmount(tag_currency, tag_amount)
 
         elif type == TagType.date:
-            tag_value_parsed = date(*[
-                int(component)
-                for component in tag_value.split('-')
-            ])
+            try:
+                tag_value_parsed = date(*[
+                    int(component)
+                    for component in tag_value.split('-')
+                ])
+            except ValueError as e:
+                raise ValueError(f"Could not parse value '{tag_value}' of tag '{name}' in item '{item['ref']}'") from e
             if tag_value_parsed.strftime('%Y-%m-%d') != tag_value:
                 raise ValueError(
                     f"Value of tag '{name}' in transaction '{item['ref']}'"
