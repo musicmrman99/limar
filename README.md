@@ -225,7 +225,7 @@ cat <<EOF >> "$HOME/.bashrc" # Or .zshrc, etc.
 #export LIMAR__PIP='$LIMAR__PIP'
 #export LIMAR__DATA_DIR='$LIMAR__DATA_DIR'
 # - If you want to profile LIMAR's performance, then set this to true
-#export LIMAR__PERFORMANCE_PROFILING_ENABLED='false'
+#export LIMAR__PERFORMANCE_PROFILING_ENABLED='$LIMAR__PERFORMANCE_PROFILING_ENABLED'
 
 # Any module-specific environment variables go here ...
 
@@ -259,12 +259,10 @@ If you move the repo directory without a shell with LIMAR loaded, then any new s
 
 ### Building from Source
 
-To build the ANTLR4 language (after installing the packages in `requirements.txt` with `limar /init`):
+The ANTLR4 language parser can be rebuilt during development (after following the installation instructions above) with:
 
 ```sh
-cd modules/manifest_lang && \
-  antlr4 -Dlanguage=Python3 -o ./build ./Manifest.g4 && \
-  cd ../..
+limar /rebuild
 ```
 
 ### Running Tests
