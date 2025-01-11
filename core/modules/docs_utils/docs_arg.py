@@ -1,4 +1,4 @@
-from argparse import ArgumentParser, Action
+from argparse import ArgumentParser, Action, Namespace
 from textwrap import dedent
 
 from core.modules.docs_utils.helpformatter import MMHelpFormatter
@@ -31,9 +31,23 @@ def add_docs_arg(parser: ArgumentParser):
     parser.add_argument('--docs', action=DocsAction,
         help="""Show help text with the extended documentation included.""")
 
-def docs_for(processor: Callable):
-    return (
-        dedent(processor.__doc__)
-        if processor.__doc__ is not None
-        else None
+def docs_for(processor: Callable, env: Namespace):
+    env_dict = vars(env) if env is not None else None
+    docs = '\n\n'.join(
+        part for part in (
+            (
+                dedent(processor.__doc__).strip()
+                if processor.__doc__ is not None
+                else None
+            ), (
+                (
+                    'Environment Variables:\n' +
+                    '\n'.join(env_dict.keys())
+                )
+                if env_dict is not None and len(env_dict) > 0
+                else None
+            )
+        )
+        if part is not None and part != ''
     )
+    return docs if docs != '' else None
