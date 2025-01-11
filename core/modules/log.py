@@ -28,7 +28,7 @@ class LogModule:
 
     def configure_env(self, *, parser: EnvironmentParser, **_):
         parser.add_variable('FILE', default_is_none=True)
-        parser.add_variable('VERBOSITY', type=int, default=0)
+        parser.add_variable('VERBOSITY', parser=int, default=0)
 
     def configure_root_args(self, *, parser: ArgumentParser, **_):
         parser.add_argument('--log-file', default=None,

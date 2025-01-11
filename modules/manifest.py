@@ -715,7 +715,6 @@ class ManifestModule:
         return ['log', 'phase', 'cache', 'tr']
 
     def configure_env(self, *, parser: EnvironmentParser, **_):
-        parser.add_variable('ROOT')
         parser.add_variable('DEFAULT_ITEM_SET', default_is_none=True)
 
     def configure_args(self, *, mod: Namespace, parser: ArgumentParser, **_):
@@ -809,13 +808,18 @@ class ManifestModule:
 
         mod.phase.configure_phase_control_args(item_set_parser)
 
-    def configure(self, *, mod: Namespace, env: Namespace, **_):
+    def configure(self, *,
+            mod: Namespace,
+            root_env: Namespace,
+            env: Namespace,
+            **_
+    ):
         self._mod = mod # For methods that aren't directly given it
 
         mod.phase.register_system(MANIFEST_LIFECYCLE)
 
         if self._manifest_store is None:
-            self._manifest_store = Store(env.ROOT)
+            self._manifest_store = Store(root_env.DATA_DIR / 'manifest')
 
         self._default_item_set = env.DEFAULT_ITEM_SET
 

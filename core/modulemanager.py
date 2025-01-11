@@ -22,7 +22,10 @@ from copy import copy, deepcopy
 from graphlib import CycleError, TopologicalSorter
 from argparse import REMAINDER, ArgumentParser, Namespace
 
-from core.envparse import EnvironmentParser
+from core.envparse import (
+    EnvironmentParser,
+    already_absolute_path, bool_lower_case
+)
 from core.utils import list_split_match
 from core.exceptions import LIMARException
 import core.modules as core_module_package
@@ -45,6 +48,8 @@ LIFECYCLE = PhaseSystem(
         'CREATE_MODULE_ACCESSORS',
 
         'ENVIRONMENT_CONFIGURATION',
+        'ENVIRONMENT_FINALISATION',
+        'ROOT_ENVIRONMENT_PARSING',
         'ENVIRONMENT_PARSING',
 
         'ROOT_ARGUMENT_CONFIGURATION',
@@ -269,6 +274,8 @@ class ModuleLifecycle:
             env_parser,
             self._accessor_object
         )
+        self._cli_env = self.finalise_environment(self._cli_env)
+        self._root_env = self.parse_root_environment(env_parser, self._cli_env)
         self._env = self.parse_environment(
             env_parser,
             self._all_mod_names,
@@ -277,6 +284,7 @@ class ModuleLifecycle:
 
         self.configure_root_arguments(
             self._all_mods,
+            self._root_env,
             self._env,
             self._arg_parser,
             self._accessor_object
@@ -288,12 +296,14 @@ class ModuleLifecycle:
         # Configure and start modules (WARNING: can mutate module state)
         self.configure(
             self._mods,
+            self._root_env,
             self._env,
             self._root_args,
             self._accessor_object
         )
         self._started_mods, self._start_exceptions = self.start(
             self._mods,
+            self._root_env,
             self._env,
             self._root_args,
             self._accessor_object
@@ -305,6 +315,7 @@ class ModuleLifecycle:
         # Configure call-specific arguments
         self.configure_arguments(
             self._all_mods,
+            self._root_env,
             self._env,
             self._arg_parser,
             self._accessor_object
@@ -317,6 +328,7 @@ class ModuleLifecycle:
         # Invoke modules (WARNING: can mutate module state)
         self._run_exception = self.invoke_and_call(
             self._module_args_set,
+            self._root_env,
             self._env,
             self._start_exceptions,
             self._accessor_object
@@ -345,6 +357,7 @@ class ModuleLifecycle:
             self._mods,
             self._all_mods,
 
+            self._root_env,
             self._env,
             self._root_args,
             self._start_exceptions,
@@ -539,6 +552,15 @@ class ModuleLifecycle:
         )
         self._proceed_to_phase(LIFECYCLE.PHASES.ENVIRONMENT_CONFIGURATION)
 
+        root_parser = env_parser.add_parser('')
+        root_parser.add_variable('PYTHON', parser=str)
+        root_parser.add_variable('PIP', parser=str)
+        root_parser.add_variable('SHELL', parser=str)
+        root_parser.add_variable('REPO', parser=already_absolute_path)
+        root_parser.add_variable('DATA_DIR', parser=already_absolute_path)
+        root_parser.add_variable('PERFORMANCE_PROFILING_ENABLED',
+            parser=bool_lower_case)
+
         for name, module in all_mods.items():
             all_mod_subproc.transition_to(name)
 
@@ -546,22 +568,18 @@ class ModuleLifecycle:
                 self._debug(f"Configuring environment for module '{name}'")
                 module_env_parser = env_parser.add_parser(name)
                 module.configure_env(
-                    parser=module_env_parser,
+                    mod=accessor_object,
                     root_parser=env_parser,
-                    mod=accessor_object
+                    parser=module_env_parser
                 )
 
         all_mod_subproc.transition_to_complete()
 
-    def parse_environment(self,
-            env_parser: EnvironmentParser,
-            all_mod_names: tuple[str, ...],
+    def finalise_environment(self,
             cli_env: dict[str, str] | None = None
-    ) -> dict[str, Namespace]:
-        all_mod_subproc = self._start_all_module_subprocess_for(
-            LIFECYCLE.PHASES.ENVIRONMENT_PARSING
-        )
-        self._proceed_to_phase(LIFECYCLE.PHASES.ENVIRONMENT_PARSING)
+    ) -> dict[str, str]:
+        self._proceed_to_phase(LIFECYCLE.PHASES.ENVIRONMENT_FINALISATION)
+        self._debug(f"Finalising environment:", cli_env)
 
         if cli_env is None:
             cli_env = {
@@ -570,7 +588,35 @@ class ModuleLifecycle:
                 if name.startswith(self._app_name.upper())
             }
 
-        self._debug(f"Parsing environment:", cli_env)
+        self._debug(f"Result:", cli_env)
+        return cli_env
+
+    def parse_root_environment(self,
+            env_parser: EnvironmentParser,
+            cli_env: dict[str, str]
+    ) -> Namespace:
+        self._proceed_to_phase(LIFECYCLE.PHASES.ROOT_ENVIRONMENT_PARSING)
+        self._debug(f"Parsing root environment from finalised environment")
+
+        root_env = env_parser.parse_env(
+            cli_env,
+            subparsers_to_use=[''],
+            collapse_prefixes=True
+        )
+
+        self._trace(f"Result:", root_env)
+        return root_env
+
+    def parse_environment(self,
+            env_parser: EnvironmentParser,
+            all_mod_names: tuple[str, ...],
+            cli_env: dict[str, str]
+    ) -> dict[str, Namespace]:
+        all_mod_subproc = self._start_all_module_subprocess_for(
+            LIFECYCLE.PHASES.ENVIRONMENT_PARSING
+        )
+        self._proceed_to_phase(LIFECYCLE.PHASES.ENVIRONMENT_PARSING)
+        self._debug(f"Parsing module environments from finalised environment")
 
         envs = {}
         for name in all_mod_names:
@@ -588,14 +634,15 @@ class ModuleLifecycle:
 
     # NOTE: Grammar for the command line is:
     #         app_name global_opt*
-    #         module_name module_opt* module_arg*
+    #         module_name (module_opt | module_arg)*
     #         (
     #           (('-' | ']') '-' ('-' | '['))
-    #           module_name module_opt* module_arg*
+    #           module_name (module_opt | module_arg)*
     #         )*
 
     def configure_root_arguments(self,
             all_mods: dict[str, Any],
+            root_env: Namespace,
             envs: dict[str, Namespace],
             arg_parser: ArgumentParser,
             accessor_object: Any
@@ -611,6 +658,7 @@ class ModuleLifecycle:
             if hasattr(module, 'configure_root_args'):
                 self._debug(f"Configuring root arguments for module '{name}'")
                 module.configure_root_args(
+                    root_env=root_env,
                     env=envs[name],
                     parser=arg_parser,
                     mod=accessor_object
@@ -685,6 +733,7 @@ class ModuleLifecycle:
 
     def configure(self,
             mods: dict[str, Any],
+            root_env: Namespace,
             envs: dict[str, Namespace],
             root_args: Namespace,
             accessor_object: Any
@@ -701,6 +750,7 @@ class ModuleLifecycle:
                 self._debug(f"Configuring module '{name}'")
                 module.configure(
                     mod=accessor_object,
+                    root_env=root_env,
                     env=envs[name],
                     args=root_args
                 )
@@ -709,6 +759,7 @@ class ModuleLifecycle:
 
     def start(self,
             mods: dict[str, Any],
+            root_env: Namespace,
             envs: dict[str, Namespace],
             root_args: Namespace,
             accessor_object: Any
@@ -731,6 +782,7 @@ class ModuleLifecycle:
                 try:
                     module.start(
                         mod=accessor_object,
+                        root_env=root_env,
                         env=envs[name],
                         args=root_args
                     )
@@ -753,6 +805,7 @@ class ModuleLifecycle:
 
     def configure_arguments(self,
             all_mods: dict[str, Any],
+            root_env: Namespace,
             envs: dict[str, Namespace],
             arg_parser: ArgumentParser,
             accessor_object: Any
@@ -787,6 +840,7 @@ class ModuleLifecycle:
             if hasattr(module, 'configure_args'):
                 self._debug(f"Configuring arguments for module '{module_name}'")
                 module.configure_args(
+                    root_env=root_env,
                     env=envs[module_name],
                     parser=module_arg_parser,
                     mod=accessor_object
@@ -858,6 +912,7 @@ class ModuleLifecycle:
             module_args_set: list[
                 tuple[str, str, Namespace, str | None, str | None]
             ],
+            root_env: Namespace,
             envs: dict[str, Namespace],
             start_exceptions: list[Exception | KeyboardInterrupt],
             accessor_object: Any
@@ -938,6 +993,7 @@ class ModuleLifecycle:
                     self._debug('Forwarded input:', forward_input)
                     return module(
                         mod=accessor_object,
+                        root_env=root_env,
                         env=envs[module_name],
                         args=module_args,
                         invoked_as=invoked_name,
@@ -982,6 +1038,7 @@ class ModuleLifecycle:
             mods: dict[str, Any],
             all_mods: dict[str, Any],
 
+            root_env: Namespace,
             envs: dict[str, Namespace],
             root_args: Namespace,
             start_exceptions: list[Exception | KeyboardInterrupt],
@@ -1009,6 +1066,7 @@ class ModuleLifecycle:
                 try:
                     module.stop(
                         mod=accessor_object,
+                        root_env=root_env,
                         env=envs[name],
                         args=root_args,
                         start_exceptions=start_exceptions,

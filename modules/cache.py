@@ -6,7 +6,6 @@ from core.modules.docs_utils.docs_arg import docs_for
 
 # Types
 from typing import Any
-from core.envparse import EnvironmentParser
 from argparse import ArgumentParser, BooleanOptionalAction, Namespace
 
 class CacheModule:
@@ -22,9 +21,6 @@ class CacheModule:
 
     def dependencies(self):
         return ['log', 'docs']
-
-    def configure_env(self, *, parser: EnvironmentParser, **_):
-        parser.add_variable('ROOT')
 
     def configure_root_args(self, *, parser: ArgumentParser, **_):
         parser.add_argument('--read-cache',
@@ -77,7 +73,7 @@ class CacheModule:
 
     def configure(self, *,
             mod: Namespace,
-            env: Namespace,
+            root_env: Namespace,
             args: Namespace,
             **_
     ):
@@ -88,7 +84,7 @@ class CacheModule:
             if args.cache_root is not None:
                 self._store = Store(args.cache_root)
             else:
-                self._store = Store(env.ROOT)
+                self._store = Store(root_env.DATA_DIR / 'cache')
 
         # Enable/disable caching
         self._read_cache = (
