@@ -444,17 +444,17 @@ if [ "$LIMAR__STARTUP_FAILED" = 'false' ]; then
 
             if [ -z "$component" -o "$component" = 'manifest' ]; then
                 if [ -d "$LIMAR__DATA_DIR/manifest" ]; then
-                    for manifest_dir in "$LIMAR__DATA_DIR/manifest"/*; do
-                        if [ -d "$manifest_dir" ]; then
-                            if [ -L "$manifest_dir" ]; then
-                                readlink "$manifest_dir"
+                    for manifest_file in "$LIMAR__DATA_DIR/manifest"/*; do
+                        if [ -f "$manifest_file" ]; then
+                            if [ -L "$manifest_file" ]; then
+                                readlink "$manifest_file"
                             else
-                                echo "$manifest_dir"
+                                echo "$manifest_file"
                             fi
                         else
                             limar__log \
-                                "WARNING: Non-directory '$manifest_dir' in" \
-                                ' manifest link directory'
+                                "WARNING: Non-file '$manifest_file' in" \
+                                ' manifest directory'
                         fi
                     done
                 else
@@ -478,9 +478,9 @@ if [ "$LIMAR__STARTUP_FAILED" = 'false' ]; then
                             " installation"
                         return 1
                     fi
-                    limar__log "Linking to LIMAR installation at '$LIMAR__REPO'"
 
                     # Link dependency and bootstrap scripts
+                    limar__log "Linking to LIMAR installation at '$LIMAR__REPO'"
                     local script
                     for script in "$LIMAR__REPO"/scripts/*; do
                         limar__link_file "$limar_bin_path/$(basename "$script")" "$script"
@@ -505,16 +505,20 @@ if [ "$LIMAR__STARTUP_FAILED" = 'false' ]; then
             if [ -z "$component" -o "$component" = 'manifest' ]; then
                 local limar_manifest_path="$LIMAR__DATA_DIR/manifest"
                 if [ "$command" = '/relink' -o "$command" = '/unlink' ]; then
-                    limar__log 'Unlinking all currently linked LIMAR manifest' \
-                        ' directories'
+                    limar__log 'Unlinking all currently linked LIMAR manifests'
                     rm -f "$limar_manifest_path"/*
                 fi
-                local manifests_linked="$(find "$limar_manifest_path" -name '*.manifest\.txt' -type f -printf '.' | wc -c)"
-                if [ \( "$command" = '/link' -a -s "$limar_manifest_path/.manifest-list.txt" -a "$manifests_linked" = 0 \) -o "$command" = '/relink' ]; then
-                    while read -r manifest_path; do
-                        limar__link_file "$limar_manifest_path/$(basename "$manifest_path")" "$manifest_path"
-                        limar__log -s "Linked to LIMAR manifest '$manifest_path'."
-                    done < "$limar_manifest_path/.manifest-list.txt"
+                local manifests_linked="$(find "$limar_manifest_path" -mindepth 1 -maxdepth 1 -regex '.*[^/]+.manifest\.txt' -type f -printf '.' | wc -c)"
+                local manifest_list_path="$limar_manifest_path/.manifest-list.txt"
+                if [ \( "$command" = '/link' -a -s "$manifest_list_path" -a "$manifests_linked" = 0 \) -o "$command" = '/relink' ]; then
+                    limar__log "Linking to LIMAR manifests in the directories listed in '$manifest_list_path'"
+                    while read -r manifest_dir_path; do
+                        for manifest_path in "$manifest_dir_path"/*.manifest.txt; do
+                            if [ -f "$manifest_path" ]; then
+                                limar__link_file "$limar_manifest_path/$(basename "$manifest_path")" "$manifest_path"
+                            fi
+                        done
+                    done < "$manifest_list_path"
                     limar__log -s "Linked to LIMAR manifests."
 
                 elif [ "$command" = '/link' ]; then

@@ -1,10 +1,59 @@
 import os
 from argparse import Namespace
+from pathlib import Path
 
 from core.exceptions import LIMARException
 
 # Types
-from typing import Any
+from typing import Any, Callable
+
+# Environment Variable Parsers
+# --------------------------------------------------
+
+Parser = Callable[[str], Any]
+
+def bool_lower_case(val: str):
+    if val not in ('true', 'false'):
+        raise ValueError(
+            f"Failed to parse value as lower-case boolean: '{val}'"
+        )
+    return val == 'true'
+
+def bool_title_case(val: str):
+    if val not in ('True', 'False'):
+        raise ValueError(
+            f"Failed to parse value as title-case boolean: '{val}'"
+        )
+    return val == 'True'
+
+def bool_upper_case(val: str):
+    if val not in ('TRUE', 'FALSE'):
+        raise ValueError(
+            f"Failed to parse value as upper-case boolean: '{val}'"
+        )
+    return val == 'TRUE'
+
+def bool_any_case(val: str):
+    val_lower = val.lower()
+    if val_lower not in ('true', 'false'):
+        raise ValueError(
+            f"Failed to parse value as boolean (any casing): '{val}'"
+        )
+    return val_lower == 'true'
+
+def already_absolute_path(val: str):
+    path = Path(val)
+    if not path.is_absolute():
+        raise ValueError(
+            f"Failed to parse value as already-absolute path: '{val}'"
+        )
+    return path.resolve()
+
+def absolute_path(val: str):
+    return Path(val).resolve()
+
+# Environment Parser
+# --------------------------------------------------
 
 class EnvironmentParser:
     def __init__(self, prefix: str | None = None):
@@ -23,12 +72,11 @@ class EnvironmentParser:
 
     def add_variable(self,
             name: str,
-            type: type | None = None,
+            parser: Parser | None = None,
             default: Any = None,
             default_is_none: bool = False
     ):
         full_name = self._prefix + self._in_env_case(name)
-
         if full_name in self._spec:
             raise LIMARException(
                 "Attempt to add environment variable to spec that is already"
@@ -36,7 +84,7 @@ class EnvironmentParser:
             )
 
         self._spec[full_name] = {
-            **({'type': type} if type is not None else {}),
+            'parser': parser if parser is not None else str,
             **({'default': default}
                if default is not None or default_is_none
                else {})
@@ -75,14 +123,13 @@ class EnvironmentParser:
 
         # Parse this parser's spec
         for name, opts in self._spec.items():
-            type = opts['type'] if 'type' in opts else str
-
             collapsed_name = name
             if collapse_prefixes:
                 collapsed_name = name.removeprefix(self._prefix)
 
+            parser: Parser = opts['parser']
             try:
-                env_vars[collapsed_name] = type(env[name])
+                env_vars[collapsed_name] = parser(env[name])
             except KeyError as e:
                 if 'default' in opts:
                     env_vars[collapsed_name] = opts['default']
@@ -92,8 +139,8 @@ class EnvironmentParser:
                     ) from e
             except ValueError as e:
                 raise LIMARException(
-                    f"Environment variable '{name}' not parsable as"
-                    f" '{type.__name__}"
+                    f"Environment variable '{name}' not parsable using parser"
+                    f" '{parser.__name__}'"
                 ) from e
 
         # Parse the specs of all selected subparsers
