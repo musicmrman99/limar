@@ -39,7 +39,7 @@ class LogModule:
 
         parser.add_argument('-v', '--log-verbose',
             action='count', default=None,
-            help="Can be given up to 4 times to increase the log level")
+            help="Can be given up to 4 times to increase the log level.")
 
     def configure(self, *,
             mod: Namespace,

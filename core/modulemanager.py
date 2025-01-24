@@ -1,5 +1,6 @@
 # Types
 from __future__ import annotations
+from textwrap import dedent
 from typing import (
     Any,
     Callable,
@@ -234,13 +235,6 @@ class ModuleLifecycle:
     # --------------------
 
     def __enter__(self):
-        env_parser = EnvironmentParser(self._app_name)
-        self._arg_parser = ArgumentParser(
-            prog=self._app_name,
-            epilog=docs_for(self._app),
-            add_help=False
-        )
-
         inherited_mods: dict[str, Any] = (
             self._parent_lifecycle._mods
             if self._parent_lifecycle is not None
@@ -268,24 +262,41 @@ class ModuleLifecycle:
             self.create_module_accessor_object(self._all_mods)
         )
 
-        # Configure environment and global/root arguments
+        # Configure environment and root arguments
+        self._env_parser = EnvironmentParser(self._app_name)
         self.configure_environment(
             self._all_mods,
-            env_parser,
+            self._env_parser,
             self._accessor_object
         )
         self._cli_env = self.finalise_environment(self._cli_env)
-        self._root_env = self.parse_root_environment(env_parser, self._cli_env)
-        self._env = self.parse_environment(
-            env_parser,
+
+        qualified_env = self._env_parser.parse_env()
+        self._root_env = self.parse_root_environment(
+            self._env_parser,
+            self._cli_env
+        )
+        self._envs = self.parse_environment(
+            self._env_parser,
             self._all_mod_names,
             self._cli_env
         )
 
+        env_specs = self._env_parser.get_variables()
+        self._arg_parser = ArgumentParser(
+            prog=self._app_name,
+            epilog=docs_for(
+                self._app,
+                list(env_specs.keys()),
+                env_specs=env_specs,
+                env=qualified_env
+            ),
+            add_help=False
+        )
         self.configure_root_arguments(
             self._all_mods,
             self._root_env,
-            self._env,
+            self._envs,
             self._arg_parser,
             self._accessor_object
         )
@@ -297,14 +308,14 @@ class ModuleLifecycle:
         self.configure(
             self._mods,
             self._root_env,
-            self._env,
+            self._envs,
             self._root_args,
             self._accessor_object
         )
         self._started_mods, self._start_exceptions = self.start(
             self._mods,
             self._root_env,
-            self._env,
+            self._envs,
             self._root_args,
             self._accessor_object
         )
@@ -316,7 +327,8 @@ class ModuleLifecycle:
         self.configure_arguments(
             self._all_mods,
             self._root_env,
-            self._env,
+            self._envs,
+            self._env_parser,
             self._arg_parser,
             self._accessor_object
         )
@@ -329,7 +341,7 @@ class ModuleLifecycle:
         self._run_exception = self.invoke_and_call(
             self._module_args_set,
             self._root_env,
-            self._env,
+            self._envs,
             self._start_exceptions,
             self._accessor_object
         )
@@ -358,7 +370,7 @@ class ModuleLifecycle:
             self._all_mods,
 
             self._root_env,
-            self._env,
+            self._envs,
             self._root_args,
             self._start_exceptions,
             self._run_exception,
@@ -677,7 +689,7 @@ class ModuleLifecycle:
 
         # Add help options
         arg_parser.add_argument('-h', '--help', action='help',
-            help='Show this help message and exit')
+            help='Show this help message and exit.')
         add_docs_arg(arg_parser)
 
         # Parse arguments
@@ -693,11 +705,28 @@ class ModuleLifecycle:
         cli_args_to_fwd = list_split_match(cli_args, '[-\\]][-][-\\[]')[0][0]
         cli_args_from_fwd = cli_args[len(cli_args_to_fwd):]
         root_parser = deepcopy(arg_parser)
-        root_parser.add_argument('remaining_cli_args', nargs=REMAINDER)
+
+        # NOTE: This help text is technically a lie. The arguments this collects
+        #       are only those up to the first forwarding operator, not the
+        #       whole forwarding chain. The help text was written like this to
+        #       be useful from the user's perspective.
+        root_parser.add_argument('module_invokations', nargs=REMAINDER,
+            help=f"""
+            The forwarding chain of {self._app_name} module invokations.
+            Forwarding chains are of the form `module_name [module_args]
+            [forwarding_operator module_name [module_args] ...]`, where
+            `forwarding_operator` is a set of three characters that determine
+            how the output of the module invokation(s) to its left are passed to
+            the module invokation(s) to its right.
+
+            The supported operators are `---` (forward unchanged), `--[` (expand
+            and forward), and `]--` (contract and forward). `]-[` is supported,
+            but is rarely useful.
+            """)
 
         root_args = root_parser.parse_args(cli_args_to_fwd)
-        remaining_cli_args = [*root_args.remaining_cli_args, *cli_args_from_fwd]
-        del root_args.remaining_cli_args # type: ignore (dynamic; see above)
+        remaining_cli_args = [*root_args.module_invokations, *cli_args_from_fwd]
+        del root_args.module_invokations # type: ignore (dynamic; see above)
         self._trace('Result:', root_args)
         self._trace('Remaining args:', remaining_cli_args)
 
@@ -807,6 +836,7 @@ class ModuleLifecycle:
             all_mods: dict[str, Any],
             root_env: Namespace,
             envs: dict[str, Namespace],
+            env_parser: EnvironmentParser,
             arg_parser: ArgumentParser,
             accessor_object: Any
     ) -> None:
@@ -829,9 +859,20 @@ class ModuleLifecycle:
                 if hasattr(module, 'aliases'):
                     aliases = module.aliases()
 
+                try:
+                    env_specs = (env_parser
+                        .get_parser(module_name)
+                        .get_variables())
+                except StopIteration:
+                    env_specs = {}
                 module_arg_parser = arg_subparsers.add_parser(
                     module_name,
-                    epilog=docs_for(module),
+                    epilog=docs_for(
+                        module,
+                        list(env_specs.keys()),
+                        env_specs=env_specs,
+                        env=envs[module_name]
+                    ),
                     aliases=aliases
                 )
                 module_arg_parser.set_defaults(_module_name=module_name)

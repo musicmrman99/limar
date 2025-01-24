@@ -6,6 +6,7 @@ from core.store import Store
 from core.modulemanager import ModuleAccessor
 from core.exceptions import LIMARException
 from core.modules.phase_utils.phase_system import PhaseSystem
+from core.modules.docs_utils.docs_arg import docs_for
 
 # Types
 from core.modules.log import LogModule
@@ -590,13 +591,14 @@ class ManifestModule:
     Contexts may also take options. Options are specified by placing key-value
     pairs (where the value is optional and defaults to 'None' if omitted) within
     a pair of brackets after the context type and zero or more spaces. Options
-    are separated either by a comma, a newline, or both.
+    are separated either by a comma, a newline, or both. Each option is
+    separated from its value (if given) by a colon.
 
     Some context types are also 'root' context types. ManifestModule reads all
     manifest files from the manifest root directory that have the same names as
-    the registered root context types with the '.manifest.txt' file extension.
-    For each manifest file that is read, the corresponding root context type is
-    applied by default to all declarations within the file.
+    the registered root context types, with the '.manifest.txt' file extension
+    appended. For each manifest file that is read, the corresponding root
+    context type is applied by default to all declarations within the file.
 
     ## Implementing a Context Module
 
@@ -604,41 +606,41 @@ class ManifestModule:
     method:
 
     - `context_type()`
-      - Return the context type (a string) for this context module.
+      Return the context type (a string) for this context module.
 
     It may also define an additional class method:
 
     - `can_be_root()`
-      - Return True if the context type supports being used as a root context,
-        otherwise return False. Only one context module for a context type
-        needs to return True for this method for that context type to be
-        applied. This method not being defined for a context module is
-        equivalent to it returning False.
+      Return True if the context type supports being used as a root context,
+      otherwise return False. Only one context module for a context type needs
+      to return True for this method for that context type to be applied. This
+      method not being defined for a context module is equivalent to it
+      returning False.
 
     It may define any of the following method-based hooks (at least one must be
     defined to make the context module do anything):
 
     - `on_enter_manifest()`
-      - TODO
+      TODO
 
     - `on_enter_context(context)`
-      - TODO
+      TODO
 
     - `on_declare_item(context, item)`
-      - TODO
+      TODO
 
     - `on_declare_item_set(context, item_set)`
-      - TODO
+      TODO
 
     - `on_exit_context(context, items, item_sets)`
-      - TODO
-        `items` and `item_sets` contain the items/item_sets that were declared
-        in this context in a single manifest file.
+      TODO
+      `items` and `item_sets` contain the items/item_sets that were declared in
+      this context in a single manifest file.
 
     - `on_exit_manifest(items, item_sets)`
-      - TODO
-        `items` and `item_sets` contain all items/item_sets that were declared
-        in a single manifest file.
+      TODO
+      `items` and `item_sets` contain all items/item_sets that were declared in
+      a single manifest file.
 
     # Examples
 
@@ -647,14 +649,15 @@ class ManifestModule:
     example-item-tagged (tagA)
     example-item-multi-tag (tagA, tagB, tagC)
 
-    # The 'example-item' item will also contain the tag `tagA` without a value
+    # The 'example-item2' item will also contain the tag `tagA` without a value
     # and the tag `some-tag` with the value '/home/username/mystuff' if the
-    # `Tags` context module is registered. The same system applies for all the
-    # following context examples.
+    # `Tags` context module is registered.
     @tags (tagA, some-tag: /home/username/mystuff)
     example-item2 (thing, thing-type)
 
-    # Contexts that are stacked like this are actually nested.
+    # Contexts that are stacked like this are actually nested (in this case, an
+    # @uris context is nested inside of an @project context). A blank line
+    # closes all of them.
     @project
     @uris (path: /home/username/Source)
     # Refs can contain slashes, but tag names can't
@@ -670,11 +673,12 @@ class ManifestModule:
 
     # Items can be anything - contexts may add data to them, possibly pulling it
     # from various sources. Other MM modules that use ManifestModule may also
-    # interpret the data that items define in their own ways.
+    # interpret the data that context modules add to items in their own ways.
     @house (
         # You can't put comments after the end of a key-value pair unless it
         # it has a comma after it (the context option separator, meaning it's
-        # not the last context option)
+        # not the last context option). If this didn't have a comment, the comma
+        # would be optional.
         address: 100 My Place; Riverdale; Nationale, # Like this
         controller: https://example.com/my-house/controller
     ) {
@@ -689,7 +693,7 @@ class ManifestModule:
         plate-1 (crockery)
         bowl-1  (crockery)
 
-        # @room doesn't apply to these item sets
+        # @room doesn't apply to this item set
         dinner-set [cutlery | crockery]
     }
     ```
@@ -715,9 +719,20 @@ class ManifestModule:
         return ['log', 'phase', 'cache', 'tr']
 
     def configure_env(self, *, parser: EnvironmentParser, **_):
-        parser.add_variable('DEFAULT_ITEM_SET', default_is_none=True)
+        self._env_parser = parser # For methods that aren't directly given it
 
-    def configure_args(self, *, mod: Namespace, parser: ArgumentParser, **_):
+        parser.add_variable('DEFAULT_ITEM_SET', default_is_none=True,
+            help="""
+            The item set to match item patterns in if no other item set is
+            specified. If None, use the global item set.
+            """)
+
+    def configure_args(self, *,
+            mod: Namespace,
+            env: Namespace,
+            parser: ArgumentParser,
+            **_
+    ):
         parser.add_argument('--input-format', default=None,
             help="""
             The format of the forwarded input. Irrelevant without using `-L` to
@@ -730,7 +745,13 @@ class ManifestModule:
         manifest_subparsers = parser.add_subparsers(dest="manifest_command")
 
         # Subcommands / Resolve Item
-        item_parser = manifest_subparsers.add_parser('item')
+        item_parser = manifest_subparsers.add_parser('item',
+            epilog=mod.docs.docs_for(
+                self.get_item,
+                ['DEFAULT_ITEM_SET'],
+                env_parser=self._env_parser,
+                env=env
+            ))
         mod.docs.add_docs_arg(item_parser)
 
         item_parser.add_argument('pattern', metavar='PATTERN', nargs='?',
@@ -761,7 +782,8 @@ class ManifestModule:
         mod.phase.configure_phase_control_args(item_parser)
 
         # Subcommands / Resolve Item Set
-        item_set_parser = manifest_subparsers.add_parser('item-set')
+        item_set_parser = manifest_subparsers.add_parser('item-set',
+            epilog=mod.docs.docs_for(self.get_item_set))
         mod.docs.add_docs_arg(item_set_parser)
 
         item_set_parser.add_argument('-s', '--item-set-spec',
@@ -1095,6 +1117,10 @@ class ManifestModule:
 
     @ModuleAccessor.invokable_as_service
     def get_item_set(self, pattern: str | None = None) -> ItemSet:
+        """
+        Return the first item set that matches the given regex pattern.
+        """
+
         assert self._global_manifest is not None, '_global_manifest is initialised in STARTING phase, but this method is only run during RUNNING phase'
 
         self._mod.log.trace(
@@ -1143,16 +1169,20 @@ class ManifestModule:
     def get_item(self,
             pattern: str,
             *,
-            item_set: ItemSet | None = None,
-            properties: list[str] | None = None
+            item_set: ItemSet | None = None
     ) -> Item:
+        """
+        Return the first item that matches the given regex pattern.
+
+        If item_set is given, then only look for matches in that set.
+        """
+
         assert self._global_manifest is not None, '_global_manifest is initialised in STARTING phase, but this method is only run during RUNNING phase'
 
         self._mod.log.trace(
             "manifest.get_item("
                 +(pattern if pattern is None else f"'{pattern}'")+","
-                f" item_set={item_set},"
-                f" properties={properties}"
+                f" item_set={item_set}"
             ")"
         )
 
@@ -1191,11 +1221,16 @@ class ManifestModule:
     def get_items(self,
             patterns: list[str],
             *,
-            item_set: ItemSet | None = None,
-            properties: list[str] | None = None
+            item_set: ItemSet | None = None
     ) -> ItemSet:
+        """
+        Return the set all items that match any of the given patterns.
+
+        If item_set is given, then only look for matches in that set.
+        """
+
         return self._mod.tr.index([
-            self.get_item(pattern, item_set=item_set, properties=properties)
+            self.get_item(pattern, item_set=item_set)
             for pattern in patterns
         ])
 

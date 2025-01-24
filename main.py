@@ -1,11 +1,15 @@
 from core.modulemanager import ModuleManager
-from core.modules.docs_utils.docs_arg import docs_for
 
 import modules
 
 def main():
     """
-    LIMAR is an information management tool.
+    The Local Information Management, Architecture, and Representation system
+    (LIMAR) is a tool for showing and manipulating digital information.
+
+    It primarily achieves this by integrating other tools into a single
+    comprehensive and consistent model of concepts, data, and operations called
+    the LIMAR Model, though some of its modules provide custom capabilities.
     """
 
     with ModuleManager(main, 'limar') as module_manager:

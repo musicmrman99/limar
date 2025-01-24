@@ -32,7 +32,8 @@ class EnvModule:
         env_subparsers = parser.add_subparsers(dest="env_command")
 
         # Change Directory
-        cd_subparser = env_subparsers.add_parser('cd', epilog=docs_for(self._cd))
+        cd_subparser = env_subparsers.add_parser('cd',
+            epilog=docs_for(self._cd))
         mod.docs.add_docs_arg(cd_subparser)
         cd_subparser.add_argument('project_pattern', metavar="PROJECT_PATTERN",
             help="""The pattern to match project names against.""")

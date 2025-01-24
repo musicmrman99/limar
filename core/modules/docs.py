@@ -1,8 +1,10 @@
+from core.envparse import EnvironmentParser
 from core.modulemanager import ModuleAccessor
-from core.modules.docs_utils.docs_arg import add_docs_arg
+from core.modules.docs_utils.docs_arg import add_docs_arg, docs_for
 
 # Types
-from argparse import ArgumentParser
+from typing import Callable
+from argparse import ArgumentParser, Namespace
 
 class DocsModule:
     """
@@ -19,3 +21,29 @@ class DocsModule:
         """
 
         add_docs_arg(parser)
+
+    @ModuleAccessor.invokable_as_function
+    def docs_for(self,
+            processor: Callable,
+            env_names: list[str] | None = None,
+            *,
+            env_parser: EnvironmentParser | None = None,
+            env: Namespace | None = None
+    ) -> str | None:
+        """
+        Generate documentation for an argument parser or subparser in a standard
+        format.
+
+        If the given arguments supply no documentation, return None.
+        """
+
+        return docs_for(
+            processor,
+            env_names,
+            env_specs=(
+                env_parser.get_variables(collapse_prefixes=True)
+                if env_parser is not None
+                else None
+            ),
+            env=env
+        )
