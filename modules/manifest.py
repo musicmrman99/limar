@@ -1269,14 +1269,14 @@ class ManifestModule:
             )
         }
 
-    def _format_item_tag(self, item, tag):
+    def _format_item_tag(self, item: Item, tag: str):
         if 'tags' in item and tag in item['tags']:
             if item['tags'][tag] is not None:
                 return item['tags'][tag]
             return '✓'
         return None
 
-    def _format_item_prop(self, item, prop):
+    def _format_item_prop(self, item: Item, prop: str):
         if prop in item:
             return item[prop]
         return None
@@ -1284,8 +1284,8 @@ class ManifestModule:
     # Collators
 
     def _all_tags(self,
-            item_set=None,
-            with_values=False
+            item_set: ItemSet | None = None,
+            with_values: bool = False
     ) -> list[Any]:
         assert self._global_manifest is not None, '_global_manifest is initialised in STARTING phase, but this method is only run during RUNNING phase'
 
@@ -1312,7 +1312,7 @@ class ManifestModule:
 
         return all_tags_data
 
-    def _all_extra_props(self, item_set=None):
+    def _all_extra_props(self, item_set: ItemSet | None = None):
         assert self._global_manifest is not None, '_global_manifest is initialised in STARTING phase, but this method is only run during RUNNING phase'
 
         # Cache the result for all items
