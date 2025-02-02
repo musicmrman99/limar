@@ -49,6 +49,9 @@ class CacheModule:
             epilog=docs_for(self.list))
         mod.docs.add_docs_arg(list_parser)
 
+        list_parser.add_argument('-f', '--filter', default=None,
+            help="Regex to filter list using.")
+
         # Subcommands / Show Cache Entry
         show_parser = cache_subparsers.add_parser('show',
             epilog=docs_for(self.get))
@@ -109,7 +112,7 @@ class CacheModule:
         output = None
 
         if args.cache_command == 'list':
-            output = self.list()
+            output = self.list(args.filter)
 
         elif args.cache_command == 'show':
             output = self.get(args.entry_name)
@@ -135,15 +138,23 @@ class CacheModule:
         return str(self._store)
 
     @ModuleAccessor.invokable_as_service
-    def list(self):
+    def list(self, pattern: str | None = None):
         """
-        List all cache entries, including those in the cache directory that
-        haven't yet been loaded if reading is enabled.
+        Return a list of the keys of all cache entries.
+
+        If cache reading is enabled, include the keys of entries in the cache
+        directory that haven't yet been loaded.
+
+        If pattern is given, return only cache entries whose keys match this
+        regex pattern.
         """
 
         assert self._store is not None, f'{self.list.__name__}() called before {self.configure.__name__}()'
 
-        return self._store.list(read_persistent=self._read_cache)
+        return self._store.list(
+            pattern=pattern,
+            read_persistent=self._read_cache
+        )
 
     @ModuleAccessor.invokable_as_service
     def get(self, name: str):

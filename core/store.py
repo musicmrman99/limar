@@ -1,10 +1,14 @@
 from pathlib import Path
 import pickle
+import re
 
 from core.exceptions import LIMARException
 
+# Types
+from typing import Any
+
 class Store:
-    def __init__(self, persist_dir='/tmp'):
+    def __init__(self, persist_dir: str = '/tmp'):
         self._persist_dir = Path(persist_dir).resolve()
         self._persist_dir.mkdir(parents=True, exist_ok=True)
 
@@ -14,23 +18,23 @@ class Store:
 
     # Attribute Methods
 
-    def setattrs(self, key, **attrs):
+    def setattrs(self, key: str, **attrs: Any):
         self._attrs[key] = attrs
 
-    def getattrs(self, key):
+    def getattrs(self, key: str):
         if key not in self._attrs:
             self.setattrs(key)
         return self._attrs[key]
 
-    def delattrs(self, key):
+    def delattrs(self, key: str):
         if key in self._attrs:
             del self._attrs[key]
 
-    def setattr(self, key, attr_name, attr_value):
+    def setattr(self, key: str, attr_name: str, attr_value: Any):
         attrs = self.getattrs(key)
         attrs[attr_name] = attr_value
 
-    def getattr(self, key, attr_name):
+    def getattr(self, key: str, attr_name: str):
         attrs = self.getattrs(key)
         if attr_name not in attrs:
             self.setattr(key, attr_name, None)
@@ -38,16 +42,28 @@ class Store:
 
     # Content Methods
 
-    def list(self, read_persistent=True) -> list[str]:
+    def list(self,
+            pattern: str | None = None,
+            read_persistent: bool = True
+    ) -> list[str]:
         known_entries = set(self._cache.keys())
         if read_persistent is True:
             known_entries.update(
                 str(self._key_for(entry))
                 for entry in self._persist_dir.iterdir()
             )
+
+        if pattern is not None:
+            regex = re.compile(pattern)
+            known_entries = {
+                key
+                for key in known_entries
+                if regex.search(key)
+            }
+
         return sorted(known_entries)
 
-    def get(self, key, read_persistent=True):
+    def get(self, key: str, read_persistent: bool = True):
         if key not in self._cache and read_persistent:
             try:
                 key_path = self._path_for(key)
@@ -59,12 +75,12 @@ class Store:
                 raise KeyError(f"Key '{key}' not found in this store") from e
         return self._cache[key]
 
-    def set(self, key, value):
+    def set(self, key: str, value: Any):
         self._cache[key] = value
         if key in self._marked_for_removal:
             self._marked_for_removal.remove(key)
 
-    def delete(self, key):
+    def delete(self, key: str):
         if key in self._cache:
             del self._cache[key]
         self._marked_for_removal.add(key)
@@ -101,13 +117,13 @@ class Store:
 
     # Pythonic Interface
 
-    def __setitem__(self, key, value):
+    def __setitem__(self, key: str, value: Any):
         self.set(key, value)
 
-    def __getitem__(self, key):
+    def __getitem__(self, key: str):
         return self.get(key)
 
-    def __delitem__(self, key):
+    def __delitem__(self, key: str):
         self.delete(key)
 
     def __enter__(self):
@@ -121,7 +137,7 @@ class Store:
 
     # Utils
 
-    def _path_for(self, key):
+    def _path_for(self, key: str):
         if len(key) > 0 and key[0] == '/':
             key = key[1:]
         key_path = Path(key)

@@ -26,7 +26,7 @@
 
   - understand how the existing modules and manifest declarations fit into the LIMAR model
     - core modules and `cache` are technical support tools
-    - `manifest` manually curated input tool
+    - `manifest` is a manually curated input tool
     - `info` and `env` are data collection and management tools
     - `tr` and `finance` are data processing tools, of varying levels of specialisation (ie. information binding)
 
