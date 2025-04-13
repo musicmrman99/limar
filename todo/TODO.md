@@ -33,6 +33,13 @@
     - `lspci` (done) and `lsblk` (partial)
     - `git` (partial)
 
+- ideas for integrations
+  - set references to version (dependency tree control)
+    - sourcegraph?
+    - dependabot / renovate bot?
+
+  - stacked branches support (git; multi-project)
+
 # Todo
 
 ## Develop Existing Modules
