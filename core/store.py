@@ -150,12 +150,10 @@ class Store:
         return (self._persist_dir / key_path).resolve()
 
     def _key_for(self, key_path: Path):
-        key_path_resolved = key_path.resolve()
-
-        if not key_path_resolved.is_relative_to(self._persist_dir):
+        if not key_path.is_relative_to(self._persist_dir):
             raise LIMARException(
-                "Paths to Store keys must be within the store directory"
-                f" ('{self._persist_dir}')"
+                f"Could not get key for path '{key_path}': Path is not within"
+                f" the Store directory ('{self._persist_dir}')"
             )
 
-        return key_path_resolved.relative_to(self._persist_dir)
+        return key_path.relative_to(self._persist_dir)
