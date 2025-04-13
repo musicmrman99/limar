@@ -12,7 +12,7 @@ from core.modules.docs_utils.docs_arg import docs_for
 from core.modules.log import LogModule
 from core.envparse import EnvironmentParser
 from argparse import ArgumentParser, Namespace
-from typing import Any, Callable, Iterable
+from typing import Any, Callable, Iterable, Literal
 
 ItemRef = str
 ItemSetRef = str | tuple[str, str] # (tag_name, tag_value)
@@ -22,6 +22,8 @@ ItemSet = dict[ItemRef, Item]
 ItemSetSet = dict[ItemSetRef, ItemSet]
 
 ContextModule = Any
+
+MergeStrategy = Literal['fail', 'merge', 'replace', 'keep']
 
 class ManifestItemTags:
     def __init__(self, add_callback=None, remove_callback=None):
@@ -847,43 +849,17 @@ class ManifestModule:
 
     def start(self, *_, mod: Namespace, **__):
         for manifest_name in self._manifest_names:
-            self._load_manifest(manifest_name)
+            manifest = self._load_manifest(manifest_name)
+            if manifest is not None:
+                self._manifests[manifest_name] = manifest
+            else:
+                mod.log.trace(
+                    f"Manifest '{manifest_name}' not found. Skipping."
+                )
 
-        all_items = {}
-        for manifest in self._manifests.values():
-            for ref, item in manifest.items().items():
-                if ref in all_items:
-                    raise LIMARException(
-                        f"Manifest item with ref '{ref}' already declared in"
-                        " another manifest"
-                    )
-                all_items[ref] = item
+        self._global_manifest = self._merge_manifests(self._manifests.values())
 
-        all_item_sets = {}
-        for manifest in self._manifests.values():
-            for ref, item_set in manifest.item_sets().items():
-                if ref in all_item_sets:
-                    mod.log.warning(
-                        f"Manifest item set with ref '{ref}' already declared"
-                        " in another manifest. Merging into existing item set."
-                    )
-                    all_item_sets[ref].update(item_set)
-                else:
-                    all_item_sets[ref] = item_set
-
-        self._global_manifest = Manifest(
-            self._mod.log,
-            md5(
-                ''.join(
-                    manifest.digest()
-                    for manifest in self._manifests.values()
-                ).encode('utf-8')
-            ).hexdigest(),
-            all_items,
-            all_item_sets
-        )
-
-    def _load_manifest(self, name):
+    def _load_manifest(self, name: str) -> Manifest:
         assert self._manifest_store is not None, 'ManifestModule._load_manifest() called before ManifestModule.configure()'
         try:
             manifest_text = self._manifest_store.get(name+'.manifest.txt')
@@ -952,8 +928,82 @@ class ManifestModule:
             # Cache Results
             self._mod.cache.set(cached_name, manifest.raw())
 
-        # Add Manifest
-        self._manifests[name] = manifest
+        # Return Manifest
+        return manifest
+
+    def _merge_manifests(self,
+            manifests: Iterable[Manifest],
+            item_merge_strategy: MergeStrategy = 'fail',
+            item_set_merge_strategy: MergeStrategy = 'fail'
+    ) -> Manifest:
+        merged_items = {}
+        for manifest in manifests:
+            for ref, item in manifest.items().items():
+                if ref in merged_items:
+                    if item_merge_strategy == 'fail':
+                        raise LIMARException(
+                            f"Manifest item '{ref}' already declared in another"
+                            " manifest"
+                        )
+                    elif item_merge_strategy == 'merge':
+                        self._mod.log.info(
+                            f"Merging new manifest item '{ref}' into existing"
+                            " item."
+                        )
+                        # FIXME: This is a naive way of merging items
+                        merged_items[ref].update(item)
+                    elif item_merge_strategy == 'replace':
+                        self._mod.log.info(
+                            f"Replacing existing manifest item '{ref}' with new"
+                            " item."
+                        )
+                        merged_items[ref] = item
+                    elif item_merge_strategy == 'keep':
+                        self._mod.log.info(
+                            f"Keeping existing manifest item '{ref}'."
+                        )
+                else:
+                    merged_items[ref] = item
+
+        merged_item_sets = {}
+        for manifest in self._manifests.values():
+            for ref, item_set in manifest.item_sets().items():
+                if ref in merged_item_sets:
+                    if item_set_merge_strategy == 'fail':
+                        raise LIMARException(
+                            f"Manifest item set '{ref}' already declared in"
+                            " another manifest."
+                        )
+                    elif item_set_merge_strategy == 'merge':
+                        self._mod.log.info(
+                            f"Merging new manifest item set '{ref}' into"
+                            " existing item set."
+                        )
+                        merged_item_sets[ref].update(item_set)
+                    elif item_set_merge_strategy == 'replace':
+                        self._mod.log.info(
+                            f"Replacing existing manifest item set '{ref}' with"
+                            f" new item set."
+                        )
+                        merged_item_sets[ref] = item_set
+                    elif item_set_merge_strategy == 'keep':
+                        self._mod.log.info(
+                            f"Keeping existing manifest item set '{ref}'."
+                        )
+                else:
+                    merged_item_sets[ref] = item_set
+
+        return Manifest(
+            self._mod.log,
+            md5(
+                ''.join(
+                    manifest.digest()
+                    for manifest in manifests
+                ).encode('utf-8')
+            ).hexdigest(),
+            merged_items,
+            merged_item_sets
+        )
 
     def __call__(self, *,
             mod: Namespace,
@@ -1149,8 +1199,11 @@ class ManifestModule:
                     (ref, item_set)
                     for ref, item_set in self._global_manifest.item_sets().items()
                     if (
-                        (type(ref) == str and item_set_regex.search(ref)) or
-                        (type(ref) == tuple and item_set_regex.search(ref[0]))
+                        (isinstance(ref, str) and item_set_regex.search(ref)) or
+                        (
+                            isinstance(ref, tuple) and
+                            item_set_regex.search(ref[0])
+                        )
                     )
                 )
                 self._mod.log.info(f"Matched item set '{ref}'")
