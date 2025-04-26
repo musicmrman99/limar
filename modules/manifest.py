@@ -25,7 +25,7 @@ ItemSetSet = dict[ItemSetRef, ItemSet]
 
 ContextModule = Any
 
-MergeStrategy = Literal['fail', 'merge', 'replace', 'keep']
+MergeStrategy = Literal['fail', 'merge-ref', 'merge', 'replace', 'keep']
 
 class ManifestItemTags:
     def __init__(self, add_callback=None, remove_callback=None):
@@ -989,67 +989,35 @@ class ManifestModule:
         # Return Manifest
         return manifest
 
+    # Util for _merge_manifests
+    def _merge_items(self, item_a: Item, item_b: Item):
+        # FIXME: This is a naive way of merging items (it's shallow, and it
+        #        doesn't consider semantics)
+        lambda : {**item_a, **item_b}
+
+    # Util for _merge_manifests
+    def _merge_item_sets(self, item_set_a: ItemSet, item_set_b: ItemSet):
+        return self._merge_sets(
+            (item_set_a, item_set_b),
+            merge_strategy='merge-ref' # Don't merge the same objects twice
+        )
+
     def _merge_manifests(self,
             manifests: Iterable[Manifest],
-            item_merge_strategy: MergeStrategy = 'fail',
-            item_set_merge_strategy: MergeStrategy = 'fail'
+            item_merge_strategy: MergeStrategy = 'merge-ref',
+            item_set_merge_strategy: MergeStrategy = 'merge'
     ) -> Manifest:
-        merged_items = {}
-        for manifest in manifests:
-            for ref, item in manifest.items().items():
-                if ref in merged_items:
-                    if item_merge_strategy == 'fail':
-                        raise LIMARException(
-                            f"Manifest item '{ref}' already declared in another"
-                            " manifest"
-                        )
-                    elif item_merge_strategy == 'merge':
-                        self._mod.log.info(
-                            f"Merging new manifest item '{ref}' into existing"
-                            " item."
-                        )
-                        # FIXME: This is a naive way of merging items
-                        merged_items[ref].update(item)
-                    elif item_merge_strategy == 'replace':
-                        self._mod.log.info(
-                            f"Replacing existing manifest item '{ref}' with new"
-                            " item."
-                        )
-                        merged_items[ref] = item
-                    elif item_merge_strategy == 'keep':
-                        self._mod.log.info(
-                            f"Keeping existing manifest item '{ref}'."
-                        )
-                else:
-                    merged_items[ref] = item
+        merged_items = self._merge_sets(
+            (manifest.items() for manifest in manifests),
+            merge_strategy=item_merge_strategy,
+            merge_fn=self._merge_items
+        )
 
-        merged_item_sets = {}
-        for manifest in self._manifests.values():
-            for ref, item_set in manifest.item_sets().items():
-                if ref in merged_item_sets:
-                    if item_set_merge_strategy == 'fail':
-                        raise LIMARException(
-                            f"Manifest item set '{ref}' already declared in"
-                            " another manifest."
-                        )
-                    elif item_set_merge_strategy == 'merge':
-                        self._mod.log.info(
-                            f"Merging new manifest item set '{ref}' into"
-                            " existing item set."
-                        )
-                        merged_item_sets[ref].update(item_set)
-                    elif item_set_merge_strategy == 'replace':
-                        self._mod.log.info(
-                            f"Replacing existing manifest item set '{ref}' with"
-                            f" new item set."
-                        )
-                        merged_item_sets[ref] = item_set
-                    elif item_set_merge_strategy == 'keep':
-                        self._mod.log.info(
-                            f"Keeping existing manifest item set '{ref}'."
-                        )
-                else:
-                    merged_item_sets[ref] = item_set
+        merged_item_sets = self._merge_sets(
+            (manifest.item_sets() for manifest in manifests),
+            merge_strategy=item_set_merge_strategy,
+            merge_fn=self._merge_item_sets
+        )
 
         return Manifest(
             self._mod.log,
@@ -1062,6 +1030,57 @@ class ManifestModule:
             merged_items,
             merged_item_sets
         )
+
+    def _merge_sets(self,
+            sets: Iterable[dict[str, dict[str, Any]]],
+            *,
+            merge_strategy: MergeStrategy = 'merge-ref',
+            merge_fn: Callable[
+                [dict[str, Any], dict[str, Any]], dict[str, Any]
+            ] = lambda dict_a, dict_b: {**dict_a, **dict_b}
+    ):
+        merged_set = {}
+        for set_ in sets:
+            for ref, value in set_.items():
+                if ref in merged_set:
+                    if merge_strategy == 'fail':
+                        raise LIMARException(
+                            f"Ref '{ref}' already declared in another manifest"
+                        )
+
+                    elif merge_strategy == 'merge-ref':
+                        if merged_set[ref] is value:
+                            self._mod.log.info(
+                                f"Merging new value for ref '{ref}' into"
+                                " existing value."
+                            )
+                        else:
+                            raise LIMARException(
+                                "Conflict while merging new value for ref"
+                                f" '{ref}' into existing value: values are not"
+                                " the same object."
+                            )
+
+                    elif merge_strategy == 'merge':
+                        self._mod.log.info(
+                            f"Merging new value for ref '{ref}' into existing"
+                            " value."
+                        )
+                        merged_set[ref] = merge_fn(merged_set[ref], value)
+
+                    elif merge_strategy == 'replace':
+                        self._mod.log.info(
+                            f"Replacing ref '{ref}' with new value."
+                        )
+                        merged_set[ref] = value
+
+                    elif merge_strategy == 'keep':
+                        self._mod.log.info(f"Keeping existing ref '{ref}'.")
+
+                else:
+                    merged_set[ref] = value
+
+        return merged_set
 
     def __call__(self, *,
             mod: Namespace,
