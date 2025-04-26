@@ -17,6 +17,8 @@ from typing import Any, Callable, Iterable, Literal
 ItemRef = str
 ItemSetRef = str | tuple[str, str] # (tag_name, tag_value)
 
+Tags = dict[str, str]
+
 Item = dict[str, Any]
 ItemSet = dict[ItemRef, Item]
 ItemSetSet = dict[ItemSetRef, ItemSet]
@@ -27,24 +29,67 @@ MergeStrategy = Literal['fail', 'merge', 'replace', 'keep']
 
 class ManifestItemTags:
     def __init__(self, add_callback=None, remove_callback=None):
-        self._tags = {}
+        self._tags: Tags = {}
         self._add_callback = add_callback
         self._remove_callback = remove_callback
 
-    def add(self, *names, **tags):
-        for name, value in tags.items():
+    def add(self, *names: str, **tags: str):
+        """
+        Add the tags with the given names/values and update tag indexes as
+        needed.
+
+        If any names are given (without values), then add them as 'plain' tags
+        without values.
+        """
+
+        old_changed_tags = {
+            name: self._tags[name]
+            for name, value in tags.items()
+            if name in self._tags and self._tags[name] != value
+        }
+        new_or_changed_tags = {
+            name: value
+            for name, value in tags.items()
+            if not name in self._tags or self._tags[name] != value
+        }
+
+        if self._remove_callback is not None:
+            self._remove_callback(old_changed_tags)
+        if self._add_callback is not None:
+            self._add_callback(new_or_changed_tags)
+
+        for name, value in new_or_changed_tags.items():
             self._tags[name] = value
-            if self._add_callback is not None:
-                self._add_callback(tags)
 
         if len(names) > 0:
             self.add(**{name: None for name in names})
 
-    def remove(self, *names):
-        for name in names:
+    def remove(self, *names: str, **tags: str):
+        """
+        Remove the tags with the given names/values and update tag indexes as
+        needed.
+
+        If any names are given (without values), then use their current values.
+        """
+
+        existing_tags = {
+            name: value
+             for name, value in tags.items()
+            if name in self._tags and self._tags[name] == value
+        }
+
+        if self._remove_callback is not None:
+            self._remove_callback(existing_tags)
+
+        for name in existing_tags.keys():
             del self._tags[name]
-            if self._remove_callback is not None:
-                self._remove_callback(names)
+
+        if len(names) > 0:
+            self.remove(**{
+                name: self._tags[name]
+                for name in names
+                if name in self._tags
+            })
 
     def get(self, name, default=None):
         return self._tags.get(name, default)
@@ -59,7 +104,6 @@ class ManifestItemTags:
         return value in self._tags
 
 class Manifest:
-
     TAG_OPT_CONTINUOUS = 'continuous'
 
     STAGES_ORDERED = [
@@ -262,13 +306,15 @@ class Manifest:
 
         # Validate
         if ref in self._tags:
-            raise LIMARException(f"Manifest tag already exists with ref '{ref}'")
+            raise LIMARException(
+                f"Manifest tag already exists with ref '{ref}'"
+            )
 
-          # Add to main item set
+        # Add to tag metadata set
         self._tags[ref] = tags if tags is not None else {}
 
     # Util for _declare_item()
-    def _on_add_item_tags(self, item_ref, tags):
+    def _on_add_item_tags(self, item_ref: ItemRef, tags: Tags):
         for tag_name, tag_value in tags.items():
             if tag_name not in self._item_sets.keys():
                 self._item_sets[tag_name] = {}
@@ -287,13 +333,25 @@ class Manifest:
                 self._item_sets[indexed_tag][item_ref] = self._items[item_ref]
 
     # Util for _declare_item()
-    def _on_remove_item_tags(self, item_ref, names):
-        for tag_name in names:
+    def _on_remove_item_tags(self, item_ref: ItemRef, tags: Tags):
+        for tag_name, tag_value in tags.items():
             if item_ref in self._item_sets[tag_name].keys():
                 del self._item_sets[tag_name][item_ref]
-
             if len(self._item_sets[tag_name]) == 0:
                 del self._item_sets[tag_name]
+
+            if (
+                tag_value is not None and
+                not ( # Value indexing not disabled for this tag
+                    tag_name in self._tags and
+                    self.TAG_OPT_CONTINUOUS in self._tags[tag_name]
+                )
+            ):
+                indexed_tag = (tag_name, tag_value)
+                if item_ref in self._item_sets[indexed_tag].keys():
+                    del self._item_sets[indexed_tag][item_ref]
+                if len(self._item_sets[indexed_tag]) == 0:
+                    del self._item_sets[indexed_tag]
 
     def declare_item(self, ref: ItemRef, tags = None):
         if (
