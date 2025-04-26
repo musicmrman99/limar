@@ -313,7 +313,7 @@ class Manifest:
         # Add to tag metadata set
         self._tags[ref] = tags if tags is not None else {}
 
-    # Util for _declare_item()
+    # Util for declare_item()
     def _on_add_item_tags(self, item_ref: ItemRef, tags: Tags):
         for tag_name, tag_value in tags.items():
             if tag_name not in self._item_sets.keys():
@@ -332,7 +332,7 @@ class Manifest:
                     self._item_sets[indexed_tag] = {}
                 self._item_sets[indexed_tag][item_ref] = self._items[item_ref]
 
-    # Util for _declare_item()
+    # Util for declare_item()
     def _on_remove_item_tags(self, item_ref: ItemRef, tags: Tags):
         for tag_name, tag_value in tags.items():
             if item_ref in self._item_sets[tag_name].keys():
@@ -400,7 +400,7 @@ class Manifest:
             [item]
         )
 
-    # Util for _declare_item_set()
+    # Util for declare_item_set()
     def _get_item(self, ref: str):
         return (
             self._items[ref]
@@ -408,7 +408,7 @@ class Manifest:
             else None
         )
 
-    # Util for _declare_item_set()
+    # Util for declare_item_set()
     def _get_item_set(self, ref: str, value: str | None = None):
         if ref not in self._item_sets:
             return None
@@ -417,7 +417,7 @@ class Manifest:
         else:
             return self._item_sets[(ref, value)]
 
-    # Util for _declare_item_set()
+    # Util for declare_item_set()
     def _compute_set(self, ops_btree) -> ItemSet:
         # Base Case: Empty set
         if ops_btree is None:
