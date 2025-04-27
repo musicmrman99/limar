@@ -17,7 +17,7 @@ from typing import Any, Callable, Iterable, Literal
 ItemRef = str
 ItemSetRef = str | tuple[str, str] # (tag_name, tag_value)
 
-Tags = dict[str, str]
+Tags = dict[str, str | None]
 
 Item = dict[str, Any]
 ItemSet = dict[ItemRef, Item]
@@ -33,7 +33,7 @@ class ManifestItemTags:
         self._add_callback = add_callback
         self._remove_callback = remove_callback
 
-    def add(self, *names: str, **tags: str):
+    def add(self, *names: str, **tags: str | None):
         """
         Add the tags with the given names/values and update tag indexes as
         needed.
@@ -64,7 +64,7 @@ class ManifestItemTags:
         if len(names) > 0:
             self.add(**{name: None for name in names})
 
-    def remove(self, *names: str, **tags: str):
+    def remove(self, *names: str, **tags: str | None):
         """
         Remove the tags with the given names/values and update tag indexes as
         needed.
@@ -198,7 +198,7 @@ class Manifest:
     def _merge_items(self, item_a: Item, item_b: Item):
         # FIXME: This is a naive way of merging items (it's shallow, and it
         #        doesn't consider semantics)
-        lambda : {**item_a, **item_b}
+        return {**item_a, **item_b}
 
     # Util for include_manifest()
     def _merge_item_sets(self, item_set_a: ItemSet, item_set_b: ItemSet):
@@ -209,11 +209,11 @@ class Manifest:
 
     # Util for include_manifest()
     def _merge_sets(self,
-            sets: Iterable[dict[str, dict[str, Any]]],
+            sets: Iterable[dict[Any, dict[Any, Any]]],
             *,
             merge_strategy: MergeStrategy = 'merge-ref',
             merge_fn: Callable[
-                [dict[str, Any], dict[str, Any]], dict[str, Any]
+                [dict[Any, Any], dict[Any, Any]], dict[Any, Any]
             ] = lambda dict_a, dict_b: {**dict_a, **dict_b}
     ):
         merged_set = {}
@@ -1006,7 +1006,7 @@ class ManifestModule:
         for manifest in self._manifests.values():
             self._global_manifest.include_manifest(manifest)
 
-    def _load_manifest(self, name: str) -> Manifest:
+    def _load_manifest(self, name: str) -> Manifest | None:
         assert self._manifest_store is not None, 'ManifestModule._load_manifest() called before ManifestModule.configure()'
         try:
             manifest_text = self._manifest_store.get(name+'.manifest.txt')
