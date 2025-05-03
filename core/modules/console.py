@@ -22,10 +22,10 @@ class ConsoleModule:
 
     def configure_root_args(self, *, parser: ArgumentParser, **_):
         parser.add_argument('--out', metavar="FILE", default=None,
-            help="Redirect stdout to the given file")
+            help="Redirect stdout to the given file.")
 
         parser.add_argument('--err', metavar="FILE", default=None,
-            help="Redirect stderr to the given file")
+            help="Redirect stderr to the given file.")
 
     def start(self, *, args: Namespace, **_):
         if 'out' in args and args.out is not None:

@@ -3,7 +3,7 @@ grammar Manifest;
 /*
 Note: You must use a separate rule when you have multiple instances of a
 specific case of a general rule, as you cannot use the same label more than
-once. Labels are can only refer to a single rule in ANTLR-generated parsers -
+once. Labels can only refer to a single rule in ANTLR-generated parsers -
 later instances of a label on a single rule overwrite earlier ones.
 */
 
@@ -42,11 +42,14 @@ contextHeader : CONTEXT_OPEN typeName=NAME (SPACE? dataOpen
                 dataClose)? ;
 contextOpt : kvPair comment? ;
 
-declaration : (tagDecl | item | itemSet) comment? ;
+declaration : (directive | tagDecl | item | itemSet) comment? ;
 
 /* Declarations
 -------------------- */
 
+directive : DIRECTIVE_OPEN ref (SPACE dataOpen
+              tag (dataItemSeparator tag)*
+            dataClose) ;
 tagDecl : KEY_VALUE_SEPARATOR ref (SPACE dataOpen
             tag (dataItemSeparator tag)*
           dataClose)? ;
@@ -118,6 +121,7 @@ SPACE : SPACE_CHAR+ ;
 
 // General
 COMMENT_OPEN : '#' ;
+DIRECTIVE_OPEN : '!' ;
 CONTEXT_OPEN : '@' ;
 
 BLOCK_OPEN : '{' ;

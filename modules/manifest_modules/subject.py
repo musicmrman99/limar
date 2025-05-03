@@ -15,7 +15,7 @@ class Subject:
         # Ignore any items with a tag that starts with `__`
         if any(
             name.startswith('__')
-            for name in item['tags'].raw().keys()
+            for name in item['tags'].keys()
         ):
             return
 
@@ -25,7 +25,7 @@ class Subject:
         item['id'] = item['tags'].get('id')
 
         dependencies = []
-        for tag, value in item['tags'].raw().items():
+        for tag, value in item['tags'].items():
             if value is None and tag.startswith('/'):
                 dependencies.append(tag)
         item['dependencies'] = dependencies

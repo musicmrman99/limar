@@ -6,6 +6,7 @@ from rich.table import Table
 from rich.tree import Tree
 from rich.console import RenderableType
 
+from core.utils import objs_to_table, tabulate
 from core.exceptions import LIMARException
 from core.modulemanager import ModuleAccessor
 
@@ -177,7 +178,7 @@ class TrModule:
             delim: str | None = None,
             obj_mapping: str | None = None,
             align: str | None = None
-    ):
+    ) -> list[list[Any]]:
         """
         If data is a string, then first split it on newline into an array,
         otherwise assumed it's an array. If delim is given, then interpret data
@@ -198,37 +199,7 @@ class TrModule:
         rows.
         """
 
-        # str or list[str] -> list[list[str]]
-        if isinstance(data, str):
-            data = data.splitlines()
-        if delim is not None:
-            data = [item.split(delim) for item in data]
-        if isinstance(data, dict):
-            data = data.values()
-
-        # list[dict[str, Any]] -> list[list[Any]] (with optional header)
-        if obj_mapping is not None:
-            data = self._objs_to_table(data, obj_mapping == 'all')
-
-        # Make all inner lists the same length, padding as specified
-        if align is not None:
-            if align == 'left':
-                pad = lambda row, to_len: (
-                    [*row, *[None for _ in range(to_len - len(row))]]
-                    if len(row) < max_items
-                    else row
-                )
-            elif align == 'right':
-                pad = lambda row, to_len: (
-                    [*[None for _ in range(to_len - len(row))], *row]
-                    if len(row) < max_items
-                    else row
-                )
-
-            max_items = max([len(row) for row in data])
-            data = [pad(row, max_items) for row in data]
-
-        return data
+        return tabulate(data, delim, obj_mapping, align)
 
     @ModuleAccessor.invokable_as_service
     def render_table(self,
@@ -288,28 +259,14 @@ class TrModule:
     # --------------------------------------------------
 
     def _objs_to_table(self,
-            objs: list[dict[str, Any]],
+            objs: list[dict[Any, Any]],
             include_header: bool = False
     ) -> list[list[Any]]:
-        all_props = list(dict.fromkeys(
-            prop_name
-            for item in objs
-            for prop_name in item.keys()
-        ))
-
-        return [
-            *[all_props if include_header else []],
-            *[
-                [
-                    (obj[prop] if prop in obj else None)
-                    for prop in all_props
-                ]
-                for obj in objs
-            ]
-        ]
+        return objs_to_table(objs, include_header)
 
     def _render(self, data):
         """Convert the given item into a form that Rich can render."""
+
         if isinstance(data, RenderableType):
             rendered = data
         elif data is None:

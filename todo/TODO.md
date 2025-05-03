@@ -26,12 +26,19 @@
 
   - understand how the existing modules and manifest declarations fit into the LIMAR model
     - core modules and `cache` are technical support tools
-    - `manifest` manually curated input tool
+    - `manifest` is a manually curated input tool
     - `info` and `env` are data collection and management tools
     - `tr` and `finance` are data processing tools, of varying levels of specialisation (ie. information binding)
 
     - `lspci` (done) and `lsblk` (partial)
     - `git` (partial)
+
+- ideas for integrations
+  - set references to version (dependency tree control)
+    - sourcegraph?
+    - dependabot / renovate bot?
+
+  - stacked branches support (git; multi-project)
 
 # Todo
 
@@ -82,6 +89,40 @@
 - make log module include timestamp in message output
 - rotate log + clean up old logs
 - add logging to module invokation and all other relevant points
+
+- make dep-cache module:
+
+--------------------
+
+- all items are indexed by (key, version_key)
+
+- items are retrievable by:
+  - key - gets last-set value, possibly from disk (tracks and persists an ordered list of versions)
+  - (key, version_key) - gets given version of the value, possibly from disk
+
+- items have a retention policy (eg. all, last-N, latest)
+
+- items are settable by (
+    key,
+    version_key,
+    dependencies=None | [
+      (key, version_key, needs_refresh=Callable[[Any, Any], bool] = lambda a, b: False),
+      ...
+    ]
+)
+  - all dependencies (recursively) are loaded first
+  - all dependants (recursively, leaves-to-root) are unloaded
+    - if their needs_refresh(prev_dependency_val, cur_dependency_val) is True for any dependency
+
+- dependency management:
+  On load (.get()) of a cache item:
+  - Load (ie. into cache) dependencies
+  - Unload (ie. wipe both caches for) dependents
+
+- version management:
+  - indexing values by (key, digest), rather than just key
+
+--------------------
 
 ## Add More Modules
 
