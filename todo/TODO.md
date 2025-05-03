@@ -83,6 +83,40 @@
 - rotate log + clean up old logs
 - add logging to module invokation and all other relevant points
 
+- make dep-cache module:
+
+--------------------
+
+- all items are indexed by (key, version_key)
+
+- items are retrievable by:
+  - key - gets last-set value, possibly from disk (tracks and persists an ordered list of versions)
+  - (key, version_key) - gets given version of the value, possibly from disk
+
+- items have a retention policy (eg. all, last-N, latest)
+
+- items are settable by (
+    key,
+    version_key,
+    dependencies=None | [
+      (key, version_key, needs_refresh=Callable[[Any, Any], bool] = lambda a, b: False),
+      ...
+    ]
+)
+  - all dependencies (recursively) are loaded first
+  - all dependants (recursively, leaves-to-root) are unloaded
+    - if their needs_refresh(prev_dependency_val, cur_dependency_val) is True for any dependency
+
+- dependency management:
+  On load (.get()) of a cache item:
+  - Load (ie. into cache) dependencies
+  - Unload (ie. wipe both caches for) dependents
+
+- version management:
+  - indexing values by (key, digest), rather than just key
+
+--------------------
+
 ## Add More Modules
 
 - `limar task` - add workload context manager
