@@ -493,7 +493,7 @@ if [ "$LIMAR__STARTUP_FAILED" = 'false' ]; then
                     limar__log -i -s \
                         'If needed, remember to update your shell startup' \
                         ' script (.bashrc, .zshrc, etc.) with the new' \
-                        ' environment variable values .'
+                        ' environment variable values.'
 
                 elif [ "$command" = '/link' ]; then
                     limar__log 'LIMAR installation already linked'
