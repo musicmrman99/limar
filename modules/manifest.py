@@ -1,3 +1,4 @@
+from copy import deepcopy
 from hashlib import md5
 import re
 import random
@@ -25,11 +26,22 @@ ItemSetSet = dict[ItemSetRef, ItemSet]
 
 ContextModule = Any
 
-MergeStrategy = Literal['fail', 'merge-ref', 'merge', 'replace', 'keep']
+MergeStrategy = Literal[
+    'fail',
+    'merge-ref',
+    'merge-equal',
+    'merge',
+    'replace',
+    'keep'
+]
 
 class ManifestItemTags:
-    def __init__(self, add_callback=None, remove_callback=None):
-        self._tags: Tags = {}
+    def __init__(self,
+            tags: Tags | None = None,
+            add_callback: Callable[[Tags], None] | None = None,
+            remove_callback: Callable[[Tags], None] | None = None
+    ):
+        self._tags: Tags = tags if tags is not None else {}
         self._add_callback = add_callback
         self._remove_callback = remove_callback
 
@@ -91,17 +103,30 @@ class ManifestItemTags:
                 if name in self._tags
             })
 
+    # Provide a limited set of the Mapping interface
+
     def get(self, name, default=None):
         return self._tags.get(name, default)
 
-    def raw(self):
-        return self._tags
+    def keys(self):
+        return self._tags.keys()
+
+    def values(self):
+        return self._tags.values()
+
+    def items(self):
+        return self._tags.items()
 
     def __eq__(self, value):
         return hasattr(value, '_tags') and self._tags == value._tags
 
     def __contains__(self, value):
         return value in self._tags
+
+    # Allow raw access to the tags from closely related manifest classes
+
+    def _raw(self):
+        return self._tags
 
 class Manifest:
     TAG_OPT_CONTINUOUS = 'continuous'
@@ -194,11 +219,49 @@ class Manifest:
     # Mutators
     # --------------------
 
+    # Util for several things
+    def _new_item_tags(self,
+            ref: ItemRef,
+            tags: ManifestItemTags | Tags | None = None
+    ):
+        if tags is None:
+            tags = {}
+        elif isinstance(tags, ManifestItemTags):
+            tags = tags._raw()
+
+        return ManifestItemTags(
+            tags,
+
+            # If any context module updates this item's tags, also update
+            # all relevant indexes.
+            lambda added_tags: self._on_add_item_tags(ref, added_tags),
+            lambda removed_tags: self._on_remove_item_tags(ref, removed_tags)
+        )
+
     # Util for include_manifest()
     def _merge_items(self, item_a: Item, item_b: Item):
         # FIXME: This is a naive way of merging items (it's shallow, and it
-        #        doesn't consider semantics)
-        return {**item_a, **item_b}
+        #        doesn't consider many semantics, especially tag index update
+        #        callbacks)
+
+        # This function should only be used for merging parts of the same item
+        if item_a['ref'] != item_b['ref']:
+            raise ValueError(
+                f"Cannot merge items with different refs: '{item_a['ref']}' and"
+                f" '{item_b['ref']}'."
+            )
+
+        return {
+            **item_a,
+            **item_b,
+            'tags': self._new_item_tags(
+                item_a['ref'],
+                {
+                    **item_a['tags']._raw(),
+                    **item_b['tags']._raw()
+                }
+            )
+        }
 
     # Util for include_manifest()
     def _merge_item_sets(self, item_set_a: ItemSet, item_set_b: ItemSet):
@@ -238,6 +301,19 @@ class Manifest:
                                 " the same object."
                             )
 
+                    elif merge_strategy == 'merge-equal':
+                        if merged_set[ref] == value:
+                            self._logger.info(
+                                f"Merging new value for ref '{ref}' into"
+                                " existing value."
+                            )
+                        else:
+                            raise LIMARException(
+                                "Conflict while merging new value for ref"
+                                f" '{ref}' into existing value: values are not"
+                                " equal."
+                            )
+
                     elif merge_strategy == 'merge':
                         self._logger.info(
                             f"Merging new value for ref '{ref}' into existing"
@@ -261,22 +337,27 @@ class Manifest:
 
     def include_manifest(self,
             manifest: "Manifest",
-            item_merge_strategy: MergeStrategy = 'merge-ref',
+            item_merge_strategy: MergeStrategy = 'merge-equal',
             item_set_merge_strategy: MergeStrategy = 'merge'
     ):
+        # Copy items and de-finalise the copies
+        included_items = {}
+        for ref, item in manifest.items().items():
+            item = deepcopy(item)
+            item['tags'] = self._new_item_tags(ref, item['tags'])
+            included_items[ref] = item
+
+        # Merge items and item sets
         self._items = self._merge_sets(
-            (self.items(), manifest.items()),
+            (self.items(), included_items),
             merge_strategy=item_merge_strategy,
             merge_fn=self._merge_items
         )
-
         self._item_sets = self._merge_sets(
             (self.item_sets(), manifest.item_sets()),
             merge_strategy=item_set_merge_strategy,
             merge_fn=self._merge_item_sets
         )
-
-        # TODO: How to compute the digest for the global manifest?
 
     def enter(self):
         if self._stage != self.STAGES.initialising:
@@ -312,7 +393,7 @@ class Manifest:
 
         # Finalise - tag set
         for item in self._items.values():
-            item['tags'] = item['tags'].raw()
+            item['tags'] = item['tags']._raw()
 
         self._stage = self.STAGES.exited
 
@@ -457,12 +538,7 @@ class Manifest:
         # Store
         item = {
             'ref': ref,
-            'tags': ManifestItemTags(
-                # If any context module updates this item's tags, also update
-                # all relevant indexes.
-                lambda tags: self._on_add_item_tags(ref, tags),
-                lambda tags: self._on_remove_item_tags(ref, tags)
-            )
+            'tags': self._new_item_tags(ref)
         }
 
           # Add to main item set
@@ -990,34 +1066,82 @@ class ManifestModule:
         self._default_item_set = env.DEFAULT_ITEM_SET
 
     def start(self, *_, mod: Namespace, **__):
-        for manifest_name in self._manifest_names:
-            manifest = self._load_manifest(manifest_name)
-            if manifest is not None:
-                self._manifests[manifest_name] = manifest
-            else:
-                mod.log.trace(
-                    f"Manifest '{manifest_name}' not found. Skipping."
-                )
+        assert self._manifest_store is not None, 'ManifestModule.start() called before ManifestModule.configure()'
+        mod.log.info(f"Loading manifests from store '{self._manifest_store}'")
 
         self._global_manifest = Manifest(
             self._mod.log,
             md5(''.encode('utf-8')).hexdigest()
         )
-        for manifest in self._manifests.values():
-            self._global_manifest.include_manifest(manifest)
 
-    def _load_manifest(self, name: str) -> Manifest | None:
+        for name in self._manifest_names:
+            if name+'.manifest.txt' not in self._manifest_store.list():
+                self._mod.log.trace(f"Manifest '{name}' not found. Skipping.")
+                continue
+
+            # May have already been loaded by !include
+            if name not in self._manifests:
+                self._load_manifest(name)
+
+    def _parse_into_manifest(self, text: str, manifest: Manifest):
+        # Import Deps (these are slow to import, so only import them if needed)
+        from antlr4 import InputStream, CommonTokenStream, ParseTreeWalker
+        from modules.manifest_lang.build.ManifestLexer import ManifestLexer
+        from modules.manifest_lang.build.ManifestParser import ManifestParser
+        from modules.manifest_lang.manifest_listener import ManifestListenerImpl
+
+        # Setup Parser
+        input_stream = InputStream(text)
+        lexer = ManifestLexer(input_stream)
+        tokens = CommonTokenStream(lexer)
+        parser = ManifestParser(tokens)
+        tree = parser.manifest()
+
+        # Parse
+        listener = ManifestListenerImpl(
+            self._mod.log,
+            manifest,
+            include_fn=self._load_manifest
+        )
+        walker = ParseTreeWalker()
+        walker.walk(listener, tree)
+
+    def _parse_manifest(self, name: str, digest: str, text: str) -> Manifest:
+        context_modules = {
+            context_type: [
+                mod_factory()
+                for mod_factory in ctx_mod_factories
+            ]
+            for context_type, ctx_mod_factories in
+                self._ctx_mod_factories.items()
+        }
+
+        initial_contexts = []
+        if name in context_modules.keys():
+            initial_contexts.append(name)
+
+        manifest = Manifest(
+            self._mod.log,
+            digest,
+            None,
+            None,
+            initial_contexts,
+            context_modules
+        )
+        self._parse_into_manifest(text, manifest)
+        return manifest
+
+    def _load_manifest(self, name: str, text: str | None = None) -> Manifest:
         assert self._manifest_store is not None, 'ManifestModule._load_manifest() called before ManifestModule.configure()'
-        try:
-            manifest_text = self._manifest_store.get(name+'.manifest.txt')
-        except KeyError:
-            self._mod.log.trace(
-                f"Manifest '{name}' not found. Skipping."
-            )
-            return
+        assert self._global_manifest is not None, '_global_manifest is initialised in STARTING phase, but this method is only run after that initialisation'
+
+        # Load raw text from manifest store
+        if text is None:
+            text = self._manifest_store.get(name+'.manifest.txt')
+        assert isinstance(text, str)
 
         # Determine cache filename for this version of the manifest file
-        digest = md5(manifest_text.encode('utf-8')).hexdigest()
+        digest = md5(text.encode('utf-8')).hexdigest()
         cached_name = '.'.join(['manifest', name, digest, 'pickle'])
 
         # Try cache
@@ -1027,55 +1151,17 @@ class ManifestModule:
                 self._mod.cache.get(cached_name)
             )
 
+        # Otherwise load + cache
         except KeyError:
-            # Import Deps (these are slow to import, so only (re)parse the
-            # manifest if needed)
-            from antlr4 import InputStream, CommonTokenStream, ParseTreeWalker
-            from modules.manifest_lang.build.ManifestLexer import ManifestLexer
-            from modules.manifest_lang.build.ManifestParser import ManifestParser
-            from modules.manifest_lang.manifest_listener import ManifestListenerImpl
-
-            # Create Context Modules
-            context_modules = {
-                context_type: [
-                    mod_factory()
-                    for mod_factory in ctx_mod_factories
-                ]
-                for context_type, ctx_mod_factories in
-                    self._ctx_mod_factories.items()
-            }
-
-            # Setup Parser
-            input_stream = InputStream(manifest_text)
-            lexer = ManifestLexer(input_stream)
-            tokens = CommonTokenStream(lexer)
-            parser = ManifestParser(tokens)
-            tree = parser.manifest()
-
-            # Start Builder
-            manifest = Manifest(
-                self._mod.log,
-                digest,
-                None,
-                None,
-                [name],
-                context_modules
-            )
-
-            # Parse
-            listener = ManifestListenerImpl(self._mod.log, manifest)
-            walker = ParseTreeWalker()
-            walker.walk(listener, tree)
-
-            # Log
-            self._mod.log.info(
-                f"Loaded manifest '{name}' from '{self._manifest_store}'"
-            )
-
-            # Cache Results
+            manifest = self._parse_manifest(name, digest, text)
+            self._mod.log.info(f"Loaded manifest '{name}'")
             self._mod.cache.set(cached_name, manifest.raw())
 
-        # Return Manifest
+        # Track
+        self._manifests[name] = manifest
+        self._global_manifest.include_manifest(manifest)
+
+        # Return
         return manifest
 
     def __call__(self, *,
@@ -1215,28 +1301,10 @@ class ManifestModule:
     def declare_item_set(self, ref: str, item_set_spec):
         assert self._global_manifest is not None, '_global_manifest is initialised in STARTING phase, but this method is only run during RUNNING phase'
 
-        # This is effectively parsing a fragment of a manifest, rather than a
-        # whole manifest, but this way makes sure it goes through exactly the
-        # same process as parsing a real manifest, just with no contexts.
-
-        # Import Deps (these are slow to import, so only (re)parse the
-        # manifest if needed)
-        from antlr4 import InputStream, CommonTokenStream, ParseTreeWalker
-        from modules.manifest_lang.build.ManifestLexer import ManifestLexer
-        from modules.manifest_lang.build.ManifestParser import ManifestParser
-        from modules.manifest_lang.manifest_listener import ManifestListenerImpl
-
-        # Setup Parser
-        input_stream = InputStream(f'"""{ref}""" [{item_set_spec}]')
-        lexer = ManifestLexer(input_stream)
-        tokens = CommonTokenStream(lexer)
-        parser = ManifestParser(tokens)
-        tree = parser.itemSet()
-
-        # Parse
-        listener = ManifestListenerImpl(self._mod.log, self._global_manifest)
-        walker = ParseTreeWalker()
-        walker.walk(listener, tree)
+        self._parse_into_manifest(
+            f'"""{ref}""" [{item_set_spec}]',
+            self._global_manifest
+        )
 
     @ModuleAccessor.invokable_as_service
     def get_item_set(self, pattern: str | None = None) -> ItemSet:

@@ -358,7 +358,7 @@ class TestManifest(TestCase):
     def _item_with_finalised_tags(self, item):
         return {
             **item,
-            'tags': item['tags'].raw()
+            'tags': item['tags']._raw()
         }
 
     def _items_with_finalised_tags(self, items):

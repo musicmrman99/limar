@@ -1,5 +1,6 @@
 from argparse import Namespace
 import textwrap
+from typing import Callable
 
 from modules.manifest import Manifest
 from modules.manifest_lang.build.ManifestListener import ManifestListener
@@ -18,10 +19,12 @@ class ManifestListenerImpl(ManifestListener):
 
     def __init__(self,
             logger: LogModule,
-            manifest: Manifest
+            manifest: Manifest,
+            include_fn: Callable[[str], Manifest]
     ):
         self._logger = logger
         self._manifest = manifest
+        self._include_fn = include_fn
 
     # Listen Points
     # --------------------------------------------------
@@ -54,7 +57,26 @@ class ManifestListenerImpl(ManifestListener):
     def exitImplScopedContext(self, ctx: ManifestParser.ImplScopedContextContext):
         self._manifest.exit_context()
 
-    def enterTagDecl(self, ctx: ManifestParser.ItemContext):
+    def enterDirective(self, ctx: ManifestParser.DirectiveContext):
+        ref = self._get_ref_content(ctx.ref())
+        tags = {}
+        for tag in ctx.tag():
+            kvpair = self._get_kvpair_content(tag.kvPair())
+            tags[kvpair.name] = kvpair.value
+
+        if ref == 'include':
+            if 'source' in tags:
+                self._manifest.include_manifest(
+                    self._include_fn(tags['source'])
+                )
+            else:
+                raise ValueError(
+                    f"Manifest directive '{ref}' is missing tag 'source'"
+                )
+        else:
+            raise ValueError(f"Unknown manifest directive '{ref}'")
+
+    def enterTagDecl(self, ctx: ManifestParser.TagDeclContext):
         ref = self._get_ref_content(ctx.ref())
         tags = {}
         for tag in ctx.tag():

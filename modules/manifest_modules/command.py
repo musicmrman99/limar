@@ -56,7 +56,7 @@ class Command:
             # Ignore any items with a tag that starts with `__`
             if any(
                 name.startswith('__')
-                for name in item['tags'].raw().keys()
+                for name in item['tags'].keys()
             ):
                 continue
 
