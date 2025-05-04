@@ -70,11 +70,9 @@ class ComputableGraph:
         self._mod = mod
 
         self._computables: dict[CacheKey, Computable] = {}
-        self._dependencies: CacheKeyIndex = defaultdict(lambda: {})
-        self._dependents: CacheKeyIndex = defaultdict(lambda: {})
-        self._computed_dependencies: VersionedCacheKeyIndex = (
-            defaultdict(lambda: {})
-        )
+        self._dependencies: CacheKeyIndex = {}
+        self._dependents: CacheKeyIndex = {}
+        self._computed_dependencies: VersionedCacheKeyIndex = {}
 
     def add(self,
             key: CacheKey,
@@ -82,11 +80,17 @@ class ComputableGraph:
             computable: Computable
     ):
         self._computables[key] = computable
+
+        if key not in self._dependencies:
+            self._dependencies[key] = {}
         self._dependencies[key].update({
             key: None
             for key in source_keys
         })
+
         for source_key in source_keys:
+            if source_key not in self._dependents:
+                self._dependents[source_key] = {}
             self._dependents[source_key][key] = None
 
     def latest_vkey_for(self, key: CacheKey) -> VersionedCacheKey:
