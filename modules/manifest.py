@@ -240,6 +240,49 @@ class Manifest:
             lambda removed_tags: self._on_remove_item_tags(ref, removed_tags)
         )
 
+    def enter(self):
+        # Manifests can be re-entered, but
+        if self._stage not in [self.STAGES.initialising, self.STAGES.exited]:
+            raise LIMARException(
+                "Attempt to call Manifest.enter() outside of"
+                f" '{self.STAGES.initialising}' stage (was in '{self._stage}'"
+                f" stage)"
+            )
+        self._stage = self.STAGES.entered
+
+        # (Re-)Initialise - tag set
+        for item in self._items.values():
+            item['tags'] = self._new_item_tags(item['ref'], item['tags'])
+
+        # Call - 'on_enter_manifest' on all registered context modules
+        self._run_manifest_lifecycle_point('on_enter_manifest', [])
+
+        # Enter each initial context
+        for context_name in self._initial_contexts:
+            self.enter_context(context_name)
+
+    def exit(self):
+        if self._stage != self.STAGES.entered:
+            raise LIMARException(
+                "Attempt to call Manifest.exit() outside of"
+                f" '{self.STAGES.entered}' stage (was in '{self._stage}' stage)"
+            )
+
+        # Exit each initial context
+        for _ in range(len(self._initial_contexts)):
+            self.exit_context()
+
+        # Call - 'on_exit_manifest' on all registered context modules
+        self._run_manifest_lifecycle_point('on_exit_manifest',
+            [self._items, self._item_sets]
+        )
+
+        # Finalise - tag set
+        for item in self._items.values():
+            item['tags'] = item['tags']._raw()
+
+        self._stage = self.STAGES.exited
+
     # Util for include_manifest()
     def _merge_items(self, item_a: Item, item_b: Item):
         # FIXME: This is a naive way of merging items (it's shallow, and it
@@ -360,44 +403,6 @@ class Manifest:
             merge_strategy=item_set_merge_strategy,
             merge_fn=self._merge_item_sets
         )
-
-    def enter(self):
-        if self._stage != self.STAGES.initialising:
-            raise LIMARException(
-                "Attempt to call Manifest.enter() outside of"
-                f" '{self.STAGES.initialising}' stage (was in '{self._stage}'"
-                f" stage)"
-            )
-        self._stage = self.STAGES.entered
-
-        # Call - 'on_enter_manifest' on all registered context modules
-        self._run_manifest_lifecycle_point('on_enter_manifest', [])
-
-        # Enter each initial context
-        for context_name in self._initial_contexts:
-            self.enter_context(context_name)
-
-    def exit(self):
-        if self._stage != self.STAGES.entered:
-            raise LIMARException(
-                "Attempt to call Manifest.exit() outside of"
-                f" '{self.STAGES.entered}' stage (was in '{self._stage}' stage)"
-            )
-
-        # Exit each initial context
-        for _ in range(len(self._initial_contexts)):
-            self.exit_context()
-
-        # Call - 'on_exit_manifest' on all registered context modules
-        self._run_manifest_lifecycle_point('on_exit_manifest',
-            [self._items, self._item_sets]
-        )
-
-        # Finalise - tag set
-        for item in self._items.values():
-            item['tags'] = item['tags']._raw()
-
-        self._stage = self.STAGES.exited
 
     def enter_context(self, type, opts = None):
         if self._stage != self.STAGES.entered:
