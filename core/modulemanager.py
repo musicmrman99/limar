@@ -56,6 +56,7 @@ LIFECYCLE = PhaseSystem(
         'ROOT_ARGUMENT_CONFIGURATION',
         'ROOT_ARGUMENT_PARSING',
         'CONFIGURATION',
+        'CONFIGURATION_FINALISATION',
         'STARTING',
 
         'ARGUMENT_CONFIGURATION',
@@ -255,7 +256,11 @@ class ModuleLifecycle:
             inherited_mods
         )
 
-        self._mods, self._MODULE_PHASE_SYSTEM = (
+        (
+            self._mods,
+            self._MODULE_PHASE_SYSTEM,
+            self._REVERSED_MODULE_PHASE_SYSTEM
+        ) = (
             self.resolve_dependencies(self._mods, self._all_mods)
         )
         self._accessor_object = (
@@ -312,6 +317,13 @@ class ModuleLifecycle:
             self._root_args,
             self._accessor_object
         )
+        self.finalise_configuration(
+            self._mods,
+            self._root_env,
+            self._envs,
+            self._root_args,
+            self._accessor_object
+        )
         self._started_mods, self._start_exceptions = self.start(
             self._mods,
             self._root_env,
@@ -347,19 +359,7 @@ class ModuleLifecycle:
         )
 
     def __exit__(self, type, value, traceback):
-        # Stop modules in reverse order of starting them. Also reverse the
-        # mods state to reverse the order they are considered to have 'started'
-        # the 'STOPPING' phase. Don't need to do this to all_mods because
-        # all_mods is only used for lookup.
-        mods_to_stop = tuple(reversed(self._started_mods.keys()))
-        self._mods = {
-            name: module
-            for name, module in reversed(self._mods.items())
-        }
-        self._MODULE_PHASE_SYSTEM = self._create_subsystem(
-            f'{__name__}:reversed_sorted_modules',
-            tuple(self._mods.keys())
-        )
+        mods_to_stop = tuple(self._started_mods.keys())
 
         # Stop modules (WARNING: can mutate module state)
         stop_exceptions = self.stop(
@@ -460,7 +460,7 @@ class ModuleLifecycle:
     def resolve_dependencies(self,
             mods: dict[str, Any],
             all_mods: dict[str, Any]
-    ) -> tuple[dict[str, Any], PhaseSystem]:
+    ) -> tuple[dict[str, Any], PhaseSystem, PhaseSystem]:
         self._proceed_to_phase(LIFECYCLE.PHASES.RESOLVE_DEPENDENCIES)
 
         # This function assumes that any parent Lifecycle has or will have its
@@ -527,13 +527,21 @@ class ModuleLifecycle:
             f'{__name__}:sorted_modules',
             tuple(own_sorted_mod_names)
         )
+        reversed_sorted_module_lifecycle = self._create_subsystem(
+            f'{__name__}:reversed_sorted_modules',
+            tuple(reversed(own_sorted_mod_names))
+        )
 
         self._debug('Modules (dependencies resolved):', sorted_mod_names)
         self._debug(
             'Own Modules (dependencies resolved):',
             own_sorted_mod_names
         )
-        return sorted_mods, sorted_module_lifecycle
+        return (
+            sorted_mods,
+            sorted_module_lifecycle,
+            reversed_sorted_module_lifecycle
+        )
 
     def create_module_accessor_object(self,
             all_mods: dict[str, Any]
@@ -778,6 +786,32 @@ class ModuleLifecycle:
             if hasattr(module, 'configure'):
                 self._debug(f"Configuring module '{name}'")
                 module.configure(
+                    mod=accessor_object,
+                    root_env=root_env,
+                    env=envs[name],
+                    args=root_args
+                )
+
+        mod_subproc.transition_to_complete()
+
+    def finalise_configuration(self,
+            mods: dict[str, Any],
+            root_env: Namespace,
+            envs: dict[str, Namespace],
+            root_args: Namespace,
+            accessor_object: Any
+    ):
+        mod_subproc = self._start_reversed_module_subprocess_for(
+            LIFECYCLE.PHASES.CONFIGURATION_FINALISATION
+        )
+        self._proceed_to_phase(LIFECYCLE.PHASES.CONFIGURATION_FINALISATION)
+
+        for name, module in reversed(mods.items()):
+            mod_subproc.transition_to(name)
+
+            if hasattr(module, 'finalise_configuration'):
+                self._debug(f"Finalising configuration of module '{name}'")
+                module.finalise_configuration(
                     mod=accessor_object,
                     root_env=root_env,
                     env=envs[name],
@@ -1086,13 +1120,13 @@ class ModuleLifecycle:
             run_exception: Exception | KeyboardInterrupt | None,
             accessor_object: Any
     ):
-        stopping_process = self._start_module_subprocess_for(
+        stopping_process = self._start_reversed_module_subprocess_for(
             LIFECYCLE.PHASES.STOPPING
         )
         self._proceed_to_phase(LIFECYCLE.PHASES.STOPPING)
 
         stop_exceptions: list[Exception | KeyboardInterrupt] = []
-        for name, module in tuple(mods.items()):
+        for name, module in tuple(reversed(mods.items())):
             # Transition to stopping every module to ensure that the phasing
             # system knows when a module would have been stopped, even if no
             # action needs to be taken for some modules, to enable using that
@@ -1293,6 +1327,19 @@ class ModuleLifecycle:
         self._start_subprocess(phase, module_subprocess)
         return module_subprocess
 
+    def _start_reversed_module_subprocess_for(self, phase: Phase) -> PhasedProcess:
+        """
+        Create a new phased process using the `MODULE_PHASE_SYSTEM` and start it
+        as a subprocess of the given phase.
+        """
+
+        assert self._REVERSED_MODULE_PHASE_SYSTEM is not None, '_start_reversed_module_subprocess_for() called before resolve_dependencies()'
+        module_subprocess = self._create_subprocess(
+            self._REVERSED_MODULE_PHASE_SYSTEM, singular=False
+        )
+        self._start_subprocess(phase, module_subprocess)
+        return module_subprocess
+
     def _start_all_module_subprocess_for(self, phase: Phase) -> PhasedProcess:
         """
         Create a new phased process using the `ALL_MODULE_PHASE_SYSTEM` and
@@ -1480,6 +1527,21 @@ class ModuleManager:
 
     Allows each module to configure itself and any other modules it depends
     on. This phase is usually used to configure other modules.
+
+    Only module methods decorated with `ModuleAccessor.invokable_as_config` can
+    be invoked by other modules during this phase (see below for how). Also, the
+    module being invoked must have already been configured as part of this
+    phase, though this won't be an issue if the module has declared all of its
+    dependencies.
+
+    ### Configuration Finalisation
+    `finalise_configuration(mod: Namespace, env: Namespace, args: Namespace) ->
+    None`
+
+    Allows each module to finish configuring itself and any other modules it
+    depends on after all modules have finished configuring it. This phase runs
+    through modules in reverse order, ie. no dependents to no dependencies. This
+    phase is usually used to configure other modules.
 
     Only module methods decorated with `ModuleAccessor.invokable_as_config` can
     be invoked by other modules during this phase (see below for how). Also, the
