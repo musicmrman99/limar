@@ -1,33 +1,10 @@
 from argparse import Namespace
-from collections import defaultdict
 from graphlib import TopologicalSorter
 from hashlib import sha1
-from typing import Any, Callable, TypeVar, TypedDict
+
 from core.modulemanager import ModuleAccessor
+from modules.dep_cache_utils.types import *
 
-T = TypeVar('T')
-DictSet = dict[T, None]
-
-# (type, name[, version])
-CacheKey = tuple[str, str]
-VersionedCacheKey = tuple[str, str, str]
-CacheKeyIndex = dict[CacheKey, DictSet[CacheKey]]
-VersionedCacheKeyIndex = dict[VersionedCacheKey, DictSet[VersionedCacheKey]]
-
-class _ComputableCache(TypedDict):
-    latest_vkey: VersionedCacheKey | None
-    vkey_is_dirty: bool
-
-class _ComputableGraphCache(TypedDict):
-    computables: dict[CacheKey, _ComputableCache]
-    dependencies: CacheKeyIndex
-    dependents: CacheKeyIndex
-    computed_dependencies: VersionedCacheKeyIndex
-
-ComputeVersionFn = Callable[..., str]
-ComputeValueFn = Callable[..., Any]
-SerialiseValueFn = Callable[[Any], Any]
-DeserialiseValueFn = Callable[[Any], Any]
 class Computable:
     def __init__(self,
             version_fn: ComputeVersionFn,
@@ -61,13 +38,13 @@ class Computable:
     def vkey_is_dirty(self):
         return self._vkey_is_dirty
 
-    def raw(self) -> _ComputableCache:
+    def raw(self) -> ComputableCache:
         return {
             'latest_vkey': self._latest_vkey,
             'vkey_is_dirty': self._vkey_is_dirty
         }
 
-    def configure_from_raw(self, computable_cache: _ComputableCache):
+    def configure_from_raw(self, computable_cache: ComputableCache):
         self._latest_vkey = computable_cache['latest_vkey']
         self._vkey_is_dirty = computable_cache['vkey_is_dirty']
 
@@ -94,9 +71,8 @@ class ComputableGraph:
             for key in source_keys
         })
 
+        self._dependents[key] = {}
         for source_key in source_keys:
-            if source_key not in self._dependents:
-                self._dependents[source_key] = {}
             self._dependents[source_key][key] = None
 
     def latest_vkey_for(self, key: CacheKey) -> VersionedCacheKey:
@@ -115,6 +91,7 @@ class ComputableGraph:
         returns the same key, then E and F are marked as clean, and we skip
         recomputing them.
         """
+
         latest_vkey = self._computables[key].latest_vkey()
 
         # Technically, `latest_key is not None` is guaranteed if
@@ -137,11 +114,11 @@ class ComputableGraph:
             return latest_vkey
 
         # If not, recompute vkey
-        sources = [
+        sources: KeySources = [
             (source_vkey, self.value_for(source_vkey))
             for source_vkey in source_vkeys
         ]
-        version = self._computables[key].version_fn(*sources)
+        version = self._computables[key].version_fn(key, sources)
         computed_vkey = (*key, version)
         self._computables[key].set_latest_vkey(computed_vkey)
 
@@ -182,12 +159,12 @@ class ComputableGraph:
                     for source_key in self._dependencies[key]
                 }
 
-            sources = [
+            sources: ValueSources = [
                 self.value_for(source_vkey)
                 # Base-case: empty
                 for source_vkey in self._computed_dependencies[vkey]
             ]
-            value = self._computables[key].value_fn(sources)
+            value = self._computables[key].value_fn(key, sources)
 
             if self._computables[key].cacheable:
                 self._mod.cache.set(
@@ -197,35 +174,39 @@ class ComputableGraph:
 
         return value
 
-    def raw(self) -> _ComputableGraphCache:
+    def raw(self) -> ComputableGraphCache:
         return {
             'computables': {
                 cache_key: computable.raw()
                 for cache_key, computable in self._computables.items()
             },
-            'dependencies': self._dependencies,
-            'dependents': self._dependents,
             'computed_dependencies': self._computed_dependencies
         }
 
-    def configure_from_raw(self, computable_graph_cache: _ComputableGraphCache):
+    def configure_from_raw(self, computable_graph_cache: ComputableGraphCache):
+        keys_not_found = 0
         for cache_key, computable_cache in (
             computable_graph_cache['computables'].items()
         ):
             try:
                 computable = self._computables[cache_key]
             except KeyError:
-                # Likely due to changes to LIMAR modules or what is cached.
-                # Try to ignore the failures and take only what is still
-                # relevant. If this results in strange behaviour, it is
-                # recommended to delete the key cache entry entirely to
-                # recompute everything.
-                pass
+                keys_not_found += 1
+                self._mod.log.warning(
+                    f"dep-cache: cache_key {repr(cache_key)} not found when"
+                    " loading from computable graph cache."
+                )
+                continue
 
             computable.configure_from_raw(computable_cache)
 
-        self._dependencies = computable_graph_cache['dependencies']
-        self._dependents = computable_graph_cache['dependents']
+        if keys_not_found > 0:
+            self._mod.log.warning(
+                f"dep-cache: The above warnings may indicate a compatiblity"
+                " issue with a previous version of LIMAR. If you experience"
+                " unexpected behaviour, clearing your cache may help."
+            )
+
         self._computed_dependencies = (
             computable_graph_cache['computed_dependencies']
         )
@@ -283,7 +264,7 @@ class DepCacheModule:
     _COMPUTABLE_GRAPH_CACHE_NAME = 'dep_cache.computable_graph_cache.pickle'
 
     def dependencies(self):
-        return ['cache']
+        return ['cache', 'log']
 
     def configure(self, *, mod: Namespace, **_):
         self._mod = mod # For methods that aren't directly given it
@@ -291,11 +272,12 @@ class DepCacheModule:
 
     def start(self, *, mod: Namespace, **_):
         try:
-            computable_graph_cache: _ComputableGraphCache = mod.cache.get(
+            computable_graph_cache: ComputableGraphCache = mod.cache.get(
                 self._COMPUTABLE_GRAPH_CACHE_NAME
             )
         except KeyError:
             return
+
         self._computable_graph.configure_from_raw(computable_graph_cache)
 
     def stop(self, *, mod: Namespace, **_):
@@ -307,24 +289,24 @@ class DepCacheModule:
     # Invokation
     # --------------------
 
-    @classmethod
-    def _default_version_fn(cls, *sources):
+    @staticmethod
+    def from_source_versions(key, sources):
         if len(sources) == 0:
             return ''
         elif len(sources) == 1:
             return sources[0][0]
-        return cls._digest_for(
-            ''.join(*(str(source[0]) for source in sources))
-        )
 
-    @ModuleAccessor.invokable_as_service
+        combined_key = ''.join(*(str(source[0]) for source in sources))
+        return sha1(combined_key.encode('utf-8')).hexdigest()
+
+    @ModuleAccessor.invokable_as_config
     def add(self,
             key: CacheKey,
             source_keys: list[CacheKey],
             compute_value: ComputeValueFn,
             serialise_value: SerialiseValueFn = lambda x: x,
             deserialise_value: DeserialiseValueFn = lambda x: x,
-            compute_version: ComputeVersionFn = _default_version_fn,
+            compute_version: ComputeVersionFn = from_source_versions,
             cacheable: bool = True
     ):
         self._computable_graph.add(
@@ -351,10 +333,3 @@ class DepCacheModule:
         if len(key) == 3:
             return self._computable_graph.value_for(key)
         return self._computable_graph.latest_value_for(key)
-
-    # Utils
-    # --------------------
-
-    @staticmethod
-    def _digest_for(value: str):
-        return sha1(value.encode('utf-8')).hexdigest()

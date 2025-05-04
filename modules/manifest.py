@@ -1,5 +1,5 @@
 from copy import deepcopy
-from hashlib import md5
+from hashlib import sha1
 import re
 import random
 
@@ -14,6 +14,8 @@ from core.modules.log import LogModule
 from core.envparse import EnvironmentParser
 from argparse import ArgumentParser, Namespace
 from typing import Any, Callable, Iterable, Literal
+
+from modules.dep_cache_utils.types import CacheKey, KeySources, ValueSources
 
 ItemRef = str
 ItemSetRef = str | tuple[str, str] # (tag_name, tag_value)
@@ -936,7 +938,7 @@ class ManifestModule:
         self._all_extra_props_data = None
 
     def dependencies(self):
-        return ['log', 'phase', 'cache', 'tr']
+        return ['log', 'phase', 'cache', 'dep-cache', 'tr']
 
     def configure_env(self, *, parser: EnvironmentParser, **_):
         self._env_parser = parser # For methods that aren't directly given it
@@ -1050,6 +1052,16 @@ class ManifestModule:
 
         mod.phase.configure_phase_control_args(item_set_parser)
 
+    def _raw_manifest_version(self, key: CacheKey, sources: KeySources):
+        # Unusual key function in that it computes the version from the value
+        raw_manifest = self._raw_manifest_value(key, [])
+        return sha1(raw_manifest.encode('utf-8')).hexdigest()
+
+    def _raw_manifest_value(self, key: CacheKey, sources: ValueSources) -> str:
+        assert self._manifest_store is not None, 'ManifestModule.start() called before ManifestModule.configure()'
+        _, name = key
+        return self._manifest_store.get(name+'.manifest.txt')
+
     def configure(self, *,
             mod: Namespace,
             root_env: Namespace,
@@ -1062,8 +1074,19 @@ class ManifestModule:
 
         if self._manifest_store is None:
             self._manifest_store = Store(root_env.DATA_DIR / 'manifest')
-
         self._default_item_set = env.DEFAULT_ITEM_SET
+
+        # Wire up dep-cache computables
+        for manifest_filename in self._manifest_store.list():
+            if manifest_filename.endswith('.manifest.txt'):
+                manifest_name = manifest_filename.removesuffix('.manifest.txt')
+                mod.dep_cache.add(
+                    ('raw-manifest', manifest_name),
+                    [],
+                    compute_version=self._raw_manifest_version,
+                    compute_value=self._raw_manifest_value,
+                    cacheable=False
+                )
 
     def start(self, *_, mod: Namespace, **__):
         assert self._manifest_store is not None, 'ManifestModule.start() called before ManifestModule.configure()'
@@ -1080,7 +1103,7 @@ class ManifestModule:
 
         self._global_manifest = Manifest(
             self._mod.log,
-            md5(''.encode('utf-8')).hexdigest()
+            sha1(''.encode('utf-8')).hexdigest()
         )
         for manifest in self._manifests.values():
             self._global_manifest.include_manifest(manifest)
@@ -1138,11 +1161,11 @@ class ManifestModule:
 
         # Load raw text from manifest store
         if text is None:
-            text = self._manifest_store.get(name+'.manifest.txt')
+            text = self._mod.dep_cache.get(('raw-manifest', name))
         assert isinstance(text, str)
 
         # Determine cache filename for this version of the manifest file
-        digest = md5(text.encode('utf-8')).hexdigest()
+        digest = sha1(text.encode('utf-8')).hexdigest()
         cached_name = '.'.join(['manifest', name, digest, 'pickle'])
 
         # Try cache
