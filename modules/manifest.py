@@ -1069,11 +1069,6 @@ class ManifestModule:
         assert self._manifest_store is not None, 'ManifestModule.start() called before ManifestModule.configure()'
         mod.log.info(f"Loading manifests from store '{self._manifest_store}'")
 
-        self._global_manifest = Manifest(
-            self._mod.log,
-            md5(''.encode('utf-8')).hexdigest()
-        )
-
         for name in self._manifest_names:
             if name+'.manifest.txt' not in self._manifest_store.list():
                 self._mod.log.trace(f"Manifest '{name}' not found. Skipping.")
@@ -1082,6 +1077,13 @@ class ManifestModule:
             # May have already been loaded by !include
             if name not in self._manifests:
                 self._load_manifest(name)
+
+        self._global_manifest = Manifest(
+            self._mod.log,
+            md5(''.encode('utf-8')).hexdigest()
+        )
+        for manifest in self._manifests.values():
+            self._global_manifest.include_manifest(manifest)
 
     def _parse_into_manifest(self, text: str, manifest: Manifest):
         # Import Deps (these are slow to import, so only import them if needed)
@@ -1133,7 +1135,6 @@ class ManifestModule:
 
     def _load_manifest(self, name: str, text: str | None = None) -> Manifest:
         assert self._manifest_store is not None, 'ManifestModule._load_manifest() called before ManifestModule.configure()'
-        assert self._global_manifest is not None, '_global_manifest is initialised in STARTING phase, but this method is only run after that initialisation'
 
         # Load raw text from manifest store
         if text is None:
@@ -1159,7 +1160,6 @@ class ManifestModule:
 
         # Track
         self._manifests[name] = manifest
-        self._global_manifest.include_manifest(manifest)
 
         # Return
         return manifest
