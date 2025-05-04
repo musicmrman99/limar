@@ -549,7 +549,7 @@ class ModuleLifecycle:
             invokation_name: ModuleAccessor(self, module_name)
             for module_name, mod in all_mods.items()
             for invokation_name in [
-                module_name,
+                self._module_name_to_invokation_name(module_name),
                 *(mod.aliases() if hasattr(mod, 'aliases') else [])
             ]
         })
@@ -1311,6 +1311,12 @@ class ModuleLifecycle:
         self._info(f"{'-'*5} {phase} {'-'*(43-len(phase))}")
 
     # Utils
+    # --------------------
+
+    def _module_name_to_invokation_name(self, module_name: str) -> str:
+        return module_name.replace('-', '_')
+
+    # Generic Utils
     # --------------------
 
     def _map_tree_leaves(self,
