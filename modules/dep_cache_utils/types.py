@@ -21,6 +21,6 @@ KeySources = list[tuple[VersionedCacheKey, Any]]
 ValueSources = list[Any]
 
 ComputeVersionFn = Callable[[CacheKey, KeySources], str]
-ComputeValueFn = Callable[[CacheKey, ValueSources], Any]
+ComputeValueFn = Callable[[VersionedCacheKey, ValueSources], Any]
 SerialiseValueFn = Callable[[Any], Any]
 DeserialiseValueFn = Callable[[Any], Any]

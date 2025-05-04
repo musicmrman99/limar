@@ -164,7 +164,7 @@ class ComputableGraph:
                 # Base-case: empty
                 for source_vkey in self._computed_dependencies[vkey]
             ]
-            value = self._computables[key].value_fn(key, sources)
+            value = self._computables[key].value_fn(vkey, sources)
 
             if self._computables[key].cacheable:
                 self._mod.cache.set(
@@ -290,14 +290,14 @@ class DepCacheModule:
     # --------------------
 
     @staticmethod
-    def from_source_versions(key, sources):
+    def from_source_versions(key: CacheKey, sources: KeySources):
         if len(sources) == 0:
             return ''
         elif len(sources) == 1:
-            return sources[0][0]
+            return sources[0][0][2]
 
-        combined_key = ''.join(*(str(source[0]) for source in sources))
-        return sha1(combined_key.encode('utf-8')).hexdigest()
+        combined_version = ''.join(source[0][2] for source in sources)
+        return sha1(combined_version.encode('utf-8')).hexdigest()
 
     @ModuleAccessor.invokable_as_config
     def add(self,

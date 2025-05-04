@@ -15,7 +15,7 @@ from core.envparse import EnvironmentParser
 from argparse import ArgumentParser, Namespace
 from typing import Any, Callable, Iterable, Literal
 
-from modules.dep_cache_utils.types import CacheKey, KeySources, ValueSources
+from modules.dep_cache_utils.types import CacheKey, KeySources, ValueSources, VersionedCacheKey
 
 ItemRef = str
 ItemSetRef = str | tuple[str, str] # (tag_name, tag_value)
@@ -1052,15 +1052,27 @@ class ManifestModule:
 
         mod.phase.configure_phase_control_args(item_set_parser)
 
-    def _raw_manifest_version(self, key: CacheKey, sources: KeySources):
+    def _raw_manifest_version(self, key: CacheKey, sources: KeySources) -> str:
         # Unusual key function in that it computes the version from the value
-        raw_manifest = self._raw_manifest_value(key, [])
+        raw_manifest = self._raw_manifest_value((*key, ''), [])
         return sha1(raw_manifest.encode('utf-8')).hexdigest()
 
-    def _raw_manifest_value(self, key: CacheKey, sources: ValueSources) -> str:
-        assert self._manifest_store is not None, 'ManifestModule.start() called before ManifestModule.configure()'
-        _, name = key
+    def _raw_manifest_value(self,
+            key: VersionedCacheKey,
+            sources: ValueSources
+    ) -> str:
+        assert self._manifest_store is not None, 'ManifestModule._raw_manifest_value() called before ManifestModule.configure()'
+        _, name, _ = key
         return self._manifest_store.get(name+'.manifest.txt')
+
+    def _manifest_value(self,
+            vkey: VersionedCacheKey,
+            sources: ValueSources
+    ) -> Manifest:
+        _, name, digest = vkey
+        text: str = sources[0]
+        self._mod.log.info(f"Loaded manifest '{name}'")
+        return self._parse_manifest(name, digest, text)
 
     def configure(self, *,
             mod: Namespace,
@@ -1077,11 +1089,11 @@ class ManifestModule:
         self._default_item_set = env.DEFAULT_ITEM_SET
 
         # Wire up dep-cache computables
-        for manifest_filename in self._manifest_store.list():
-            if manifest_filename.endswith('.manifest.txt'):
-                manifest_name = manifest_filename.removesuffix('.manifest.txt')
+        for filename in self._manifest_store.list():
+            if filename.endswith('.manifest.txt'):
+                raw_name = filename.removesuffix('.manifest.txt')
                 mod.dep_cache.add(
-                    ('raw-manifest', manifest_name),
+                    ('raw-manifest', raw_name),
                     [],
                     compute_version=self._raw_manifest_version,
                     compute_value=self._raw_manifest_value,
@@ -1092,15 +1104,12 @@ class ManifestModule:
         assert self._manifest_store is not None, 'ManifestModule.start() called before ManifestModule.configure()'
         mod.log.info(f"Loading manifests from store '{self._manifest_store}'")
 
+        # Load + cache all manifests
         for name in self._manifest_names:
-            if name+'.manifest.txt' not in self._manifest_store.list():
-                self._mod.log.trace(f"Manifest '{name}' not found. Skipping.")
-                continue
-
-            # May have already been loaded by !include
-            if name not in self._manifests:
+            if name+'.manifest.txt' in self._manifest_store.list():
                 self._load_manifest(name)
 
+        # Generate global manifest
         self._global_manifest = Manifest(
             self._mod.log,
             sha1(''.encode('utf-8')).hexdigest()
@@ -1156,36 +1165,9 @@ class ManifestModule:
         self._parse_into_manifest(text, manifest)
         return manifest
 
-    def _load_manifest(self, name: str, text: str | None = None) -> Manifest:
-        assert self._manifest_store is not None, 'ManifestModule._load_manifest() called before ManifestModule.configure()'
-
-        # Load raw text from manifest store
-        if text is None:
-            text = self._mod.dep_cache.get(('raw-manifest', name))
-        assert isinstance(text, str)
-
-        # Determine cache filename for this version of the manifest file
-        digest = sha1(text.encode('utf-8')).hexdigest()
-        cached_name = '.'.join(['manifest', name, digest, 'pickle'])
-
-        # Try cache
-        try:
-            manifest = Manifest.from_raw(
-                self._mod.log,
-                self._mod.cache.get(cached_name)
-            )
-
-        # Otherwise load + cache
-        except KeyError:
-            manifest = self._parse_manifest(name, digest, text)
-            self._mod.log.info(f"Loaded manifest '{name}'")
-            self._mod.cache.set(cached_name, manifest.raw())
-
-        # Track
-        self._manifests[name] = manifest
-
-        # Return
-        return manifest
+    def _load_manifest(self, name: str) -> Manifest:
+        self._manifests[name] = self._mod.dep_cache.get(('manifest', name))
+        return self._manifests[name]
 
     def __call__(self, *,
             mod: Namespace,
@@ -1295,6 +1277,9 @@ class ManifestModule:
         Allows other modules to extend the manifest format with new contexts.
         """
 
+        assert self._manifest_store is not None, 'ManifestModule.add_context_modules() called before ManifestModule.configure()'
+
+        new_manifest_names = []
         for module in modules:
             module_added = True
             if module.context_type() not in self._ctx_mod_factories:
@@ -1312,6 +1297,22 @@ class ManifestModule:
                 module.context_type() not in self._manifest_names
             ):
                 self._manifest_names.append(module.context_type())
+                new_manifest_names.append(module.context_type())
+
+        for name in new_manifest_names:
+            if name+'.manifest.txt' not in self._manifest_store.list():
+                self._mod.log.trace(f"Manifest '{name}' not found. Skipping.")
+                continue
+
+            self._mod.dep_cache.add(
+                ('manifest', name),
+                [('raw-manifest', name)],
+                compute_value=self._manifest_value,
+                serialise_value=Manifest.raw,
+                deserialise_value=lambda raw_data: (
+                    Manifest.from_raw(self._mod.log, raw_data)
+                )
+            )
 
     # Invokation
     # --------------------
