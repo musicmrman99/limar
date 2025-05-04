@@ -1117,58 +1117,6 @@ class ManifestModule:
         for manifest in self._manifests.values():
             self._global_manifest.include_manifest(manifest)
 
-    def _parse_into_manifest(self, text: str, manifest: Manifest):
-        # Import Deps (these are slow to import, so only import them if needed)
-        from antlr4 import InputStream, CommonTokenStream, ParseTreeWalker
-        from modules.manifest_lang.build.ManifestLexer import ManifestLexer
-        from modules.manifest_lang.build.ManifestParser import ManifestParser
-        from modules.manifest_lang.manifest_listener import ManifestListenerImpl
-
-        # Setup Parser
-        input_stream = InputStream(text)
-        lexer = ManifestLexer(input_stream)
-        tokens = CommonTokenStream(lexer)
-        parser = ManifestParser(tokens)
-        tree = parser.manifest()
-
-        # Parse
-        listener = ManifestListenerImpl(
-            self._mod.log,
-            manifest,
-            include_fn=self._load_manifest
-        )
-        walker = ParseTreeWalker()
-        walker.walk(listener, tree)
-
-    def _parse_manifest(self, name: str, digest: str, text: str) -> Manifest:
-        context_modules = {
-            context_type: [
-                mod_factory()
-                for mod_factory in ctx_mod_factories
-            ]
-            for context_type, ctx_mod_factories in
-                self._ctx_mod_factories.items()
-        }
-
-        initial_contexts = []
-        if name in context_modules.keys():
-            initial_contexts.append(name)
-
-        manifest = Manifest(
-            self._mod.log,
-            digest,
-            None,
-            None,
-            initial_contexts,
-            context_modules
-        )
-        self._parse_into_manifest(text, manifest)
-        return manifest
-
-    def _load_manifest(self, name: str) -> Manifest:
-        self._manifests[name] = self._mod.dep_cache.get(('manifest', name))
-        return self._manifests[name]
-
     def __call__(self, *,
             mod: Namespace,
             args: Namespace,
@@ -1454,6 +1402,60 @@ class ManifestModule:
 
     # Utils
     # --------------------
+
+    # Loading Stage
+
+    def _load_manifest(self, name: str) -> Manifest:
+        self._manifests[name] = self._mod.dep_cache.get(('manifest', name))
+        return self._manifests[name]
+
+    def _parse_manifest(self, name: str, digest: str, text: str) -> Manifest:
+        context_modules = {
+            context_type: [
+                mod_factory()
+                for mod_factory in ctx_mod_factories
+            ]
+            for context_type, ctx_mod_factories in
+                self._ctx_mod_factories.items()
+        }
+
+        initial_contexts = []
+        if name in context_modules.keys():
+            initial_contexts.append(name)
+
+        manifest = Manifest(
+            self._mod.log,
+            digest,
+            None,
+            None,
+            initial_contexts,
+            context_modules
+        )
+        self._parse_into_manifest(text, manifest)
+        return manifest
+
+    def _parse_into_manifest(self, text: str, manifest: Manifest):
+        # Import Deps (these are slow to import, so only import them if needed)
+        from antlr4 import InputStream, CommonTokenStream, ParseTreeWalker
+        from modules.manifest_lang.build.ManifestLexer import ManifestLexer
+        from modules.manifest_lang.build.ManifestParser import ManifestParser
+        from modules.manifest_lang.manifest_listener import ManifestListenerImpl
+
+        # Setup Parser
+        input_stream = InputStream(text)
+        lexer = ManifestLexer(input_stream)
+        tokens = CommonTokenStream(lexer)
+        parser = ManifestParser(tokens)
+        tree = parser.manifest()
+
+        # Parse
+        listener = ManifestListenerImpl(
+            self._mod.log,
+            manifest,
+            include_fn=self._load_manifest
+        )
+        walker = ParseTreeWalker()
+        walker.walk(listener, tree)
 
     # Transformation Stage
 
