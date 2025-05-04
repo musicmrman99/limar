@@ -26,14 +26,20 @@ class _ComputableGraphCache(TypedDict):
 
 ComputeVersionFn = Callable[..., str]
 ComputeValueFn = Callable[..., Any]
+SerialiseValueFn = Callable[[Any], Any]
+DeserialiseValueFn = Callable[[Any], Any]
 class Computable:
     def __init__(self,
             version_fn: ComputeVersionFn,
             value_fn: ComputeValueFn,
+            serialise_fn: SerialiseValueFn,
+            deserialise_fn: DeserialiseValueFn,
             cacheable: bool = True
     ):
         self.version_fn: ComputeVersionFn = version_fn
         self.value_fn: ComputeValueFn = value_fn
+        self.serialise_fn: SerialiseValueFn = serialise_fn
+        self.deserialise_fn: DeserialiseValueFn = deserialise_fn
         self.cacheable = cacheable
 
         self._latest_vkey: VersionedCacheKey | None = None
@@ -163,7 +169,9 @@ class ComputableGraph:
         value = None
         if self._computables[key].cacheable:
             try:
-                value = self._mod.cache.get(self._key_str(vkey))
+                value = self._computables[key].deserialise_fn(
+                    self._mod.cache.get(self._key_str(vkey))
+                )
             except KeyError:
                 pass
 
@@ -182,7 +190,10 @@ class ComputableGraph:
             value = self._computables[key].value_fn(sources)
 
             if self._computables[key].cacheable:
-                self._mod.cache.set(self._key_str(vkey), value)
+                self._mod.cache.set(
+                    self._key_str(vkey),
+                    self._computables[key].serialise_fn(value)
+                )
 
         return value
 
@@ -311,6 +322,8 @@ class DepCacheModule:
             key: CacheKey,
             source_keys: list[CacheKey],
             compute_value: ComputeValueFn,
+            serialise_value: SerialiseValueFn = lambda x: x,
+            deserialise_value: DeserialiseValueFn = lambda x: x,
             compute_version: ComputeVersionFn = _default_version_fn,
             cacheable: bool = True
     ):
@@ -320,6 +333,8 @@ class DepCacheModule:
             Computable(
                 compute_version,
                 compute_value,
+                serialise_value,
+                deserialise_value,
                 cacheable=cacheable
             )
         )
