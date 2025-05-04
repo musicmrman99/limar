@@ -1063,6 +1063,7 @@ class ManifestModule:
     ) -> str:
         assert self._manifest_store is not None, 'ManifestModule._raw_manifest_value() called before ManifestModule.configure()'
         _, name, _ = key
+        self._mod.log.info(f"Loaded raw manifest '{name}'")
         return self._manifest_store.get(name+'.manifest.txt')
 
     def _manifest_value(self,
@@ -1073,6 +1074,21 @@ class ManifestModule:
         text: str = sources[0]
         self._mod.log.info(f"Loaded manifest '{name}'")
         return self._parse_manifest(name, digest, text)
+
+    def _global_manifest_value(self,
+            vkey: VersionedCacheKey,
+            sources: ValueSources
+    ) -> Manifest:
+        _, _, digest = vkey
+        global_manifest = Manifest(self._mod.log, digest)
+
+        global_manifest.enter()
+        for manifest in sources:
+            global_manifest.include_manifest(manifest)
+        global_manifest.exit()
+
+        self._mod.log.info(f"Generate global manifest")
+        return global_manifest
 
     def configure(self, *,
             mod: Namespace,
@@ -1093,12 +1109,23 @@ class ManifestModule:
             if filename.endswith('.manifest.txt'):
                 raw_name = filename.removesuffix('.manifest.txt')
                 mod.dep_cache.add(
-                    ('raw-manifest', raw_name),
+                    ('manifest.raw', raw_name),
                     [],
                     compute_version=self._raw_manifest_version,
                     compute_value=self._raw_manifest_value,
                     cacheable=False
                 )
+
+    def finalise_configuration(self, *, mod: Namespace, **_):
+        mod.dep_cache.add(
+            ('manifest.global', ''),
+            [('manifest.manifest', name) for name in self._manifest_names],
+            compute_value=self._global_manifest_value,
+            serialise_value=Manifest.raw,
+            deserialise_value=lambda raw_data: (
+                Manifest.from_raw(self._mod.log, raw_data)
+            )
+        )
 
     def start(self, *_, mod: Namespace, **__):
         assert self._manifest_store is not None, 'ManifestModule.start() called before ManifestModule.configure()'
@@ -1109,13 +1136,8 @@ class ManifestModule:
             if name+'.manifest.txt' in self._manifest_store.list():
                 self._load_manifest(name)
 
-        # Generate global manifest
-        self._global_manifest = Manifest(
-            self._mod.log,
-            sha1(''.encode('utf-8')).hexdigest()
-        )
-        for manifest in self._manifests.values():
-            self._global_manifest.include_manifest(manifest)
+        # Generate + cache global manifest
+        self._global_manifest = mod.dep_cache.get(('manifest.global', ''))
 
     def __call__(self, *,
             mod: Namespace,
@@ -1253,8 +1275,8 @@ class ManifestModule:
                 continue
 
             self._mod.dep_cache.add(
-                ('manifest', name),
-                [('raw-manifest', name)],
+                ('manifest.manifest', name),
+                [('manifest.raw', name)],
                 compute_value=self._manifest_value,
                 serialise_value=Manifest.raw,
                 deserialise_value=lambda raw_data: (
@@ -1406,7 +1428,9 @@ class ManifestModule:
     # Loading Stage
 
     def _load_manifest(self, name: str) -> Manifest:
-        self._manifests[name] = self._mod.dep_cache.get(('manifest', name))
+        self._manifests[name] = self._mod.dep_cache.get(
+            ('manifest.manifest', name)
+        )
         return self._manifests[name]
 
     def _parse_manifest(self, name: str, digest: str, text: str) -> Manifest:

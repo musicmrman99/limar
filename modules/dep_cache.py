@@ -216,7 +216,9 @@ class ComputableGraph:
 
     def _key_str(self, key: VersionedCacheKey):
         type, name, version = key
-        return f"{type}.{name}.{version}.pickle"
+        name_str = '.'+name if name != '' else ''
+        version_str = '.'+version if version != '' else ''
+        return f"{type}{name_str}{version_str}.pickle"
 
     def _transitive_dependencies_of(self, key: CacheKey):
         # Only contains keys that are in the directed subgraph starting from
