@@ -1,27 +1,31 @@
 from argparse import Namespace
 from collections import defaultdict
+from graphlib import TopologicalSorter
 from hashlib import sha1
-from typing import Any, Callable, TypedDict
+from typing import Any, Callable, TypeVar, TypedDict
 from core.modulemanager import ModuleAccessor
+
+T = TypeVar('T')
+DictSet = dict[T, None]
 
 # (type, name[, version])
 CacheKey = tuple[str, str]
 VersionedCacheKey = tuple[str, str, str]
-CacheKeyIndex = dict[CacheKey, dict[CacheKey, None]]
+CacheKeyIndex = dict[CacheKey, DictSet[CacheKey]]
+VersionedCacheKeyIndex = dict[VersionedCacheKey, DictSet[VersionedCacheKey]]
 
 class _ComputableCache(TypedDict):
-    latest_key: VersionedCacheKey | None
-    key_is_dirty: bool
-_ComputablesCache = dict[CacheKey, _ComputableCache]
+    latest_vkey: VersionedCacheKey | None
+    vkey_is_dirty: bool
 
-# {
-#   cache_key: {cache_key: None, ...},
-#   versioned_cache_key: {versioned_cache_key: None, ...},
-#   ...
-# }
+class _ComputableGraphCache(TypedDict):
+    computables: dict[CacheKey, _ComputableCache]
+    dependencies: CacheKeyIndex
+    dependents: CacheKeyIndex
+    computed_dependencies: VersionedCacheKeyIndex
+
 ComputeVersionFn = Callable[..., str]
 ComputeValueFn = Callable[..., Any]
-
 class Computable:
     def __init__(self,
             version_fn: ComputeVersionFn,
@@ -32,64 +36,261 @@ class Computable:
         self.value_fn: ComputeValueFn = value_fn
         self.cacheable = cacheable
 
-        self.latest_key: VersionedCacheKey | None = None
-        self.key_is_dirty = True
+        self._latest_vkey: VersionedCacheKey | None = None
+        self._vkey_is_dirty = True
+
+    def latest_vkey(self) -> VersionedCacheKey | None:
+        return self._latest_vkey
+
+    def set_latest_vkey(self, key: VersionedCacheKey):
+        self._latest_vkey = key
+        self._vkey_is_dirty = False
+
+    def set_vkey_dirty(self):
+        self._vkey_is_dirty = True
+
+    def set_vkey_clean(self):
+        self._vkey_is_dirty = False
+
+    def vkey_is_dirty(self):
+        return self._vkey_is_dirty
+
+    def raw(self) -> _ComputableCache:
+        return {
+            'latest_vkey': self._latest_vkey,
+            'vkey_is_dirty': self._vkey_is_dirty
+        }
+
+    def configure_from_raw(self, computable_cache: _ComputableCache):
+        self._latest_vkey = computable_cache['latest_vkey']
+        self._vkey_is_dirty = computable_cache['vkey_is_dirty']
+
+class ComputableGraph:
+    def __init__(self, *, mod: Namespace):
+        self._mod = mod
+
+        self._computables: dict[CacheKey, Computable] = {}
+        self._dependencies: CacheKeyIndex = defaultdict(lambda: {})
+        self._dependents: CacheKeyIndex = defaultdict(lambda: {})
+        self._computed_dependencies: VersionedCacheKeyIndex = (
+            defaultdict(lambda: {})
+        )
+
+    def add(self,
+            key: CacheKey,
+            source_keys: list[CacheKey],
+            computable: Computable
+    ):
+        self._computables[key] = computable
+        self._dependencies[key].update({
+            key: None
+            for key in source_keys
+        })
+        for source_key in source_keys:
+            self._dependents[source_key][key] = None
+
+    def latest_vkey_for(self, key: CacheKey) -> VersionedCacheKey:
+        """
+        Get the latest vkey for the given key.
+
+        If the key is clean, return it, otherwise get the vkeys for its
+        dependencies (recursively), recompute this vkey, mark all dependent
+        vkeys dirty between this key and each key that does not change, and
+        return the computed vkey. If getting dependency vkeys results in this
+        vkey being marked clean, then return it without recomputing it.
+
+        For example, given A<-B<-C<-D<-E<-F, marking B as dirty will
+        mark C, D, E, and F as dirty. On the next call for getting the latest
+        vkey for E, the vkeys for C, D, and E start being recomputed. If D
+        returns the same key, then E and F are marked as clean, and we skip
+        recomputing them.
+        """
+        latest_vkey = self._computables[key].latest_vkey()
+
+        # Technically, `latest_key is not None` is guaranteed if
+        # `not key_is_dirty`, but the type checker doesn't know that, and it's
+        # difficult to tell it.
+        key_is_dirty = self._computables[key].vkey_is_dirty()
+        if not key_is_dirty and latest_vkey is not None:
+            return latest_vkey # Base-case: clean
+
+        # Get vkeys for sources, and check if doing so marked this key as clean,
+        # eg. if one dep key was dirty, but recomputing it resulted in the same
+        # vkey.
+        source_vkeys = [
+            self.latest_vkey_for(source_key)
+            for source_key in self._dependencies[key] # Base-case: empty
+        ]
+
+        key_is_dirty = self._computables[key].vkey_is_dirty()
+        if not key_is_dirty and latest_vkey is not None:
+            return latest_vkey
+
+        # If not, recompute vkey
+        sources = [
+            (source_vkey, self.value_for(source_vkey))
+            for source_vkey in source_vkeys
+        ]
+        version = self._computables[key].version_fn(*sources)
+        computed_vkey = (*key, version)
+        self._computables[key].set_latest_vkey(computed_vkey)
+
+        # Mark all dependent vkeys dirty between this key and each key that does
+        # not change.
+        if latest_vkey != computed_vkey:
+            for key in self._transitive_dependents_of(key):
+                self._computables[key].set_vkey_dirty()
+        else:
+            for key in self._transitive_dependents_of(key):
+                if all(
+                    not self._computables[dep_key].vkey_is_dirty()
+                    for dep_key in self._dependencies[key]
+                ):
+                    self._computables[key].set_vkey_clean()
+
+        return computed_vkey
+
+    def latest_value_for(self, key: CacheKey) -> Any:
+        return self.value_for(self.latest_vkey_for(key))
+
+    def value_for(self, vkey: VersionedCacheKey) -> Any:
+        key = self._key_for(vkey)
+
+        value = None
+        if self._computables[key].cacheable:
+            try:
+                value = self._mod.cache.get(self._key_str(vkey))
+            except KeyError:
+                pass
+
+        if value is None:
+            if vkey not in self._computed_dependencies:
+                self._computed_dependencies[vkey] = {
+                    self.latest_vkey_for(source_key): None
+                    for source_key in self._dependencies[key]
+                }
+
+            sources = [
+                self.value_for(source_vkey)
+                # Base-case: empty
+                for source_vkey in self._computed_dependencies[vkey]
+            ]
+            value = self._computables[key].value_fn(sources)
+
+            if self._computables[key].cacheable:
+                self._mod.cache.set(self._key_str(vkey), value)
+
+        return value
+
+    def raw(self) -> _ComputableGraphCache:
+        return {
+            'computables': {
+                cache_key: computable.raw()
+                for cache_key, computable in self._computables.items()
+            },
+            'dependencies': self._dependencies,
+            'dependents': self._dependents,
+            'computed_dependencies': self._computed_dependencies
+        }
+
+    def configure_from_raw(self, computable_graph_cache: _ComputableGraphCache):
+        for cache_key, computable_cache in (
+            computable_graph_cache['computables'].items()
+        ):
+            try:
+                computable = self._computables[cache_key]
+            except KeyError:
+                # Likely due to changes to LIMAR modules or what is cached.
+                # Try to ignore the failures and take only what is still
+                # relevant. If this results in strange behaviour, it is
+                # recommended to delete the key cache entry entirely to
+                # recompute everything.
+                pass
+
+            computable.configure_from_raw(computable_cache)
+
+        self._dependencies = computable_graph_cache['dependencies']
+        self._dependents = computable_graph_cache['dependents']
+        self._computed_dependencies = (
+            computable_graph_cache['computed_dependencies']
+        )
+
+    def _key_for(self, vkey: VersionedCacheKey) -> CacheKey:
+        return vkey[:2]
+
+    def _key_str(self, key: VersionedCacheKey):
+        type, name, version = key
+        return f"{type}.{name}.{version}.pickle"
+
+    def _transitive_dependencies_of(self, key: CacheKey):
+        # Only contains keys that are in the directed subgraph starting from
+        # the given key.
+        sorter = TopologicalSorter({
+            dep_key: self._dependencies[dep_key]
+            for dep_key in self._unordered_transitive_dependencies_of(key)
+        })
+        # May throw CycleError, but only due to user error
+        return list(sorter.static_order())
+
+    def _transitive_dependents_of(self, key: CacheKey):
+        # Only contains keys that are in the directed subgraph starting from
+        # the given key.
+        sorter = TopologicalSorter({
+            dep_key: self._dependents[dep_key]
+            for dep_key in self._unordered_transitive_dependents_of(key)
+        })
+        # May throw CycleError, but only due to user error
+        return list(sorter.static_order())
+
+    def _unordered_transitive_dependencies_of(self, key: CacheKey):
+        dependencies = set()
+        for dep_key in self._dependencies[key]:
+            dependencies.update(
+                self._unordered_transitive_dependencies_of(dep_key)
+            )
+            dependencies.add(dep_key)
+        return dependencies
+
+    def _unordered_transitive_dependents_of(self, key: CacheKey):
+        dependents = set()
+        for dep_key in self._dependents[key]:
+            dependents.update(
+                self._unordered_transitive_dependents_of(dep_key)
+            )
+            dependents.add(dep_key)
+        return dependents
 
 class DepCacheModule:
     """
     MM module to manage dependencies between cached data.
     """
 
-    _COMPUTABLES_CACHE_NAME = 'dep_cache.computables_cache.pickle'
-
-    def __init__(self):
-        self._computables: dict[CacheKey, Computable] = {}
-
-        self._dependencies: CacheKeyIndex = defaultdict(lambda: {})
-        self._dependents: CacheKeyIndex = defaultdict(lambda: {})
+    _COMPUTABLE_GRAPH_CACHE_NAME = 'dep_cache.computable_graph_cache.pickle'
 
     def dependencies(self):
         return ['cache']
 
     def configure(self, *, mod: Namespace, **_):
         self._mod = mod # For methods that aren't directly given it
+        self._computable_graph = ComputableGraph(mod=mod)
 
     def start(self, *, mod: Namespace, **_):
         try:
-            key_state: _ComputablesCache = mod.cache.get(
-                self._COMPUTABLES_CACHE_NAME
+            computable_graph_cache: _ComputableGraphCache = mod.cache.get(
+                self._COMPUTABLE_GRAPH_CACHE_NAME
             )
         except KeyError:
             return
-
-        for cache_key, computable_cache in key_state.items():
-            try:
-                computable = self._computables[cache_key]
-                computable.latest_key = computable_cache['latest_key']
-                computable.key_is_dirty = computable_cache['key_is_dirty']
-            except KeyError:
-                # Likely due to changes to LIMAR modules or _ComputablesCache.
-                # Try to ignore them. If this results in strange behaviour, it
-                # is recommended to delete the key cache entry entirely to
-                # recompute everything.
-                pass
+        self._computable_graph.configure_from_raw(computable_graph_cache)
 
     def stop(self, *, mod: Namespace, **_):
-        key_state: _ComputablesCache = {
-            cache_key: {
-                'latest_key': computable.latest_key,
-                'key_is_dirty': computable.key_is_dirty
-            }
-            for cache_key, computable in self._computables.items()
-        }
-        mod.cache.set(self._COMPUTABLES_CACHE_NAME, key_state)
+        mod.cache.set(
+            self._COMPUTABLE_GRAPH_CACHE_NAME,
+            self._computable_graph.raw()
+        )
 
     # Invokation
     # --------------------
-
-    @staticmethod
-    def _digest_for(value: str):
-        return sha1(value.encode('utf-8')).hexdigest()
 
     @classmethod
     def _default_version_fn(cls, *sources):
@@ -102,25 +303,22 @@ class DepCacheModule:
         )
 
     @ModuleAccessor.invokable_as_service
-    def set(self,
+    def add(self,
             key: CacheKey,
             source_keys: list[CacheKey],
             compute_value: ComputeValueFn,
             compute_version: ComputeVersionFn = _default_version_fn,
             cacheable: bool = True
     ):
-        self._computables[key] = Computable(
-            compute_version,
-            compute_value,
-            cacheable=cacheable
+        self._computable_graph.add(
+            key,
+            source_keys,
+            Computable(
+                compute_version,
+                compute_value,
+                cacheable=cacheable
+            )
         )
-
-        self._dependencies[key].update({
-            key: None
-            for key in source_keys
-        })
-        for source_key in source_keys:
-            self._dependents[source_key][key] = None
 
     @ModuleAccessor.invokable_as_service
     def get(self, key: CacheKey | VersionedCacheKey):
@@ -131,79 +329,13 @@ class DepCacheModule:
         If a version is not included in the key, then get the latest version.
         """
 
-        cache_key = self._get_key(key)
-        sources = None
-
-        # Get vkey
         if len(key) == 3:
-            versioned_key = key
-            key_is_dirty = False
-        else:
-            versioned_key = self._computables[cache_key].latest_key
-            key_is_dirty = self._computables[cache_key].key_is_dirty
-
-        if key_is_dirty or versioned_key is None:
-            # Recompute vkey
-            sources = [
-                self.get(source_key)
-                for source_key in self._dependencies[cache_key]
-            ]
-            version = self._computables[cache_key].version_fn(sources)
-            versioned_key = (*cache_key, version)
-
-            # Set new vkey and invalidate dependent vkeys
-            prev_versioned_key = self._computables[cache_key].latest_key
-            self._computables[cache_key].latest_key = versioned_key
-            self._computables[cache_key].key_is_dirty = False
-
-            if prev_versioned_key != versioned_key:
-                pass # Invalidate dependent keys
-
-        # Get value
-        value = None
-        if self._computables[cache_key].cacheable:
-            try:
-                value = self._mod.cache.get(self._key_str(versioned_key))
-            except KeyError:
-                pass
-
-        if value is None:
-            if sources is None:
-                sources = [
-                    self.get(source_key)
-                    for source_key in self._dependencies[cache_key]
-                ]
-            value = self._computables[cache_key].value_fn(*(
-                source[1] for source in sources
-            ))
-
-            if self._computables[cache_key].cacheable:
-                self._mod.cache.set(self._key_str(versioned_key), value)
-
-            # Unset the now-unknown latest keys for all dependents
-
-            # if the version number has changed
-            # AND the item is cacheable
-            # AND the cache is missing
-            # - recurse through dependencies, setting latest_key to None
-
-            # Invalidate dependents
-
-        return (versioned_key, value)
-
-    @ModuleAccessor.invokable_as_service
-    def delete(self, key: CacheKey | VersionedCacheKey):
-        if key not in self._computables:
-            return # Wasn't set using dep-cache, so don't touch it
-
-        # TODO: Invalidation chain
+            return self._computable_graph.value_for(key)
+        return self._computable_graph.latest_value_for(key)
 
     # Utils
     # --------------------
 
-    def _key_str(self, key: VersionedCacheKey):
-        type, name, version = key
-        return f"{type}.{name}.{version}.pickle"
-
-    def _get_key(self, key: CacheKey | VersionedCacheKey) -> CacheKey:
-        return key[:2]
+    @staticmethod
+    def _digest_for(value: str):
+        return sha1(value.encode('utf-8')).hexdigest()
