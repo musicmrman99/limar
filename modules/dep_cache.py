@@ -57,12 +57,16 @@ class ComputableGraph:
         self._dependents: CacheKeyIndex = {}
         self._computed_dependencies: VersionedCacheKeyIndex = {}
 
+        self._computables_cache: dict[CacheKey, ComputableCache] = {}
+
     def add(self,
             key: CacheKey,
             source_keys: list[CacheKey],
             computable: Computable
     ):
         self._computables[key] = computable
+        if key in self._computables_cache:
+            computable.configure_from_raw(self._computables_cache[key])
 
         if key not in self._dependencies:
             self._dependencies[key] = {}
@@ -183,36 +187,21 @@ class ComputableGraph:
 
     def raw(self) -> ComputableGraphCache:
         return {
-            'computables': {
-                cache_key: computable.raw()
-                for cache_key, computable in self._computables.items()
+            'computables': self._computables_cache | {
+                key: computable.raw()
+                for key, computable in self._computables.items()
             },
             'computed_dependencies': self._computed_dependencies
         }
 
     def configure_from_raw(self, computable_graph_cache: ComputableGraphCache):
-        keys_not_found = 0
-        for cache_key, computable_cache in (
-            computable_graph_cache['computables'].items()
-        ):
+        self._computables_cache = computable_graph_cache['computables']
+        for key, computable_cache in self._computables_cache.items():
             try:
-                computable = self._computables[cache_key]
+                computable = self._computables[key]
             except KeyError:
-                keys_not_found += 1
-                self._mod.log.warning(
-                    f"dep-cache: cache_key {repr(cache_key)} not found when"
-                    " loading from computable graph cache."
-                )
                 continue
-
             computable.configure_from_raw(computable_cache)
-
-        if keys_not_found > 0:
-            self._mod.log.warning(
-                f"dep-cache: The above warnings may indicate a compatiblity"
-                " issue with a previous version of LIMAR. If you experience"
-                " unexpected behaviour, clearing your cache may help."
-            )
 
         self._computed_dependencies = (
             computable_graph_cache['computed_dependencies']
@@ -328,6 +317,26 @@ class DepCacheModule:
                 deserialise_value,
                 cacheable=cacheable
             )
+        )
+
+    @ModuleAccessor.invokable_as_service
+    def add_dynamic(self,
+            key: CacheKey,
+            source_keys: list[CacheKey],
+            compute_value: ComputeValueFn,
+            serialise_value: SerialiseValueFn = lambda x: x,
+            deserialise_value: DeserialiseValueFn = lambda x: x,
+            compute_version: ComputeVersionFn = from_source_versions,
+            cacheable: bool = True
+    ):
+        self.add(
+            key,
+            source_keys,
+            compute_value,
+            serialise_value,
+            deserialise_value,
+            compute_version,
+            cacheable
         )
 
     @ModuleAccessor.invokable_as_service
