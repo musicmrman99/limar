@@ -39,6 +39,9 @@ if [ "$LIMAR__STARTUP_FAILED" = 'false' ]; then
     if [ -z "$LIMAR__DATA_DIR" ]; then
         export LIMAR__DATA_DIR="$HOME/.limar"
     fi
+    if [ -z "$LIMAR__VENV_PATH" ]; then
+        export LIMAR__VENV_PATH="$LIMAR__DATA_DIR/venv"
+    fi
     if [ -z "$LIMAR__PERFORMANCE_PROFILING_ENABLED" ]; then
         export LIMAR__PERFORMANCE_PROFILING_ENABLED='false'
     fi
@@ -332,54 +335,71 @@ if [ "$LIMAR__STARTUP_FAILED" = 'false' ]; then
             fi
 
         elif [ "$command" = '/build' -o "$command" = '/rebuild' -o "$command" = '/clean' ]; then
-            local manifest_lang_path="$LIMAR__REPO/modules/manifest_lang"
-
-            # Install deps + build: core component
-            if [ -z "$component" -o "$component" = 'core' ]; then
-                if [ "$command" = '/build' -o "$command" = '/rebuild' ]; then
-                    limar__install_python_requirements 'core'
-                fi
+            # Create venv
+            if [ -z "$component" -a "$command" = '/rebuild' -o "$command" = '/clean' ]; then
+                limar__log 'Cleaning LIMAR manifest parser build'
+                rm -rf "$LIMAR__VENV_PATH"
+            fi
+            if [ \( "$command" = '/build' -a ! -d "$LIMAR__VENV_PATH" \) -o "$command" = '/rebuild' ]; then
+                "$LIMAR__PYTHON" -m venv "$LIMAR__VENV_PATH"
+            elif [ "$command" = '/build' ]; then
+                limar__log 'LIMAR venv already built, skipping building'
+                limar__log 'Use `limar /rebuild` to force a rebuild, or' \
+                    ' `limar /reinit` to force a full reinitialisation'
             fi
 
-            # Install deps + build: manifest component
-            if [ -z "$component" -o "$component" = 'manifest' ]; then
-                if [ "$command" = '/rebuild' -o "$command" = '/clean' ]; then
-                    limar__log 'Cleaning LIMAR manifest parser build'
-                    rm -rf "$manifest_lang_path/build"
+            (
+                . "$LIMAR__VENV_PATH/bin/activate"
+
+                # Install deps + build: core component
+                if [ -z "$component" -o "$component" = 'core' ]; then
+                    if [ "$command" = '/build' -o "$command" = '/rebuild' ]; then
+                        limar__install_python_requirements 'core'
+                    fi
                 fi
 
-                if [ \( "$command" = '/build' -a ! -d "$manifest_lang_path" \) -o "$command" = '/rebuild' ]; then
-                    limar__install_python_requirements 'manifest'
+                # Install deps + build: manifest component
+                if [ -z "$component" -o "$component" = 'manifest' ]; then
+                    local manifest_lang_path="$LIMAR__REPO/modules/manifest_lang"
 
-                    limar__log 'Building LIMAR manifest parser in' \
-                        " '$manifest_lang_path'"
-                    failed='false'
-                    cd "$manifest_lang_path" || {
-                        limar__log 'ERROR: Failed to build parser: Could not' \
-                            " change directory to '$manifest_lang_path'"
-                        return 1
-                    }
-                    antlr4 -Dlanguage=Python3 -o ./build ./Manifest.g4 || failed='true'
-                    cd - >/dev/null
-                    if [ "$failed" = 'true' ]; then
-                        limar__log 'ERROR: Failed to build parser'
-                        return 1
+                    if [ "$command" = '/rebuild' -o "$command" = '/clean' ]; then
+                        limar__log 'Cleaning LIMAR manifest parser build'
+                        rm -rf "$manifest_lang_path/build"
                     fi
 
-                elif [ "$command" = '/build' ]; then
-                    limar__log 'LIMAR manifest parser already built, skipping' \
-                        ' building'
-                    limar__log 'Use `limar /rebuild` to force a rebuild, or' \
-                        ' `limar /reinit` to force a full reinitialisation'
-                fi
-            fi
+                    if [ \( "$command" = '/build' -a ! -d "$manifest_lang_path/build" \) -o "$command" = '/rebuild' ]; then
+                        limar__install_python_requirements 'manifest'
 
-            # Install deps + build: finance component
-            if [ -z "$component" -o "$component" = 'finance' ]; then
-                if [ "$command" = '/build' -o "$command" = '/rebuild' ]; then
-                    limar__install_python_requirements 'finance'
+                        limar__log 'Building LIMAR manifest parser in' \
+                            " '$manifest_lang_path'"
+                        failed='false'
+                        cd "$manifest_lang_path" || {
+                            limar__log 'ERROR: Failed to build parser: Could not' \
+                                " change directory to '$manifest_lang_path'"
+                            return 1
+                        }
+                        antlr4 -Dlanguage=Python3 -o ./build ./Manifest.g4 || failed='true'
+                        cd - >/dev/null
+                        if [ "$failed" = 'true' ]; then
+                            limar__log 'ERROR: Failed to build parser'
+                            return 1
+                        fi
+
+                    elif [ "$command" = '/build' ]; then
+                        limar__log 'LIMAR manifest parser already built, skipping' \
+                            ' building'
+                        limar__log 'Use `limar /rebuild` to force a rebuild, or' \
+                            ' `limar /reinit` to force a full reinitialisation'
+                    fi
                 fi
-            fi
+
+                # Install deps + build: finance component
+                if [ -z "$component" -o "$component" = 'finance' ]; then
+                    if [ "$command" = '/build' -o "$command" = '/rebuild' ]; then
+                        limar__install_python_requirements 'finance'
+                    fi
+                fi
+            )
 
         elif [ "$command" = '/install' -o "$command" = '/reinstall' -o "$command" = '/remove' ]; then
             # Create files and directories: core component
@@ -561,14 +581,18 @@ if [ "$LIMAR__STARTUP_FAILED" = 'false' ]; then
 
         else
             # Set up context script, run LIMAR, and source context script
-            local script_file="$(mktemp "$LIMAR__DATA_DIR/tmp/limar-source-$(basename "$SHELL").XXXXXXXX")"
-            if [ "$LIMAR__PERFORMANCE_PROFILING_ENABLED" = 'true' ]; then
-                "$LIMAR__PYTHON" -m cProfile -o "$LIMAR__REPO/limar.prof" "$LIMAR__REPO/main.py" --shell-script "$script_file" "$@"
-            else
-                "$LIMAR__PYTHON" "$LIMAR__REPO/main.py" --shell-script "$script_file" "$@"
-            fi
-            . "$script_file"
-            rm "$script_file"
+            export LIMAR__SCRIPT_FILE="$(mktemp "$LIMAR__DATA_DIR/tmp/limar-source-$(basename "$SHELL").XXXXXXXX")"
+            (
+                . "$LIMAR__VENV_PATH/bin/activate"
+                if [ "$LIMAR__PERFORMANCE_PROFILING_ENABLED" = 'true' ]; then
+                    "$LIMAR__PYTHON" -m cProfile -o "$LIMAR__REPO/limar.prof" "$LIMAR__REPO/main.py" --shell-script "$LIMAR__SCRIPT_FILE" "$@"
+                else
+                    "$LIMAR__PYTHON" "$LIMAR__REPO/main.py" --shell-script "$LIMAR__SCRIPT_FILE" "$@"
+                fi
+            )
+            . "$LIMAR__SCRIPT_FILE"
+            rm "$LIMAR__SCRIPT_FILE"
+            unset LIMAR__SCRIPT_FILE
         fi
     }
     alias lm='limar'
