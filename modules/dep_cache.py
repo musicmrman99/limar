@@ -79,17 +79,24 @@ class ComputableGraph:
         """
         Get the latest vkey for the given key.
 
-        If the key is clean, return it, otherwise get the vkeys for its
-        dependencies (recursively), recompute this vkey, mark all dependent
-        vkeys dirty between this key and each key that does not change, and
-        return the computed vkey. If getting dependency vkeys results in this
-        vkey being marked clean, then return it without recomputing it.
+        If the key is clean, return the cached latest vkey for it. If not, then
+        get the latest vkeys for its dependencies (which will recurse as
+        needed), recompute the key's vkey, and return the result.
+
+        If the key's vkey was recomputed and changed, then mark all dependent
+        vkeys dirty. If this vkey did not change, then mark all dependent vkeys
+        that are no longer dependent on a dirty key as clean.
+
+        If getting the latest vkey for dependency keys results in any of those
+        keys being recomputed, and this key being marked clean as a result, then
+        return the cached latest vkey without recomputing it.
 
         For example, given A<-B<-C<-D<-E<-F, marking B as dirty will
         mark C, D, E, and F as dirty. On the next call for getting the latest
         vkey for E, the vkeys for C, D, and E start being recomputed. If D
-        returns the same key, then E and F are marked as clean, and we skip
-        recomputing them.
+        returns the same key, then E and F are marked as clean (as they no
+        longer depend on any dirty keys), so we skip recomputing their vkeys and
+        return the cached latest vkey for E.
         """
 
         latest_vkey = self._computables[key].latest_vkey()
