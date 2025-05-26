@@ -1,6 +1,7 @@
 from argparse import Namespace
 from graphlib import TopologicalSorter
 from hashlib import sha1
+import pickle
 
 from core.modulemanager import ModuleAccessor
 from modules.dep_cache_utils.types import *
@@ -11,13 +12,15 @@ class Computable:
             value_fn: ComputeValueFn,
             serialise_fn: SerialiseValueFn,
             deserialise_fn: DeserialiseValueFn,
-            cacheable: bool = True
+            cacheable: bool = True,
+            args: list[Any] | None = None
     ):
         self.version_fn: ComputeVersionFn = version_fn
         self.value_fn: ComputeValueFn = value_fn
         self.serialise_fn: SerialiseValueFn = serialise_fn
         self.deserialise_fn: DeserialiseValueFn = deserialise_fn
         self.cacheable = cacheable
+        self.args = args
 
         self._latest_vkey: VersionedCacheKey | None = None
         self._vkey_is_dirty = True
@@ -79,6 +82,9 @@ class ComputableGraph:
         for source_key in source_keys:
             self._dependents[source_key][key] = None
 
+    def key_exists(self, key: CacheKey) -> bool:
+        return key in self._computables
+
     def latest_vkey_for(self, key: CacheKey) -> VersionedCacheKey:
         """
         Get the latest vkey for the given key.
@@ -129,7 +135,11 @@ class ComputableGraph:
             (source_vkey, self.value_for(source_vkey))
             for source_vkey in source_vkeys
         ]
-        version = self._computables[key].version_fn(key, sources)
+        args: list[Any] | None = self._computables[key].args
+
+        version = self._computables[key].version_fn(
+            key, sources, *([args] if args is not None else [])
+        )
         computed_vkey = (*key, version)
         self._computables[key].set_latest_vkey(computed_vkey)
 
@@ -175,7 +185,11 @@ class ComputableGraph:
                 # Base-case: empty
                 for source_vkey in self._computed_dependencies[vkey]
             ]
-            value = self._computables[key].value_fn(vkey, sources)
+            args: list[Any] | None = self._computables[key].args
+
+            value = self._computables[key].value_fn(
+                vkey, sources, *([args] if args is not None else [])
+            )
 
             if self._computables[key].cacheable:
                 self._mod.cache.set(
@@ -184,6 +198,9 @@ class ComputableGraph:
                 )
 
         return value
+
+    def mark_dirty(self, key: CacheKey):
+        self._computables[key].set_vkey_dirty()
 
     def raw(self) -> ComputableGraphCache:
         return {
@@ -261,6 +278,11 @@ class DepCacheModule:
 
     _COMPUTABLE_GRAPH_CACHE_NAME = 'dep_cache.computable_graph_cache.pickle'
 
+    def __init__(self):
+        self._computable_templates: dict[
+            CacheKey, tuple[Any, tuple[Any, Any, Any, Any, Any]]
+        ] = {}
+
     def dependencies(self):
         return ['cache', 'log']
 
@@ -287,8 +309,9 @@ class DepCacheModule:
     # Invokation
     # --------------------
 
+    # Util for various methods (NOTE: must be defined above them)
     @staticmethod
-    def from_source_versions(key: CacheKey, sources: KeySources):
+    def _from_source_versions(key: CacheKey, sources: KeySources):
         if len(sources) == 0:
             return ''
         elif len(sources) == 1:
@@ -298,15 +321,47 @@ class DepCacheModule:
         return sha1(combined_version.encode('utf-8')).hexdigest()
 
     @ModuleAccessor.invokable_as_config
-    def add(self,
+    def resolve_key(self,
+            base_key: CacheKey,
+            args: list[Any] | None
+    ) -> CacheKey:
+        full_key = base_key
+        if args is not None:
+            base_name = base_key[1].replace('/', '.')
+            args_hash = sha1(pickle.dumps(args)).hexdigest()
+            full_key = (base_key[0], f"{base_name}.{args_hash}")
+
+        return full_key
+
+    @ModuleAccessor.invokable_as_service
+    def resolve_dynamic_key(self,
+            base_key: CacheKey,
+            args: list[Any] | None
+    ) -> CacheKey:
+        return self.resolve_key(base_key, args)
+
+    @ModuleAccessor.invokable_as_config
+    def key_exists(self, key: CacheKey) -> bool:
+        return self._computable_graph.key_exists(key)
+
+    @ModuleAccessor.invokable_as_service
+    def dynamic_key_exists(self, key: CacheKey) -> bool:
+        return self.key_exists(key)
+
+    # Util for add(), add_from_template(), and their dynamic equivalents
+    def _add(self,
             key: CacheKey,
             source_keys: list[CacheKey],
             compute_value: ComputeValueFn,
             serialise_value: SerialiseValueFn = lambda x: x,
             deserialise_value: DeserialiseValueFn = lambda x: x,
-            compute_version: ComputeVersionFn = from_source_versions,
-            cacheable: bool = True
+            compute_version: ComputeVersionFn = _from_source_versions,
+            cacheable: bool = True,
+            args: list[Any] | None = None
     ):
+        if self.key_exists(key):
+            raise KeyError(f"Attempt to add computable key '{key}' twice")
+
         self._computable_graph.add(
             key,
             source_keys,
@@ -315,8 +370,104 @@ class DepCacheModule:
                 compute_value,
                 serialise_value,
                 deserialise_value,
-                cacheable=cacheable
+                cacheable=cacheable,
+                args=args
             )
+        )
+
+    @ModuleAccessor.invokable_as_config
+    def add_template(self,
+            key: CacheKey,
+            source_keys: list[CacheKey],
+            compute_value: ComputeValueFn,
+            serialise_value: SerialiseValueFn = lambda x: x,
+            deserialise_value: DeserialiseValueFn = lambda x: x,
+            compute_version: ComputeVersionFn = _from_source_versions,
+            cacheable: bool = True
+    ):
+        if key in self._computable_templates:
+            raise KeyError(
+                f"Attempt to add computable template key '{key}' twice"
+            )
+
+        self._computable_templates[key] = (
+            source_keys,
+            (
+                compute_value,
+                serialise_value,
+                deserialise_value,
+                compute_version,
+                cacheable
+            )
+        )
+
+    @ModuleAccessor.invokable_as_service
+    def add_dynamic_template(self,
+            key: CacheKey,
+            source_keys: list[CacheKey],
+            compute_value: ComputeValueFn,
+            serialise_value: SerialiseValueFn = lambda x: x,
+            deserialise_value: DeserialiseValueFn = lambda x: x,
+            compute_version: ComputeVersionFn = _from_source_versions,
+            cacheable: bool = True
+    ):
+        self.add_template(
+            key,
+            source_keys,
+            compute_value,
+            serialise_value,
+            deserialise_value,
+            compute_version,
+            cacheable
+        )
+
+    @ModuleAccessor.invokable_as_config
+    def add_from_template(self,
+            template_key: CacheKey,
+            dynamic_source_keys: list[CacheKey],
+            args: list[Any]
+    ):
+        # Dynamic keys are much more likely to be added repeatedly for valid
+        # reasons than static keys. If it does exist, return the existing key.
+        full_key = self.resolve_key(template_key, args)
+        if not self.key_exists(full_key):
+            source_keys, computable_args = (
+                self._computable_templates[template_key]
+            )
+            self._add(
+                full_key,
+                source_keys + dynamic_source_keys,
+                *computable_args,
+                args
+            )
+        return full_key
+
+    @ModuleAccessor.invokable_as_service
+    def add_dynamic_from_template(self,
+            template_key: CacheKey,
+            dynamic_source_keys: list[CacheKey],
+            args: list[Any]
+    ):
+        return self.add_from_template(template_key, dynamic_source_keys, args)
+
+    @ModuleAccessor.invokable_as_config
+    def add(self,
+            key: CacheKey,
+            source_keys: list[CacheKey],
+            compute_value: ComputeValueFn,
+            serialise_value: SerialiseValueFn = lambda x: x,
+            deserialise_value: DeserialiseValueFn = lambda x: x,
+            compute_version: ComputeVersionFn = _from_source_versions,
+            cacheable: bool = True
+    ):
+        self._add(
+            key,
+            source_keys,
+            compute_value,
+            serialise_value,
+            deserialise_value,
+            compute_version,
+            cacheable
         )
 
     @ModuleAccessor.invokable_as_service
@@ -326,7 +477,7 @@ class DepCacheModule:
             compute_value: ComputeValueFn,
             serialise_value: SerialiseValueFn = lambda x: x,
             deserialise_value: DeserialiseValueFn = lambda x: x,
-            compute_version: ComputeVersionFn = from_source_versions,
+            compute_version: ComputeVersionFn = _from_source_versions,
             cacheable: bool = True
     ):
         self.add(
@@ -351,3 +502,7 @@ class DepCacheModule:
         if len(key) == 3:
             return self._computable_graph.value_for(key)
         return self._computable_graph.latest_value_for(key)
+
+    @ModuleAccessor.invokable_as_service
+    def mark_dirty(self, key: CacheKey):
+        self._computable_graph.mark_dirty(key)
